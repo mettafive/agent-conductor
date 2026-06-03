@@ -6,7 +6,9 @@ import { buildModel } from "./lib/merge";
 import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sounds";
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { StatusBar } from "./components/StatusBar";
-import { Board } from "./components/Board";
+import { StepView } from "./components/StepView";
+import { SummaryView } from "./components/SummaryView";
+import { SwimLaneSection } from "./components/SwimLaneSection";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { OptimizationPanel } from "./components/OptimizationPanel";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
@@ -25,6 +27,7 @@ export function App() {
   const [muted, setMutedState] = useState(isMuted());
   const [pinned, setPinned] = useState<string[]>([]);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
+  const [selectedStep, setSelectedStep] = useState<string | null>(null); // sidebar focus
 
   // live heartbeat stream across every workflow — drives the monitor, the heart,
   // and the tick sound. Arrivals are seeded on load so nothing false-fires.
@@ -96,10 +99,12 @@ export function App() {
   const pickWorkflow = (name: string) => {
     setSelectedWf(name);
     setSelectedRun(null);
+    setSelectedStep(null);
   };
   const pickRun = (wf: string, runId: string) => {
     setSelectedWf(wf);
     setSelectedRun(runId);
+    setSelectedStep(null);
   };
   const togglePin = (name: string) =>
     setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
@@ -178,6 +183,17 @@ export function App() {
   );
   const showBoard = viewing ? !!record : liveStarted;
 
+  // Three-zone layout: the main area shows ONE thing — the active step (or the
+  // one focused from the sidebar), a loop's swim lanes, or a completion summary.
+  const activeStepId =
+    selectedStep && model?.steps.some((s) => s.id === selectedStep)
+      ? selectedStep
+      : (model?.currentStep ?? null);
+  const activeStep =
+    model?.steps.find((s) => s.id === activeStepId) ?? model?.steps[0] ?? null;
+  const showSummary =
+    !selectedStep && !!model && (model.overallStatus === "done" || model.overallStatus === "failed");
+
   const closePanel = () => {
     if (!viewing && liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
     setPanelOpen(false);
@@ -210,6 +226,8 @@ export function App() {
             onPin={togglePin}
             width={sidebarWidth}
             onResize={setSidebarWidth}
+            activeStep={activeStepId}
+            onSelectStep={setSelectedStep}
           />
         )}
 
@@ -256,13 +274,25 @@ export function App() {
               </div>
             ) : showBoard && model ? (
               <motion.div
-                key={`${activeWf}:${selectedRun ?? "live"}`}
+                key={`${activeWf}:${selectedRun ?? "live"}:${showSummary ? "sum" : (activeStep?.id ?? "none")}`}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                 className="board-scroll h-full overflow-y-auto"
               >
-                <Board model={model} onApprove={viewing ? undefined : applyApproval} />
+                {showSummary ? (
+                  <SummaryView model={model} onOpenInsights={() => setPanelOpen(true)} />
+                ) : activeStep?.isLoop ? (
+                  <div className="mx-auto max-w-[1400px] px-5 py-6">
+                    <SwimLaneSection loopStep={activeStep} />
+                  </div>
+                ) : activeStep ? (
+                  <StepView step={activeStep} onApprove={viewing ? undefined : applyApproval} />
+                ) : (
+                  <div className="grid h-full place-items-center">
+                    <span className="font-mono text-xs text-mist">select a step from the sidebar</span>
+                  </div>
+                )}
               </motion.div>
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />

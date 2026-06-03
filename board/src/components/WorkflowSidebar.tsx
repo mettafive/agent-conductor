@@ -14,42 +14,64 @@ const TREE_GLYPH: Record<string, string> = {
   pending: "·",
 };
 
-/** Compact step + loop-iteration tree for the active running workflow. */
-function StepTree({ snap }: { snap: WorkflowEntry["snap"] }) {
+/** Clickable step + loop-iteration tree — the navigation for the main area. */
+function StepTree({
+  snap,
+  activeStep,
+  onSelectStep,
+}: {
+  snap: WorkflowEntry["snap"];
+  activeStep?: string | null;
+  onSelectStep?: (id: string | null) => void;
+}) {
   const model = buildModel(snap);
   if (!model.steps.length) return null;
   return (
     <div className="ml-2 mt-1 space-y-0.5 border-l border-line/60 pl-2">
-      {model.steps.map((s) => (
-        <div key={s.id}>
-          <div className="flex items-center gap-1.5 py-0.5 font-mono text-[10px]">
-            <span className="w-3 shrink-0 text-center">{TREE_GLYPH[s.column] ?? "·"}</span>
-            <span className={`min-w-0 flex-1 truncate ${s.column === "running" ? "text-cyan" : "text-mist-2"}`}>
-              {s.id}
-            </span>
-            {s.isLoop && s.loop && (
-              <span className="shrink-0 text-line-2">
-                {s.loop.completed}/{s.loop.total}
+      {model.steps.map((s) => {
+        const on = activeStep === s.id;
+        return (
+          <div key={s.id}>
+            <button
+              onClick={() => onSelectStep?.(s.id)}
+              className={`flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left font-mono text-[10px] transition-colors ${
+                on ? "bg-iris/15" : "hover:bg-panel/60"
+              }`}
+            >
+              <span className="w-3 shrink-0 text-center">{TREE_GLYPH[s.column] ?? "·"}</span>
+              <span
+                className={`min-w-0 flex-1 truncate ${s.column === "running" ? "text-cyan" : on ? "text-chalk" : "text-mist-2"}`}
+              >
+                {s.id}
               </span>
+              {s.isLoop && s.loop && (
+                <span className="shrink-0 text-line-2">
+                  {s.loop.completed}/{s.loop.total}
+                </span>
+              )}
+            </button>
+            {s.isLoop && s.loop && s.loop.iterations.length > 0 && (
+              <div className="ml-3 space-y-0.5 border-l border-line/40 pl-2">
+                {s.loop.iterations.map((it) => {
+                  const c = iterationColumn(it);
+                  return (
+                    <button
+                      key={it.item}
+                      onClick={() => onSelectStep?.(s.id)}
+                      className="flex w-full items-center gap-1.5 rounded px-1 py-px text-left font-mono text-[9.5px] hover:bg-panel/60"
+                    >
+                      <span className="w-3 shrink-0 text-center">{TREE_GLYPH[c] ?? "·"}</span>
+                      <span className={`min-w-0 flex-1 truncate ${c === "running" ? "text-cyan" : "text-mist"}`}>
+                        {it.item}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-          {s.isLoop && s.loop && s.loop.iterations.length > 0 && (
-            <div className="ml-3 space-y-0.5 border-l border-line/40 pl-2">
-              {s.loop.iterations.map((it) => {
-                const c = iterationColumn(it);
-                return (
-                  <div key={it.item} className="flex items-center gap-1.5 py-px font-mono text-[9.5px]">
-                    <span className="w-3 shrink-0 text-center">{TREE_GLYPH[c] ?? "·"}</span>
-                    <span className={`min-w-0 flex-1 truncate ${c === "running" ? "text-cyan" : "text-mist"}`}>
-                      {it.item}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -121,6 +143,8 @@ interface Props {
   onPin?: (name: string) => void;
   width: number;
   onResize: (w: number) => void;
+  activeStep?: string | null;
+  onSelectStep?: (id: string | null) => void;
 }
 
 export function WorkflowSidebar({
@@ -133,6 +157,8 @@ export function WorkflowSidebar({
   onPin,
   width,
   onResize,
+  activeStep,
+  onSelectStep,
 }: Props) {
   const now = useNow(1000);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -240,7 +266,13 @@ export function WorkflowSidebar({
                       )}
                     </div>
                   </button>
-                  {active && workflows[name]?.snap && <StepTree snap={workflows[name].snap} />}
+                  {active && workflows[name]?.snap && (
+                    <StepTree
+                      snap={workflows[name].snap}
+                      activeStep={activeStep}
+                      onSelectStep={onSelectStep}
+                    />
+                  )}
                   </div>
                 );
               })}
