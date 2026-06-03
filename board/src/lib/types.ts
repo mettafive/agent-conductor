@@ -51,6 +51,7 @@ export interface ConductorStep {
   isLoop: boolean;
   over?: string;
   as?: string;
+  parallel?: boolean;
   subSteps?: ConductorStep[];
   // human approval (§4.4)
   isApproval: boolean;
@@ -173,6 +174,7 @@ export interface BoardModel {
   unitsDone: number;
   unitsTotal: number;
   hasConductor: boolean;
+  demo?: boolean;
   error?: string;
 }
 

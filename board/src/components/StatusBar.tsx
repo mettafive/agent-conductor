@@ -93,6 +93,11 @@ export function StatusBar({
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-ink/80 backdrop-blur-xl">
+      {model.demo && (
+        <div className="flex items-center justify-center gap-2 border-b border-amber/30 bg-amber/15 px-5 py-1 font-mono text-[10px] uppercase tracking-[0.15em] text-amber">
+          ⚠ Demo — simulated data
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-3">
         <button
           onClick={onToggleSidebar}

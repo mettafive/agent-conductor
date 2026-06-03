@@ -266,6 +266,7 @@ export function buildModel(snap: Snapshot): BoardModel {
     unitsDone,
     unitsTotal,
     hasConductor,
+    demo: (status as { _demo?: boolean })._demo === true,
     error: status._error as string | undefined,
   };
 }

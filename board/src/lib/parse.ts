@@ -13,6 +13,7 @@ interface RawStep {
   output?: string;
   over?: string;
   as?: string;
+  parallel?: boolean;
   steps?: RawStep[];
   approval?: {
     prompt?: string;
@@ -67,6 +68,7 @@ function toStep(s: RawStep, index: number): ConductorStep {
     isLoop,
     over: s.over,
     as: s.as,
+    parallel: s.parallel === true,
     subSteps:
       isLoop && Array.isArray(s.steps)
         ? s.steps.filter((x) => x && x.id).map((x, i) => toStep(x, i))

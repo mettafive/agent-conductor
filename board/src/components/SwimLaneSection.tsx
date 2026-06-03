@@ -56,6 +56,14 @@ export function SwimLaneSection({ loopStep }: { loopStep: BoardStep }) {
             over {loopStep.over}
           </span>
         )}
+        {loopStep.parallel && (
+          <span
+            title="iterations run in parallel"
+            className="rounded border border-cyan/30 bg-cyan/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan"
+          >
+            ∥ parallel
+          </span>
+        )}
         {loop?.currentItem && (
           <span className="ml-auto font-mono text-[11px] text-cyan">▶ {loop.currentItem}</span>
         )}

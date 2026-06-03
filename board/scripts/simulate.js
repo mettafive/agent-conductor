@@ -198,7 +198,14 @@ async function runLoop(step, state, idx) {
   for (let k = 0; k < items.length; k++) {
     const item = items[k];
     entry.current_item = item;
-    beat(entry, `Item ${k + 1}/${items.length}: ${item}.`, { iteration: item });
+    // breathing beat — read prior context, state what to apply (spec §4.3)
+    beat(
+      entry,
+      k === 0
+        ? `${item}: first iteration, no prior finalBeat. Starting fresh.`
+        : `${item}: read ${items[k - 1]}'s finalBeat + open insights. Applying learnings. Starting.`,
+      { iteration: item },
+    );
     write({ ...state });
     for (const sub of subs) {
       const cell = entry.iterations[item][sub.id];
@@ -254,9 +261,10 @@ async function run() {
   // timestamp run id, e.g. 2026-06-03T14-30-00 (matches the archive filename prefix)
   const runId = nowIso().replace(/\.\d+Z$/, "").replace(/:/g, "-");
   const state = {
-    conductor: "1.0.0",
+    conductor: "2.0.0",
     workflow: doc.name || "workflow",
     run_id: runId,
+    _demo: true, // marks simulated data — the board shows a DEMO banner
     started_at: nowIso(),
     status: "running",
     goal: (doc.description || "").trim().replace(/\s+/g, " "),

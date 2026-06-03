@@ -253,6 +253,49 @@ The loop's status records progress across iterations:
 }
 ```
 
+#### Parallel iterations
+
+Iterations are sequential by default (one at a time). Add `parallel: true` to run
+them simultaneously:
+
+    - id: scrape-and-price
+      type: loop
+      over: clinic_list
+      as: clinic
+      parallel: true
+      steps:
+        - id: discover-prices
+          instruction: "Scrape prices for {clinic} via nav and sitemap."
+          gate:
+            - "Price page found via at least one method"
+
+All iterations start together; each iteration's sub-steps still run sequentially
+within it. The board shows multiple swim lanes with cards in Running at once.
+
+#### Loop execution rules
+
+1. Each iteration runs the full sub-step sequence with gates.
+2. A failed gate retries **that iteration only** — the others are untouched.
+3. The loop is `done` when **all** iterations complete.
+4. `parallel: true` runs iterations simultaneously; otherwise one at a time.
+5. `over` must reference a list (from `inputs` or a prior step's `output`).
+6. Loop variables use the same `{name}` template syntax as inputs.
+
+#### Breathing beats — loops that improve themselves
+
+Before each iteration, the agent reads the insights ledger (§9.4), the run's
+`learnings`, and the previous iteration's finalBeat, then writes a **breathing
+heartbeat** stating what it will apply differently:
+
+    { "at": "…", "iteration": "hast",
+      "note": "Read akupunktur's finalBeat + 2 open insights. Applying
+               sitemap-first and the PDF check. Starting." }
+
+After each iteration it writes a finalBeat with a `handoff` for the next
+iteration; every 3–5 iterations it distils durable patterns into `learnings`
+(max 5, replacing weaker ones). This is what makes a loop sharper by its end than
+its start.
+
 ### 4.4 Human approval
 
 A step with `type: approval` pauses the workflow until a human decides on the
