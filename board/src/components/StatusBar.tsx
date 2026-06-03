@@ -119,6 +119,14 @@ export function StatusBar({
         )}
 
         <div className="ml-auto flex items-center gap-5">
+          {model.insightCount > 0 && (
+            <span
+              title="Improvement signals gathered this run"
+              className="flex items-center gap-1 font-mono text-[11px] text-amber"
+            >
+              💡 {model.insightCount} insight{model.insightCount === 1 ? "" : "s"}
+            </span>
+          )}
           {lastBeat && (
             <span className="flex items-center gap-1.5 font-mono text-[11px] text-mist">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan" />

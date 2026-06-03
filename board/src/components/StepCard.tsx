@@ -196,7 +196,14 @@ function HeartbeatLog({
       {entries.length > 0 && (
         <div className="space-y-1.5">
           {[...entries].reverse().map((h, i) => (
-            <div key={i} className="flex gap-2">
+            <div
+              key={i}
+              className={`flex gap-2 ${
+                h.insight
+                  ? "-ml-1.5 rounded-md border-l-2 border-amber/50 bg-amber/[0.05] py-0.5 pl-1.5"
+                  : ""
+              }`}
+            >
               <span className="mt-px shrink-0 font-mono text-[9px] text-line-2">
                 {relativeTime(h.at, now)}
               </span>
@@ -206,7 +213,13 @@ function HeartbeatLog({
                     {h.iteration}
                   </span>
                 )}
+                {h.insight && <span className="mr-1">💡</span>}
                 {renderNote(h.note)}
+                {h.insight && (
+                  <span className="mt-0.5 block text-[10px] italic text-amber/90">
+                    ↳ {h.insight.seed}
+                  </span>
+                )}
               </span>
             </div>
           ))}
@@ -378,7 +391,10 @@ export function StepCard({ step }: { step: BoardStep }) {
           className="mt-2 flex items-start gap-1.5 pl-7 text-[11px] italic leading-snug text-mist"
         >
           <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-cyan" />
-          <span className="truncate">{renderNote(latest.note)}</span>
+          <span className="truncate">
+            {latest.insight && <span className="mr-0.5 not-italic">💡</span>}
+            {renderNote(latest.note)}
+          </span>
         </div>
       )}
 

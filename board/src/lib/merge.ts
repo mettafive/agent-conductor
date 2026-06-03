@@ -28,7 +28,12 @@ interface RawStepStatus {
   current_item?: string;
   iterations?: Record<string, Record<string, RawStepStatus>>;
   // heartbeats
-  heartbeat?: Array<{ at?: string; note?: string; iteration?: string }>;
+  heartbeat?: Array<{
+    at?: string;
+    note?: string;
+    iteration?: string;
+    insight?: { type?: string; seed?: string; step?: string; confidence?: string };
+  }>;
   learnings?: string[];
 }
 
@@ -36,7 +41,20 @@ function buildHeartbeat(st: RawStepStatus) {
   return Array.isArray(st.heartbeat)
     ? st.heartbeat
         .filter((h) => h && typeof h.at === "string" && typeof h.note === "string")
-        .map((h) => ({ at: h.at as string, note: h.note as string, iteration: h.iteration }))
+        .map((h) => ({
+          at: h.at as string,
+          note: h.note as string,
+          iteration: h.iteration,
+          insight:
+            h.insight && typeof h.insight.type === "string"
+              ? {
+                  type: h.insight.type,
+                  seed: h.insight.seed ?? "",
+                  step: h.insight.step,
+                  confidence: h.insight.confidence,
+                }
+              : undefined,
+        }))
     : [];
 }
 
@@ -160,6 +178,13 @@ export function buildModel(snap: Snapshot): BoardModel {
     .flatMap((s) => s.heartbeat.map((h) => h.at))
     .sort()
     .at(-1);
+  const insightCount = steps.reduce(
+    (n, s) => n + s.heartbeat.filter((h) => h.insight).length,
+    0,
+  );
+  const suggestions = Array.isArray(status.suggestions)
+    ? (status.suggestions as BoardModel["suggestions"])
+    : [];
 
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
@@ -167,6 +192,8 @@ export function buildModel(snap: Snapshot): BoardModel {
     goal: (status.goal as string | undefined) ?? parsed?.description,
     currentStepGoal: status.current_step_goal as string | undefined,
     lastBeatAt,
+    insightCount,
+    suggestions,
     runId: status.run_id as string | undefined,
     startedAt: status.started_at as string | undefined,
     endedAt: status.completed_at as string | undefined,

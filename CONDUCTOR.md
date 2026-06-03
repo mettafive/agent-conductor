@@ -39,6 +39,14 @@ step's gate **and** the workflow's `goal`. Use `[text](url)` links for any PR or
 page you produce — the board renders them clickable. After each loop iteration,
 distill durable patterns into the step's `learnings` (max 5).
 
+When a beat captures something that would improve the workflow for future runs (a
+drift you corrected, a faster path, a too-strict gate, a missing instruction), tag
+it with an `insight` object — `{ type, seed, step, confidence }`. After the last
+step, **before** writing `status: "done"`, synthesize the run's insights, learnings,
+and timing into 3–5 `suggestions` in `status.json` (see
+[spec §9](./spec/conductor-spec.md#9-insights--optimization)). The board lets the
+user apply them back to the conductor.
+
 See the **[Heartbeat Guide](./spec/heartbeat-guide.md)** for how to write good ones.
 
 ## Gate commands & CommonJS

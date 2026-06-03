@@ -88,10 +88,39 @@ When a better learning emerges and you're at the cap, replace the weakest one.
 - Don't spam — a beat every few seconds with no new information is noise. One
   *informative* beat per minute beats ten empty ones.
 
+## Insights: the heartbeat doing double duty
+
+A heartbeat isn't only for the current run — it's also how the workflow improves.
+When a beat captures something that would make the *workflow itself* better next
+time, tag it with an `insight`:
+
+```json
+{
+  "at": "…",
+  "note": "Spent 3min in the blog — drift. No pricing in editorial content.",
+  "insight": { "type": "drift", "seed": "Skip blog/news/article links", "step": "scrape-and-price", "confidence": "high" }
+}
+```
+
+Tag an insight when you: correct a drift, find a faster path (`shortcut`), hit a
+gate that was too strict or too loose (`gate_issue`), notice a missing instruction
+(`missing_instruction`), spot a `timing` cost, or recognize a recurring
+`error_pattern`. Not every beat has one — only the ones carrying a real signal.
+
+## The improvement cycle
+
+After the last step, **before** writing `status: "done"`, read back the run's
+insight-tagged beats, learnings, gate retries, and timing, and synthesize 3–5
+concrete `suggestions` (see [spec §9](./conductor-spec.md#9-insights--optimization)).
+The board shows them; the user applies the good ones; the conductor on disk gets
+better. Next run, you read the improved conductor and the prior learnings — and the
+insights that remain are sharper. Over time the workflow polishes itself.
+
 ## Why it matters
 
 The heartbeat array is append-only, so it's also the **audit trail**. Long after a
 run finishes, anyone can open the board's history, expand a step, and read exactly
-what the agent was thinking minute by minute — including the links it produced and
-the lessons it learned. That's the difference between "it said it was done" and a
-reviewable record of how it got there.
+what the agent was thinking minute by minute — including the links it produced, the
+lessons it learned, and the insights that improved the workflow. That's the
+difference between "it said it was done" and a reviewable record of how it got
+there — and how it got better.

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { EMPTY, useBoardState } from "./lib/useBoardState";
 import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
@@ -6,6 +7,7 @@ import { isMuted, playFailure, playSuccess, setMuted } from "./lib/sounds";
 import { StatusBar } from "./components/StatusBar";
 import { Board } from "./components/Board";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
+import { OptimizationPanel } from "./components/OptimizationPanel";
 import type { BoardModel, RunRecord, Snapshot } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
@@ -81,6 +83,44 @@ export function App() {
   const togglePin = (name: string) =>
     setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
 
+  // post-run optimization panel (slides in ~1.5s after a run reaches done)
+  const [optimizeRunId, setOptimizeRunId] = useState<string | null>(null);
+  const dismissedRuns = useRef<Set<string>>(new Set());
+  const liveRunId = (liveSnap.status as { run_id?: string } | null)?.run_id;
+  useEffect(() => {
+    if (
+      selectedRun === null &&
+      liveModel.overallStatus === "done" &&
+      liveModel.suggestions.length > 0 &&
+      liveRunId &&
+      !dismissedRuns.current.has(`${activeWf}:${liveRunId}`)
+    ) {
+      const t = setTimeout(() => setOptimizeRunId(liveRunId), 1500);
+      return () => clearTimeout(t);
+    }
+    setOptimizeRunId(null);
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveModel.overallStatus, liveModel.suggestions.length, liveRunId, activeWf]);
+
+  const applySuggestions = async (ids: string[]) => {
+    if (!activeWf) return { ok: false, error: "no active workflow" };
+    try {
+      const r = await fetch(
+        `/api/workflow/${encodeURIComponent(activeWf)}/apply-suggestion`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ suggestions: ids }),
+        },
+      );
+      const d = await r.json().catch(() => ({}));
+      return r.ok ? { ok: true } : { ok: false, error: d.error };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  };
+
   const viewing = selectedRun !== null;
   const model: BoardModel | null = viewing
     ? record
@@ -146,7 +186,7 @@ export function App() {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {viewing && !record ? (
               <div className="grid h-full place-items-center">
                 <span className="font-mono text-xs text-mist">loading run…</span>
@@ -156,6 +196,20 @@ export function App() {
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
             )}
+
+            <AnimatePresence>
+              {optimizeRunId && activeWf && (
+                <OptimizationPanel
+                  workflow={activeWf}
+                  suggestions={liveModel.suggestions}
+                  onApply={applySuggestions}
+                  onClose={() => {
+                    if (liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
+                    setOptimizeRunId(null);
+                  }}
+                />
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>

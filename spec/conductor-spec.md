@@ -367,8 +367,9 @@ board watches.
 | `attempt`      | integer ≥ 1                             | Increments on every retry.                     |
 | `branch_taken` | step id                                 | Only on `condition` steps.                     |
 | `output`       | any                                     | Only when the step declared `output`.          |
-| `heartbeat`    | array of `{at, note}`                   | Append-only self-regulation log. `note` supports markdown links. See §6.5. |
+| `heartbeat`    | array of `{at, note, insight?}`          | Append-only self-regulation log. `note` supports markdown links; `insight` flags an improvement signal. See §6.5, §9. |
 | `learnings`    | array of strings (max 5)                | Patterns distilled from the heartbeats. See §6.5. |
+| `suggestions` (top) | array                              | Post-run optimization suggestions the agent writes before `done`. See §9. |
 
 ### 6.3 Optional per-criterion detail
 
@@ -488,7 +489,80 @@ header so the human always sees the destination.
 
 ---
 
-## 9. Minimal valid conductor
+## 9. Insights & optimization
+
+A conductor improves by being run. The same heartbeat that self-regulates a run
+also captures *how the workflow itself could be better* — and after the run, those
+signals become concrete suggestions the user can apply back to the conductor.
+
+### 9.1 Insight-tagged heartbeats
+
+When the agent recognizes a pattern that would improve the workflow for future runs
+— a drift it corrected, a faster strategy, a gate that's too strict or too loose, a
+missing instruction — it tags that heartbeat with an `insight` object:
+
+```json
+{
+  "at": "2026-06-03T15:52:00Z",
+  "note": "Spent 3min in the blog — drift. No pricing in editorial content.",
+  "insight": {
+    "type": "drift",
+    "seed": "Add anti-drift instruction: skip blog/news/article links",
+    "step": "scrape-and-price",
+    "confidence": "high"
+  }
+}
+```
+
+`insight` is optional — only on the beats that carry a real signal.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `insight.type` | string | `drift`, `shortcut`, `gate_issue`, `missing_instruction`, `timing`, `error_pattern` |
+| `insight.seed` | string | One-line description of the potential improvement |
+| `insight.step` | string | Which step the insight applies to |
+| `insight.confidence` | string | `high`, `medium`, `low` |
+
+### 9.2 Post-run suggestions
+
+After all steps complete and **before** setting the top-level status to `done`, the
+agent reviews the run's insight-tagged heartbeats, learnings, gate-retry counts, and
+timing, then writes 3–5 concrete suggestions to the status file's `suggestions`
+array:
+
+```json
+"suggestions": [
+  {
+    "id": "s1",
+    "type": "instruction",
+    "step": "scrape-and-price",
+    "title": "Try sitemap before navigation",
+    "rationale": "Heartbeats show sitemap found pricing faster in 4/5 clinics.",
+    "source_heartbeat": "2026-06-03T15:51:30Z",
+    "current": "Navigation first, then Sitemap.",
+    "proposed": "Sitemap first (faster), then Navigation.",
+    "impact": "~10 min saved per 5-clinic batch",
+    "confidence": "high"
+  }
+]
+```
+
+Each suggestion has: `id`, `type`, `step`, `title`, `rationale`, `source_heartbeat`,
+`current` (when modifying existing text), `proposed`, `impact`, `confidence`.
+Suggestion types: `instruction`, `gate`, `new_gate`, `new_step`, `remove_step`,
+`reorder`.
+
+### 9.3 The improvement cycle
+
+The board presents the suggestions when a run finishes. The user selects which to
+apply; applied suggestions mutate the conductor YAML on disk (with a backup and a
+re-validation). The next run starts from the improved workflow. Over many runs, the
+workflow is refined by its own execution history — suggestions become rare, gates
+pass first try, the skill is polished by having been run.
+
+---
+
+## 10. Minimal valid conductor
 
 ```yaml
 conductor: 1.0.0

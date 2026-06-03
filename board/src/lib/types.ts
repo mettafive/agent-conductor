@@ -55,10 +55,32 @@ export interface LoopState {
   iterations: LoopIteration[];
 }
 
+export interface Insight {
+  type: string;
+  seed: string;
+  step?: string;
+  confidence?: string;
+}
+
 export interface HeartbeatEntry {
   at: string;
   note: string;
   iteration?: string;
+  insight?: Insight;
+}
+
+export interface Suggestion {
+  id: string;
+  type: string;
+  step?: string;
+  title: string;
+  rationale?: string;
+  source_heartbeat?: string;
+  current?: string;
+  proposed?: string;
+  impact?: string;
+  confidence?: string;
+  source?: string; // "user" for user-authored
 }
 
 export interface BoardStep extends ConductorStep {
@@ -80,6 +102,8 @@ export interface BoardModel {
   goal?: string;
   currentStepGoal?: string;
   lastBeatAt?: string;
+  insightCount: number;
+  suggestions: Suggestion[];
   runId?: string;
   startedAt?: string;
   endedAt?: string;

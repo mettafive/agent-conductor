@@ -13,6 +13,60 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
+import { validateConductor } from "../cli/validate.js";
+
+const readBody = (req) =>
+  new Promise((resolve) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => resolve(data));
+  });
+
+/** Apply optimization suggestions to a parsed conductor doc (in place). */
+function applyMutations(doc, suggestions) {
+  doc.steps = Array.isArray(doc.steps) ? doc.steps : [];
+  const byId = new Map(doc.steps.map((s) => [s.id, s]));
+  for (const sug of suggestions) {
+    const step = sug.step ? byId.get(sug.step) : null;
+    switch (sug.type) {
+      case "instruction":
+        if (step) {
+          if (sug.current && typeof step.instruction === "string" && step.instruction.includes(sug.current)) {
+            step.instruction = step.instruction.replace(sug.current, sug.proposed ?? "");
+          } else if (sug.proposed) {
+            step.instruction = sug.proposed;
+          }
+        }
+        break;
+      case "gate":
+        if (step && Array.isArray(step.gate)) {
+          const i = step.gate.findIndex((g) => g === sug.current);
+          if (i >= 0 && sug.proposed != null) step.gate[i] = sug.proposed;
+          else if (sug.proposed != null) step.gate.push(sug.proposed);
+        }
+        break;
+      case "new_gate":
+        if (step && sug.proposed != null) {
+          step.gate = Array.isArray(step.gate) ? step.gate : [];
+          step.gate.push(sug.proposed);
+        }
+        break;
+      case "new_step":
+        doc.steps.push({
+          id: sug.step || `step-${doc.steps.length + 1}`,
+          instruction: sug.proposed || "TODO",
+          gate: ["TODO: add a gate criterion"],
+        });
+        break;
+      case "remove_step":
+        if (sug.step) doc.steps = doc.steps.filter((s) => s.id !== sug.step);
+        break;
+      // `reorder` is not auto-applied in v1
+    }
+  }
+  return doc;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, "..", "dist");
@@ -388,6 +442,71 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     }
 
     let m;
+
+    // apply optimization suggestions back to the conductor (mutate + backup + re-validate)
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/apply-suggestion$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      readBody(req).then((bodyStr) => {
+        let ids;
+        try {
+          ids = JSON.parse(bodyStr || "{}").suggestions;
+        } catch {
+          return json(res, 400, { error: "invalid request body" });
+        }
+        if (!Array.isArray(ids)) return json(res, 400, { error: "suggestions must be an array" });
+        if (!wf.conductorPath || !fs.existsSync(wf.conductorPath))
+          return json(res, 400, { error: "no conductor file for this workflow" });
+
+        let status;
+        try {
+          status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+        } catch {
+          return json(res, 500, { error: "could not read status.json" });
+        }
+        const chosen = (status.suggestions || []).filter((s) => ids.includes(s.id));
+        if (chosen.length === 0) return json(res, 400, { error: "no matching suggestions" });
+
+        const original = fs.readFileSync(wf.conductorPath, "utf8");
+        const backup = `${wf.conductorPath}.bak.${new Date().toISOString().replace(/[:.]/g, "-")}`;
+        try {
+          fs.writeFileSync(backup, original);
+        } catch {
+          /* backup best-effort */
+        }
+
+        let doc;
+        try {
+          doc = yaml.load(original);
+        } catch (e) {
+          return json(res, 500, { error: `conductor parse error: ${e.message}` });
+        }
+        applyMutations(doc, chosen);
+
+        const errors = validateConductor(doc);
+        if (errors.length) {
+          // leave the original conductor untouched (we never wrote it)
+          return json(res, 422, { error: `would be invalid: ${errors[0]}`, errors });
+        }
+        try {
+          fs.writeFileSync(wf.conductorPath, yaml.dump(doc, { lineWidth: 100 }));
+        } catch (e) {
+          try {
+            fs.writeFileSync(wf.conductorPath, original); // rollback
+          } catch {
+            /* ignore */
+          }
+          return json(res, 500, { error: `write failed, rolled back: ${e.message}` });
+        }
+        return json(res, 200, {
+          ok: true,
+          applied: chosen.map((s) => s.id),
+          backup: path.basename(backup),
+        });
+      });
+      return;
+    }
+
     if ((m = url.match(/^\/api\/workflow\/([^/]+)\/state$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       return wf ? json(res, 200, snapshotFor(wf)) : json(res, 404, { error: "not found" });
