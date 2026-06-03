@@ -1,0 +1,35 @@
+{
+  "name": "agent-conductor",
+  "version": "0.1.0",
+  "description": "A portable spec and live local Kanban board for orchestrating AI agent workflows with gated steps.",
+  "license": "MIT",
+  "author": "mettafive",
+  "homepage": "https://mettafive.github.io/agent-conductor",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mettafive/agent-conductor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mettafive/agent-conductor/issues"
+  },
+  "keywords": [
+    "agent",
+    "ai",
+    "workflow",
+    "orchestration",
+    "kanban",
+    "spec",
+    "claude",
+    "gated-steps",
+    "conductor"
+  ],
+  "private": true,
+  "workspaces": [
+    "docs"
+  ],
+  "scripts": {
+    "docs:dev": "npm run dev --workspace docs",
+    "docs:build": "npm run build --workspace docs",
+    "docs:preview": "npm run preview --workspace docs"
+  }
+}
