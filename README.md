@@ -88,7 +88,7 @@ validate every gate before advancing, and retry — never skip — on failure.
 Watch it run:
 
 ```bash
-npx agent-conductor      # local Kanban board on http://localhost:3000
+npx agent-conductor      # local Kanban board on http://localhost:3042
 ```
 
 The board watches `.conductor/status.json` and updates automatically as the agent

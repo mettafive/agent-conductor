@@ -26,7 +26,7 @@ if (flag(["--help", "-h"], false)) {
   Options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
     --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
-    --port <n>               Port to serve on        (default: 3000)
+    --port <n>               Port to serve on        (default: 3042)
     --no-open                Don't open the browser
     --help, -h               Show this help
 
@@ -40,7 +40,7 @@ if (flag(["--help", "-h"], false)) {
 const statusPath = String(flag(["--path", "-p"], ".conductor/status.json"));
 const conductorArg = flag(["--conductor", "-c"], null);
 const conductorPath = conductorArg ? path.resolve(process.cwd(), String(conductorArg)) : null;
-const wantedPort = Number(flag(["--port"], 3000)) || 3000;
+const wantedPort = Number(flag(["--port"], 3042)) || 3042;
 const noOpen = flag(["--no-open"], false) === true;
 
 function openBrowser(url) {

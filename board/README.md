@@ -10,7 +10,7 @@ npx agent-conductor
 
 ```
 🎼 agent-conductor
-Board live at http://localhost:3000 — watching .conductor/status.json
+Board live at http://localhost:3042 — watching .conductor/status.json
 ```
 
 ## What it does
@@ -29,7 +29,7 @@ Board live at http://localhost:3000 — watching .conductor/status.json
 | --- | --- | --- |
 | `--path`, `-p` | `.conductor/status.json` | Path to the status file |
 | `--conductor`, `-c` | auto-discovered | Path to the conductor `.yaml` |
-| `--port` | `3000` | Port to serve on (walks forward if taken) |
+| `--port` | `3042` | Port to serve on (walks forward if taken) |
 | `--no-open` | — | Don't open the browser |
 | `--help`, `-h` | — | Show help |
 
