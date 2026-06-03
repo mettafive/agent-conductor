@@ -14,6 +14,11 @@ interface RawStep {
   over?: string;
   as?: string;
   steps?: RawStep[];
+  approval?: {
+    prompt?: string;
+    items?: string[];
+    actions?: { approve?: string; reject?: string };
+  };
 }
 
 function splitGates(gate: unknown[] | undefined): { soft: string[]; hard: HardGate[] } {
@@ -45,6 +50,7 @@ function toStep(s: RawStep, index: number): ConductorStep {
   const instruction = (s.instruction ?? "").trim();
   const { soft, hard } = splitGates(s.gate);
   const isLoop = s.type === "loop";
+  const isApproval = s.type === "approval";
   return {
     id: s.id,
     index,
@@ -65,6 +71,15 @@ function toStep(s: RawStep, index: number): ConductorStep {
       isLoop && Array.isArray(s.steps)
         ? s.steps.filter((x) => x && x.id).map((x, i) => toStep(x, i))
         : undefined,
+    isApproval,
+    approval: isApproval
+      ? {
+          prompt: s.approval?.prompt,
+          items: Array.isArray(s.approval?.items) ? s.approval!.items : undefined,
+          approve: s.approval?.actions?.approve,
+          reject: s.approval?.actions?.reject,
+        }
+      : undefined,
   };
 }
 

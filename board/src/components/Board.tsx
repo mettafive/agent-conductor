@@ -1,15 +1,18 @@
 import { LayoutGroup } from "framer-motion";
 import type { BoardModel, Column as Col } from "../lib/types";
 import { Column } from "./Column";
+import type { Decision } from "./ApprovalCard";
 
 const MAIN: Col[] = ["pending", "running", "gate", "done"];
 
 export function Board({
   model,
   onOpenLoop,
+  onApprove,
 }: {
   model: BoardModel;
   onOpenLoop?: (id: string) => void;
+  onApprove?: (stepId: string, decisions: Decision[]) => Promise<{ ok: boolean }> | void;
 }) {
   const byCol = (c: Col) => model.steps.filter((s) => s.column === c);
   const failed = byCol("failed");
@@ -25,10 +28,10 @@ export function Board({
           } sm:grid-cols-2`}
         >
           {MAIN.map((c) => (
-            <Column key={c} col={c} steps={byCol(c)} onOpenLoop={onOpenLoop} />
+            <Column key={c} col={c} steps={byCol(c)} onOpenLoop={onOpenLoop} onApprove={onApprove} />
           ))}
           {failed.length > 0 && (
-            <Column col="failed" steps={failed} side onOpenLoop={onOpenLoop} />
+            <Column col="failed" steps={failed} side onOpenLoop={onOpenLoop} onApprove={onApprove} />
           )}
         </div>
       </div>

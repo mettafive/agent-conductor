@@ -663,6 +663,57 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       });
       return;
     }
+
+    // human approval — record the decisions into status.json (§4.4)
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/approve$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "not found" });
+      readBody(req).then((bodyStr) => {
+        let body;
+        try {
+          body = JSON.parse(bodyStr || "{}");
+        } catch {
+          return json(res, 400, { error: "invalid request body" });
+        }
+        const stepId = body.step;
+        const decisions = Array.isArray(body.decisions) ? body.decisions : [];
+        let status;
+        try {
+          status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+        } catch {
+          return json(res, 500, { error: "could not read status.json" });
+        }
+        const step = status.steps && status.steps[stepId];
+        if (!step) return json(res, 404, { error: `no such step "${stepId}"` });
+
+        step.approval = step.approval || {};
+        const items = Array.isArray(step.approval.items) ? step.approval.items : [];
+        const byLabel = new Map(items.map((i) => [i.label, i]));
+        for (const d of decisions) {
+          if (!d || !d.label) continue;
+          const dec = d.decision === "approved" ? "approved" : "rejected";
+          if (byLabel.has(d.label)) byLabel.get(d.label).decision = dec;
+          else {
+            const it = { label: d.label, decision: dec };
+            items.push(it);
+            byLabel.set(d.label, it);
+          }
+        }
+        step.approval.items = items;
+        step.approval.decided_at = new Date().toISOString();
+        const anyRejected = items.some((i) => i.decision === "rejected");
+        step.approval.resolution = anyRejected ? "rejected" : "approved";
+        step.gate = anyRejected ? "rejected" : "approved";
+
+        try {
+          fs.writeFileSync(wf.statusPath, JSON.stringify(status, null, 2));
+        } catch (e) {
+          return json(res, 500, { error: `write failed: ${e.message}` });
+        }
+        return json(res, 200, { ok: true, resolution: step.approval.resolution });
+      });
+      return;
+    }
     if ((m = url.match(/^\/api\/workflow\/([^/]+)\/history$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       return wf ? json(res, 200, listHistory(wf.historyDir)) : json(res, 404, { error: "not found" });

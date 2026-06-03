@@ -151,6 +151,24 @@ export function App() {
     }
   };
 
+  // human approval — write the decisions to status.json; the agent routes on them
+  const applyApproval = async (
+    stepId: string,
+    decisions: { label: string; decision: "approved" | "rejected" }[],
+  ) => {
+    if (!activeWf) return { ok: false };
+    try {
+      const r = await fetch(`/api/workflow/${encodeURIComponent(activeWf)}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ step: stepId, decisions }),
+      });
+      return { ok: r.ok };
+    } catch {
+      return { ok: false };
+    }
+  };
+
   const viewing = selectedRun !== null;
   const model: BoardModel | null = viewing
     ? record
@@ -271,7 +289,11 @@ export function App() {
                     transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                     className="h-full"
                   >
-                    <Board model={model} onOpenLoop={setLoopId} />
+                    <Board
+                      model={model}
+                      onOpenLoop={setLoopId}
+                      onApprove={viewing ? undefined : applyApproval}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>

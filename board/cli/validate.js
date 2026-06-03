@@ -46,6 +46,8 @@ function findOrphans(steps, ids) {
   const indexById = new Map(steps.map((s, i) => [s.id, i]));
   const successors = (s, i) => {
     if (s.type === "condition") return [s.if_true, s.if_false].filter(Boolean);
+    if (s.type === "approval")
+      return [s.approval?.actions?.approve, s.approval?.actions?.reject].filter(Boolean);
     if (s.then) return [s.then];
     const next = steps[i + 1];
     return next ? [next.id] : [];
@@ -108,8 +110,23 @@ export function validateConductor(doc) {
     if (!s || !s.id) continue;
     const isCond = s.type === "condition";
     const isLoop = s.type === "loop";
+    const isApproval = s.type === "approval";
 
-    if (!isLoop && !s.instruction) errors.push(`Step "${s.id}" has no instruction`);
+    if (!isLoop && !isApproval && !s.instruction)
+      errors.push(`Step "${s.id}" has no instruction`);
+
+    if (isApproval) {
+      if (!s.approval || typeof s.approval !== "object") {
+        errors.push(`Approval step "${s.id}" is missing the "approval" block`);
+      } else {
+        const approve = s.approval.actions?.approve;
+        const reject = s.approval.actions?.reject;
+        if (approve && !ids.has(approve))
+          errors.push(`Approval "${s.id}" references unknown step "${approve}" in actions.approve`);
+        if (reject && !ids.has(reject))
+          errors.push(`Approval "${s.id}" references unknown step "${reject}" in actions.reject`);
+      }
+    }
 
     for (const g of s.gate ?? []) {
       if (!gateOk(g)) errors.push(`Step "${s.id}" has a malformed gate criterion`);
@@ -178,6 +195,7 @@ export async function runValidate(args) {
     countGates(steps, acc);
     const conditions = steps.filter((s) => s.type === "condition").length;
     const loops = steps.filter((s) => s.type === "loop").length;
+    const approvals = steps.filter((s) => s.type === "approval").length;
     const part = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     console.log(green(`✓ ${path.basename(file)} is valid`));
     console.log(
@@ -186,7 +204,8 @@ export async function runValidate(args) {
           `${part(acc.soft, "soft gate", "soft gates")}, ` +
           `${part(acc.hard, "hard gate", "hard gates")}, ` +
           `${part(conditions, "condition", "conditions")}, ` +
-          `${part(loops, "loop", "loops")}`,
+          `${part(loops, "loop", "loops")}, ` +
+          `${part(approvals, "approval", "approvals")}`,
       ),
     );
     console.log("");

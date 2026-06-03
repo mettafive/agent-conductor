@@ -14,6 +14,24 @@ export interface GateCriterion {
   exitCode?: number;
 }
 
+export interface ApprovalConfig {
+  prompt?: string;
+  items?: string[]; // per-item templates, e.g. "{page} — ready to ship"
+  approve?: string; // target step on approve
+  reject?: string; // target step on reject
+}
+
+export interface ApprovalItem {
+  label: string;
+  decision: "approved" | "rejected" | null;
+}
+
+export interface ApprovalState {
+  prompt?: string;
+  items: ApprovalItem[];
+  decided: boolean;
+}
+
 export interface ConductorStep {
   id: string;
   index: number;
@@ -32,6 +50,9 @@ export interface ConductorStep {
   over?: string;
   as?: string;
   subSteps?: ConductorStep[];
+  // human approval (§4.4)
+  isApproval: boolean;
+  approval?: ApprovalConfig;
 }
 
 export interface IterationStep {
@@ -125,6 +146,7 @@ export interface BoardStep extends ConductorStep {
   output_value?: unknown;
   criteria: GateCriterion[];
   loop?: LoopState;
+  approvalState?: ApprovalState;
   heartbeat: HeartbeatEntry[];
   learnings: string[];
 }

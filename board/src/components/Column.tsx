@@ -1,6 +1,7 @@
 import { AnimatePresence } from "framer-motion";
 import type { BoardStep, Column as Col } from "../lib/types";
 import { StepCard } from "./StepCard";
+import { ApprovalCard, type Decision } from "./ApprovalCard";
 
 const META: Record<Col, { label: string; dot: string; text: string }> = {
   pending: { label: "Pending", dot: "bg-line-2", text: "text-mist" },
@@ -15,11 +16,13 @@ export function Column({
   steps,
   side,
   onOpenLoop,
+  onApprove,
 }: {
   col: Col;
   steps: BoardStep[];
   side?: boolean;
   onOpenLoop?: (id: string) => void;
+  onApprove?: (stepId: string, decisions: Decision[]) => Promise<{ ok: boolean }> | void;
 }) {
   const m = META[col];
   const compact = steps.length >= 6; // tighten spacing when a column gets busy
@@ -48,9 +51,13 @@ export function Column({
         >
           <div className={`flex flex-col ${compact ? "gap-1.5" : "gap-2"}`}>
             <AnimatePresence mode="popLayout" initial={false}>
-              {steps.map((s) => (
-                <StepCard key={s.id} step={s} onOpenLoop={onOpenLoop} />
-              ))}
+              {steps.map((s) =>
+                s.isApproval && onApprove ? (
+                  <ApprovalCard key={s.id} step={s} onDecide={onApprove} />
+                ) : (
+                  <StepCard key={s.id} step={s} onOpenLoop={onOpenLoop} />
+                ),
+              )}
             </AnimatePresence>
           </div>
           {steps.length === 0 && (

@@ -1,5 +1,7 @@
 import { parseConductor } from "./parse";
 import type {
+  ApprovalItem,
+  ApprovalState,
   BoardModel,
   BoardStep,
   Column,
@@ -27,6 +29,11 @@ interface RawStepStatus {
   completed?: number;
   current_item?: string;
   iterations?: Record<string, Record<string, RawStepStatus>>;
+  // approval
+  approval?: {
+    prompt?: string;
+    items?: Array<{ label?: string; decision?: string | null }>;
+  };
   // heartbeats
   heartbeat?: Array<{
     at?: string;
@@ -107,10 +114,27 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
   };
 }
 
+function buildApproval(step: ConductorStep, st: RawStepStatus): ApprovalState | undefined {
+  if (!step.isApproval) return undefined;
+  const fromStatus = st.approval?.items;
+  let items: ApprovalItem[];
+  if (Array.isArray(fromStatus) && fromStatus.length > 0) {
+    items = fromStatus.map((i) => ({
+      label: String(i?.label ?? ""),
+      decision: i?.decision === "approved" || i?.decision === "rejected" ? i.decision : null,
+    }));
+  } else {
+    // materialize from the conductor's item templates (no decisions yet)
+    items = (step.approval?.items ?? []).map((t) => ({ label: t, decision: null }));
+  }
+  const decided = items.length > 0 && items.every((i) => i.decision !== null);
+  return { prompt: st.approval?.prompt ?? step.approval?.prompt, items, decided };
+}
+
 function columnFor(rawStatus: string, gate: string): Column {
   if (rawStatus === "failed" || gate === "failed") return "failed";
   if (rawStatus === "done") return "done";
-  if (gate === "checking") return "gate";
+  if (rawStatus === "awaiting_approval" || gate === "checking") return "gate";
   if (rawStatus === "running") return "running";
   return "pending";
 }
@@ -150,6 +174,8 @@ function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): Conduc
     soft: [],
     hard: [],
     isLoop: statusSteps[id]?.type === "loop",
+    isApproval:
+      !!statusSteps[id]?.approval || statusSteps[id]?.status === "awaiting_approval",
   }));
 }
 
@@ -177,6 +203,7 @@ export function buildModel(snap: Snapshot): BoardModel {
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),
       loop: buildLoop(s, st),
+      approvalState: buildApproval(s, st),
       heartbeat: buildHeartbeat(st),
       learnings: Array.isArray(st.learnings)
         ? st.learnings.filter((x): x is string => typeof x === "string")
