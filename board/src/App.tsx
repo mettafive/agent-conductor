@@ -205,7 +205,7 @@ export function App() {
                 <span className="font-mono text-xs text-mist">loading run…</span>
               </div>
             ) : showBoard && model ? (
-              <Board model={model} />
+              <Board key={`${activeWf ?? "none"}:${selectedRun ?? "live"}`} model={model} />
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
             )}

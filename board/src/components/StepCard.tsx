@@ -162,13 +162,15 @@ const ACCENT: Record<string, string> = {
   pending: "border-line-2",
 };
 
-// Position (layout) moves use a spring; the crossfade is a quick tween so a card
-// sliding between columns reads crisply instead of fighting its own opacity.
+// Position (layout) moves ride a soft spring; the crossfade is a quick eased
+// tween so a card sliding between columns reads crisply, not muddily. Tuned for
+// a calm, premium glide rather than a springy bounce.
+const EASE = [0.22, 1, 0.36, 1] as const; // easeOutQuint-ish
 const MOVE = {
-  layout: { type: "spring", stiffness: 480, damping: 40, mass: 0.9 },
-  opacity: { duration: 0.16 },
-  scale: { duration: 0.16 },
-  default: { duration: 0.16 },
+  layout: { type: "spring", stiffness: 420, damping: 38, mass: 0.85 },
+  opacity: { duration: 0.2, ease: "easeOut" },
+  scale: { duration: 0.22, ease: EASE },
+  default: { duration: 0.2, ease: EASE },
 } as const;
 
 export function StepCard({ step }: { step: BoardStep }) {
@@ -188,9 +190,9 @@ export function StepCard({ step }: { step: BoardStep }) {
     <motion.div
       layout
       layoutId={step.id}
-      initial={{ opacity: 0, scale: 0.92, y: 6 }}
+      initial={{ opacity: 0, scale: 0.96, y: 4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.92 }}
+      exit={{ opacity: 0, scale: 0.96, y: -2 }}
       transition={MOVE}
       onClick={() => expandable && setOpen((o) => !o)}
       className={`rounded-xl border bg-panel px-3 py-2.5 ${ACCENT[step.column]} ${dim} ${

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { Arrival, StreamBeat } from "../lib/heartbeatStream";
 import { plainNote } from "../lib/heartbeat";
 import { AnimatedHeart } from "./AnimatedHeart";
@@ -75,20 +76,28 @@ export function HeartbeatMonitor({ beats, arrival, order, mode, onMode, lastBeat
 
   if (mode === "hidden") {
     return (
-      <button
+      <motion.button
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
         onClick={() => onMode("min")}
         title="Show heartbeat monitor"
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-ink-2/90 px-3 py-2 shadow-lg backdrop-blur transition-colors hover:border-line-2"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={15} />
         <span className="font-mono text-[10px] text-mist">monitor</span>
-      </button>
+      </motion.button>
     );
   }
 
   if (mode === "min") {
     return (
-      <div className="shrink-0 border-t border-line bg-ink-2/80 backdrop-blur">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        className="shrink-0 border-t border-line bg-ink-2/80 backdrop-blur"
+      >
         <button
           onClick={() => onMode("expanded")}
           className="flex w-full items-center gap-2.5 px-4 py-1.5 text-left"
@@ -118,7 +127,7 @@ export function HeartbeatMonitor({ beats, arrival, order, mode, onMode, lastBeat
           )}
           <span className="shrink-0 font-mono text-[10px] text-mist">▲</span>
         </button>
-      </div>
+      </motion.div>
     );
   }
 
@@ -202,7 +211,10 @@ function ExpandedMonitor({
   const FILTERS = ["all", ...order, "insights"];
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
       style={{ height }}
       className="relative flex shrink-0 flex-col border-t border-line bg-[#08080d] font-mono"
     >
@@ -213,29 +225,37 @@ function ExpandedMonitor({
         title="Drag to resize"
       />
 
-      {/* header */}
-      <div className="flex items-center gap-2 border-b border-line/70 px-3 py-1.5">
+      {/* header — click anywhere on the bar to collapse, like the chevron */}
+      <div
+        onClick={() => onMode("min")}
+        title="Click to minimize (Ctrl+`)"
+        className="group/bar flex cursor-pointer items-center gap-2 border-b border-line/70 px-3 py-1.5 transition-colors hover:bg-panel/40"
+      >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={13} />
         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mist-2">
           Heartbeat Monitor
         </span>
         <span className="text-[10px] text-line-2">{beats.length}</span>
-        <div className="ml-auto flex items-center gap-1.5 text-mist">
-          <button
-            onClick={() => onMode("min")}
+        <span className="ml-auto flex items-center gap-1.5 text-mist">
+          <span
+            aria-hidden
             title="Minimize"
-            className="grid h-5 w-5 place-items-center rounded hover:bg-panel hover:text-chalk"
+            className="grid h-5 w-5 place-items-center rounded transition-colors group-hover/bar:text-chalk"
           >
             ▼
-          </button>
+          </span>
           <button
-            onClick={() => onMode("hidden")}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMode("hidden");
+            }}
             title="Hide"
-            className="grid h-5 w-5 place-items-center rounded text-[13px] hover:bg-panel hover:text-chalk"
+            className="grid h-5 w-5 place-items-center rounded text-[13px] transition-colors hover:bg-panel hover:text-chalk"
           >
             ─
           </button>
-        </div>
+        </span>
       </div>
 
       {/* filter pills */}
@@ -300,14 +320,20 @@ function ExpandedMonitor({
         )}
       </div>
 
-      {showJump && (
-        <button
-          onClick={jumpToLatest}
-          className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-cyan/40 bg-ink/90 px-3 py-1 text-[10px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
-        >
-          ↓ Jump to latest
-        </button>
-      )}
-    </div>
+      <AnimatePresence>
+        {showJump && (
+          <motion.button
+            initial={{ opacity: 0, y: 8, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: 8, x: "-50%" }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            onClick={jumpToLatest}
+            className="absolute bottom-3 left-1/2 z-10 rounded-full border border-cyan/40 bg-ink/90 px-3 py-1 text-[10px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
+          >
+            ↓ Jump to latest
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
