@@ -1,0 +1,53 @@
+conductor: 1.0.0
+name: content-page
+description: Build a structured, SEO-ready content page from a topic.
+
+inputs:
+  - topic        # The page subject
+  - keyword      # The primary search keyword to target
+
+steps:
+  - id: research
+    instruction: |
+      Research {topic}. Capture the questions real readers ask and the facts
+      needed to answer them.
+    gate:
+      - "The reader's top 3 questions are identified"
+      - "At least 4 authoritative sources gathered"
+    output: research
+
+  - id: structure
+    instruction: |
+      Plan the page: an H1, a short intro, and H2 sections that answer each of
+      the reader's questions in order of importance.
+    requires: [research]
+    gate:
+      - "Exactly one H1; a logical H2/H3 hierarchy"
+      - "The most important question is answered first"
+    output: outline
+
+  - id: write
+    instruction: |
+      Write the page from the outline. Answer the top question in the first
+      screen. Write for a real reader, not a search engine.
+    requires: [structure]
+    gate:
+      - "The first screen answers the reader's main question"
+      - "No placeholder text remains"
+      - check: "test -f content-page.html"
+
+  - id: validate
+    instruction: |
+      Check the HTML is well-formed and the structure is intact.
+    requires: [write]
+    gate:
+      - name: "HTML validates"
+        check: "npx --yes html-validate content-page.html"
+
+  - id: seo
+    instruction: |
+      Finalize SEO: title tag, meta description, and natural use of {keyword}.
+    requires: [validate]
+    gate:
+      - "Title and meta description present and within length limits"
+      - "{keyword} appears in the title, first paragraph, and one heading"

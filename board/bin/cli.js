@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { startServer } from "../server/server.js";
 
@@ -28,6 +29,7 @@ const HELP = `
     (default)                Serve the live board (watches .conductor/)
     init                     Scaffold a new .conductor/conductor.yaml
     validate [path]          Check a conductor against the spec
+    setup                    Write setup.conductor.yaml (the bootstrap conductor)
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
@@ -63,6 +65,11 @@ if (command === "init") {
 if (command === "validate") {
   const { runValidate } = await import("../cli/validate.js");
   process.exit((await runValidate(rest)) ? 0 : 1);
+}
+
+if (command === "setup") {
+  const { runSetup } = await import("../cli/setup.js");
+  process.exit((await runSetup(rest)) ? 0 : 1);
 }
 
 if (command && command !== "board") {
@@ -110,7 +117,7 @@ const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 const iris = (s) => `\x1b[38;5;141m${s}\x1b[0m`;
 const mint = (s) => `\x1b[38;5;78m${s}\x1b[0m`;
 
-const { conductorPath: resolvedConductor, absStatus, server } =
+const { conductorPath: resolvedConductor, absStatus, server, serverJsonPath } =
   await listenWithFallback(wantedPort);
 const port = server.address().port;
 const url = `http://localhost:${port}`;
@@ -129,7 +136,15 @@ console.log("");
 
 if (!noOpen) openBrowser(url);
 
-process.on("SIGINT", () => {
+function shutdown() {
+  try {
+    if (serverJsonPath) fs.unlinkSync(serverJsonPath);
+  } catch {
+    /* already gone */
+  }
   console.log(dim("\n  board stopped\n"));
   process.exit(0);
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

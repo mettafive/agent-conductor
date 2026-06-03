@@ -1,0 +1,76 @@
+conductor: 1.0.0
+name: conductor-board-bootstrap
+description: Set up the board, convert a skill into a gated workflow, and execute it.
+
+inputs:
+  - skill_content
+
+steps:
+  - id: preflight
+    instruction: |
+      Verify the environment can run conductor-board.
+      Check that Node.js 18+ and npx are available.
+    gate:
+      - name: "Node.js installed"
+        check: "node --version"
+      - name: "npx available"
+        check: "npx --version"
+
+  - id: start-board
+    instruction: |
+      Start the board server in the background:
+        npx conductor-board &
+      Wait ~3 seconds for it to initialize. It auto-detects a free port if 3042
+      is taken and records the chosen port in .conductor/server.json.
+    requires: [preflight]
+    gate:
+      - name: "Server config file exists"
+        check: "test -f .conductor/server.json"
+      - name: "Server responds to health check"
+        check: "curl -sf http://localhost:$(node -p \"require('./.conductor/server.json').port\")/health -o /dev/null"
+
+  - id: read-skill
+    instruction: |
+      Read and analyze the user's skill content:
+
+      {skill_content}
+
+      Break it down into: the discrete sequential steps; decision points where
+      the flow could branch; repeated operations that need loops; and which
+      checks are verifiable by a shell command vs which need judgment.
+      Save your analysis to .conductor/skill-analysis.md.
+    requires: [start-board]
+    gate:
+      - name: "Analysis saved"
+        check: "test -f .conductor/skill-analysis.md"
+
+  - id: convert-to-conductor
+    instruction: |
+      Convert the analysis into a conductor YAML. Follow the format in
+      spec/conductor-spec.md and the examples/ directory. Rules:
+      - every step gets at least one gate criterion
+      - hard gates (check:) for anything verifiable by command; soft gates for judgment
+      - conditions (type: condition) where the flow branches
+      - loops (type: loop) where steps repeat over a list
+      - chain data between steps with output: and requires:
+      Save the conductor to .conductor/conductor.yaml.
+    requires: [read-skill]
+    gate:
+      - name: "Conductor file created"
+        check: "test -f .conductor/conductor.yaml"
+      - name: "Conductor passes validation"
+        check: "npx conductor-board validate .conductor/conductor.yaml"
+
+  - id: execute-workflow
+    instruction: |
+      Execute the generated conductor workflow.
+      Create .conductor/status.json with all steps pending and a timestamp run_id.
+      Walk each step in order, updating status.json after every step and gate
+      change. Retry on gate failure — never skip. Set the top-level status to
+      "done" when the last step completes.
+    requires: [convert-to-conductor]
+    gate:
+      - name: "Status file exists"
+        check: "test -f .conductor/status.json"
+      - name: "Workflow completed successfully"
+        check: "node -p \"JSON.parse(require('fs').readFileSync('.conductor/status.json','utf8')).status\" | grep done"

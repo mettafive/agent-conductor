@@ -15,6 +15,10 @@ must pass its gate before the next one unlocks.
 
 </div>
 
+> **🤖 Agent?** Skip the docs. Read [`setup.conductor.yaml`](./setup.conductor.yaml)
+> and execute it — it verifies the environment, starts the board, converts the
+> user's skill into a gated workflow, validates it, and runs it.
+
 ---
 
 ## What it is

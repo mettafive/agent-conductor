@@ -14,9 +14,13 @@ npm-debug.log*
 .idea/
 .vscode/
 
-# conductor runtime state (any depth)
+# conductor runtime state (any depth) — but NOT conductor.yaml, which users commit
 .conductor/status.json
 **/.conductor/status.json
+.conductor/server.json
+**/.conductor/server.json
+.conductor/skill-analysis.md
+**/.conductor/skill-analysis.md
 .conductor/history/
 **/.conductor/history/
 

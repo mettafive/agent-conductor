@@ -17,6 +17,15 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, "..", "dist");
 
+let VERSION = "0.0.0";
+try {
+  VERSION = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8"),
+  ).version;
+} catch {
+  /* version is best-effort */
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -245,6 +254,19 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
   const server = http.createServer((req, res) => {
     const url = (req.url || "/").split("?")[0];
 
+    if (url === "/health") {
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          version: VERSION,
+          watching: path.relative(process.cwd(), absStatus) || absStatus,
+          port: server.address()?.port ?? null,
+        }),
+      );
+      return;
+    }
+
     if (url === "/api/state") {
       if (!conductorPath) conductorPath = discoverConductor(absStatus, explicitConductor);
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
@@ -296,7 +318,32 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     serveStatic(req, res);
   });
 
+  // .conductor/server.json — the source of truth for which port we landed on,
+  // so a setup conductor's health check never has to hardcode a port.
+  const serverJsonPath = path.join(watchDir, "server.json");
+
   return new Promise((resolve) => {
-    server.listen(port, () => resolve({ server, conductorPath, absStatus }));
+    server.listen(port, () => {
+      const actualPort = server.address().port;
+      try {
+        fs.mkdirSync(watchDir, { recursive: true });
+        fs.writeFileSync(
+          serverJsonPath,
+          JSON.stringify(
+            {
+              port: actualPort,
+              url: `http://localhost:${actualPort}`,
+              pid: process.pid,
+              started_at: new Date().toISOString(),
+            },
+            null,
+            2,
+          ),
+        );
+      } catch (e) {
+        console.warn(`[conductor-board] could not write server.json: ${e.message}`);
+      }
+      resolve({ server, conductorPath, absStatus, serverJsonPath });
+    });
   });
 }
