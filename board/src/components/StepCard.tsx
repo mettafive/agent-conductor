@@ -77,6 +77,17 @@ function CriterionRow({ c }: { c: GateCriterion }) {
       <span className={`rounded border px-1 py-px font-mono text-[9px] ${c.kind === "hard" ? "border-mint/25 text-mint" : "border-line-2 text-mist"}`}>
         {c.kind}
       </span>
+      {c.verified ? (
+        <span title="verified — the gate-runner ran this check" className="text-[10px] text-mint">
+          🔒
+        </span>
+      ) : (
+        c.passed === true && (
+          <span title="attested — self-reported by the agent" className="text-[10px] text-amber/80">
+            ✋
+          </span>
+        )
+      )}
       <span className="flex-1 font-mono text-[11px] leading-snug text-mist-2">
         {c.kind === "hard" && c.name ? c.name : c.text}
         {c.kind === "hard" && typeof c.exitCode === "number" && (

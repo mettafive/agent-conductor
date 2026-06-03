@@ -12,6 +12,8 @@ export interface GateCriterion {
   /** filled from status.gate_detail when available */
   passed?: boolean | null;
   exitCode?: number;
+  /** true when the gate-runner (conductor-board complete) actually ran the check */
+  verified?: boolean;
 }
 
 export interface ApprovalConfig {

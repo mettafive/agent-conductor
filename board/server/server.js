@@ -200,6 +200,22 @@ function archiveIfDone(historyDir, snapshot, archived) {
   const status = snapshot.status;
   if (!status || (status.status !== "done" && status.status !== "failed")) return null;
 
+  // Mandatory suggestions: a successful run must capture what it learned before
+  // it's saved to history. A done run with no suggestions doesn't archive (the
+  // loop has to feed itself) — failed runs are exempt.
+  if (status.status === "done") {
+    const sug = status.suggestions;
+    if (!Array.isArray(sug) || sug.length === 0) {
+      if (!status._noSuggestionsWarned) {
+        console.warn(
+          `[conductor-board] "${status.workflow || "workflow"}" is done but has no suggestions — not archiving until it captures 3–5. (spec §9.2)`,
+        );
+        status._noSuggestionsWarned = true;
+      }
+      return null;
+    }
+  }
+
   const runId =
     status.run_id ||
     (status.started_at ? safeId(status.started_at).replace(/-\d+Z$/, "") : null);

@@ -22,6 +22,7 @@ interface RawStepStatus {
     kind?: string;
     passed?: boolean;
     exit_code?: number;
+    verified?: boolean;
   }>;
   // loops
   type?: string;
@@ -157,6 +158,7 @@ function buildCriteria(step: ConductorStep, detail: RawStepStatus["gate_detail"]
       name: h.name,
       passed: d ? !!d.passed : null,
       exitCode: d?.exit_code,
+      verified: d?.verified === true,
     });
   }
   return out;
