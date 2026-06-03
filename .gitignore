@@ -29,3 +29,6 @@ npm-debug.log*
 
 # npm pack artifacts
 *.tgz
+
+# dogfood run dir for the Phase 5 build
+.phase5/

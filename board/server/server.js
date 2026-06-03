@@ -322,8 +322,16 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
   // so a setup conductor's health check never has to hardcode a port.
   const serverJsonPath = path.join(watchDir, "server.json");
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // Reject on listen errors (e.g. EADDRINUSE) so the CLI can walk to the next
+    // port instead of crashing on an unhandled 'error' event.
+    const onError = (e) => {
+      server.off("error", onError);
+      reject(e);
+    };
+    server.once("error", onError);
     server.listen(port, () => {
+      server.off("error", onError);
       const actualPort = server.address().port;
       try {
         fs.mkdirSync(watchDir, { recursive: true });

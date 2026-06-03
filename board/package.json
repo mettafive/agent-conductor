@@ -6,7 +6,8 @@
   "author": "mettafive",
   "type": "module",
   "bin": {
-    "conductor-board": "bin/cli.js"
+    "conductor-board": "bin/cli.js",
+    "3042": "bin/cli.js"
   },
   "files": [
     "bin",

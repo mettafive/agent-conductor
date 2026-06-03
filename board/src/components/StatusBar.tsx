@@ -47,11 +47,21 @@ interface Props {
   model: BoardModel;
   conn: Conn;
   viewing: boolean;
+  muted: boolean;
+  onToggleMute: () => void;
   onBackToLive: () => void;
   onToggleSidebar: () => void;
 }
 
-export function StatusBar({ model, conn, viewing, onBackToLive, onToggleSidebar }: Props) {
+export function StatusBar({
+  model,
+  conn,
+  viewing,
+  muted,
+  onToggleMute,
+  onBackToLive,
+  onToggleSidebar,
+}: Props) {
   const running = !viewing && model.overallStatus === "running";
   const duration = useDuration(model.startedAt, model.endedAt, running);
   const now = useNow(1000);
@@ -139,6 +149,24 @@ export function StatusBar({ model, conn, viewing, onBackToLive, onToggleSidebar 
               {model.done}/{model.total}
             </span>
           </div>
+
+          <button
+            onClick={onToggleMute}
+            title={muted ? "Unmute completion sounds" : "Mute completion sounds"}
+            className="grid h-7 w-7 place-items-center rounded-md border border-line text-mist transition-colors hover:border-line-2 hover:text-chalk"
+          >
+            {muted ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                <path d="m23 9-6 6M17 9l6 6" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+              </svg>
+            )}
+          </button>
 
           {viewing ? (
             <span className="flex items-center gap-1.5 font-mono text-[11px] text-amber">

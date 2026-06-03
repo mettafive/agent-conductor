@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useBoardState } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
+import { isMuted, playFailure, playSuccess, setMuted } from "./lib/sounds";
 import { StatusBar } from "./components/StatusBar";
 import { Board } from "./components/Board";
 import { HistorySidebar } from "./components/HistorySidebar";
@@ -13,6 +14,19 @@ export function App() {
   );
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [muted, setMutedState] = useState(isMuted());
+
+  // completion chime — only on a real status transition, never on load/reconnect
+  const prevStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const s = liveModel.overallStatus;
+    const prev = prevStatus.current;
+    if (prev !== null && prev !== s) {
+      if (s === "done") playSuccess();
+      else if (s === "failed") playFailure();
+    }
+    prevStatus.current = s;
+  }, [liveModel.overallStatus]);
 
   // keep the URL in sync so a run is shareable / reloadable
   useEffect(() => {
@@ -74,6 +88,12 @@ export function App() {
             model={model ?? liveModel}
             conn={conn}
             viewing={viewing}
+            muted={muted}
+            onToggleMute={() => {
+              const next = !muted;
+              setMuted(next);
+              setMutedState(next);
+            }}
             onBackToLive={() => setSelected(null)}
             onToggleSidebar={() => setSidebarOpen((o) => !o)}
           />
