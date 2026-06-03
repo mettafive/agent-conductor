@@ -1,6 +1,9 @@
 # The Conductor Spec
 
-**Version `1.1.0`** · adds [loops](#43-loops) (`type: loop`)
+**Version `2.0.0`** · adds human approval (`type: approval`, §4.4), the board-sync
+pre-check (§8.1), the finalBeat handoff convention (§6.5), and a persistent
+insights ledger (§9.4). Backwards-compatible with 1.x conductors — the new
+features are additive. (1.1.0 added [loops](#43-loops).)
 
 A conductor is a single YAML file that turns a loose pile of instructions into a
 **gated workflow**. Each step must pass its gate before the next one unlocks. The
@@ -250,6 +253,49 @@ The loop's status records progress across iterations:
 }
 ```
 
+### 4.4 Human approval
+
+A step with `type: approval` pauses the workflow until a human decides on the
+board. It's a gate a person clears, not a check a command clears.
+
+```yaml
+- id: approve-batch
+  type: approval
+  instruction: Review the 5 polished pages before shipping.
+  requires: [polish-and-ship]
+  approval:
+    prompt: "Ship these pages to production?"
+    items:                       # optional — per-item approval for batches
+      - "{page} — ready to ship"
+    actions:
+      approve: ship-pages        # step to route to on approve
+      reject: revise-pages       # step to route to on reject
+```
+
+The agent marks the step `awaiting_approval` (gate `pending_human`) and pauses.
+The board renders an approval card — the prompt, a checkbox per `item`, and
+Approve / Reject buttons. When the human decides, the board writes the decisions
+into `status.json`:
+
+```json
+"approve-batch": {
+  "status": "awaiting_approval",
+  "gate": "pending_human",
+  "approval": {
+    "prompt": "Ship these pages to production?",
+    "items": [
+      { "label": "akupunktur — ready to ship", "decision": "approved" },
+      { "label": "hund — ready to ship",       "decision": "rejected" }
+    ],
+    "resolution": "rejected"
+  }
+}
+```
+
+The agent detects the decisions and routes to `actions.approve` (all approved) or
+`actions.reject` (any rejected). With per-item `items`, approved items advance and
+rejected ones go to the reject step. Without `items`, it's a single yes/no.
+
 ---
 
 ## 5. Inputs & output passing
@@ -362,8 +408,9 @@ board watches.
 | `current_step` | step id                                 | The step in flight.                            |
 | `current_step_goal` (top) | string                       | One-line summary of the current step's purpose (instruction + gate). Updated on each step transition. |
 | `completed_at` (top) | ISO-8601                          | Set when the workflow reaches `done` or `failed`. |
-| `status`       | `pending` `running` `done` `failed`     | Per-step lifecycle.                            |
-| `gate`         | `pending` `checking` `passed` `failed`  | Gate result. `checking` is transient — set while the gate is being evaluated (drives the board's Gate Check column). |
+| `status`       | `pending` `running` `done` `failed` `awaiting_approval` | Per-step lifecycle. `awaiting_approval` is set by an `approval` step while it waits for a human (§4.4). |
+| `gate`         | `pending` `checking` `passed` `failed` `pending_human` | Gate result. `checking` is transient (drives the Gate Check column); `pending_human` marks an approval step awaiting a person. |
+| `approval`     | object                                  | On `approval` steps — `{ prompt, items: [{label, decision}], resolution }`. The board writes the human's decisions here. See §4.4. |
 | `attempt`      | integer ≥ 1                             | Increments on every retry.                     |
 | `branch_taken` | step id                                 | Only on `condition` steps.                     |
 | `output`       | any                                     | Only when the step declared `output`.          |
@@ -400,11 +447,23 @@ so they archive cleanly instead of overwriting each other.
 ### 6.5 Heartbeats — agent self-regulation
 
 Long steps are where agents drift. A **heartbeat** is a structured pulse the agent
-writes to itself to stay oriented — at least **once per minute** while a step runs.
+writes to itself to stay oriented while a step runs.
 
-- The agent **appends** an entry to the current step's `heartbeat` array at least
-  once per minute. Each entry is `{ at, note }` — an ISO-8601 timestamp and one or
-  two sentences. `note` may include markdown links (`[text](url)`).
+**Cadence — per-sub-step, not a rigid clock.** Write a heartbeat:
+
+- when you **start** a sub-step or iteration;
+- when you **finish** one (as a finalBeat — see below);
+- when something **meaningful** happens (found the data, hit an error, changed
+  strategy);
+- and at minimum, when **~60 seconds** pass with nothing logged — prove you're alive.
+
+The 90-second stall timer is a safety net, not a target. Natural work beats every
+1–3 minutes; sparse-but-honest is better than frequent-but-noisy. Long silence is
+the signal something's wrong (see §8.1 — the board-sync check fails a step whose
+last beat is over 5 minutes old).
+
+- Each entry is `{ at, note }` — an ISO-8601 timestamp and one or two sentences.
+  `note` may include markdown links (`[text](url)`).
 - The `heartbeat` array is **append-only** — never clear or overwrite prior
   entries. It is the run's audit trail.
 - **Before writing a heartbeat, the agent reads its prior entries** to keep
@@ -678,3 +737,27 @@ steps:
 ```
 
 That's the whole spec. Hand the file to an agent and watch the board light up.
+
+---
+
+## 11. Changelog
+
+**2.0.0**
+
+- **`type: approval`** — human approval steps (§4.4); new `awaiting_approval` status
+  and `pending_human` gate.
+- **Board-sync pre-check** (§8.1) — `conductor-board check <step>` as a step's first
+  gate makes board discipline structural; an agent that works without updating the
+  board fails its own gate.
+- **finalBeat handoffs** (§6.5) — each step ends with a `finalBeat` carrying context
+  to the next; the stall timer resets on every beat.
+- **Insights ledger** (§9.4) — suggestions accumulate across runs in a persistent,
+  deduped `.conductor/insights.md`.
+- **Heartbeat cadence** (§6.5) clarified to per-sub-step rather than a rigid minute.
+
+Additive over 1.x — conductors written for `1.0.0`/`1.1.0` still run unchanged.
+
+**1.1.0** — added loops (`type: loop`).
+
+**1.0.0** — initial spec: gated steps, soft/hard gates, conditions, output passing,
+the status file.
