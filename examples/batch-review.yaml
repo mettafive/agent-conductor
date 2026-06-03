@@ -1,0 +1,51 @@
+conductor: 1.1.0
+name: batch-review
+description: >
+  A loop workflow. Discovers a list of changed files, then reviews each one
+  through the same gated sub-sequence. Shows type: loop with over / as.
+
+# Showcases: type: loop, over (from a prior output), as (loop variable),
+# and per-iteration gated sub-steps.
+inputs:
+  - pr_number
+
+steps:
+  - id: collect-files
+    instruction: |
+      List every file changed in PR #{pr_number}.
+    gate:
+      - "Every changed file captured with its path"
+      - check: "test -s changed-files.txt"
+    output: changed_files
+
+  - id: review-each-file
+    type: loop
+    over: changed_files
+    as: file
+    steps:
+      - id: read
+        instruction: |
+          Read {file} and summarize what changed and why.
+        gate:
+          - "Summary names the functions or sections that changed"
+
+      - id: critique
+        instruction: |
+          Review {file} for bugs, unsafe patterns, and style drift.
+        gate:
+          - "Each finding has a line number and a concrete fix"
+          - "No remaining placeholder or debug code"
+
+      - id: verdict
+        instruction: |
+          Give {file} a verdict: approve, or request changes with reasons.
+        gate:
+          - "Verdict is explicit and justified"
+
+  - id: summarize
+    instruction: |
+      Roll the per-file verdicts up into one review for PR #{pr_number}.
+    requires: [review-each-file]
+    gate:
+      - "States an overall verdict and the top fix to make first"
+      - check: "test -f review.md"

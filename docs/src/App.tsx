@@ -313,7 +313,15 @@ export function App() {
             title="npx agent-conductor"
             sub="A local Kanban board watches the status file and moves each step through Pending → Running → Gate Check → Done as the agent works."
           />
-          <Reveal className="mt-12">
+          <div className="mt-7 flex justify-center">
+            <code className="rounded-lg border border-line bg-ink-2/80 px-4 py-2 font-mono text-xs text-mist-2">
+              <span className="text-line-2">$</span> npx agent-conductor{"  "}
+              <span className="text-mist">
+                → Board live at http://localhost:3042
+              </span>
+            </code>
+          </div>
+          <Reveal className="mt-8">
             <BoardPreview />
           </Reveal>
           <p className="mt-6 text-center font-mono text-xs text-mist">

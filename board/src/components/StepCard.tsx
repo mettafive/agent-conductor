@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { BoardStep, GateCriterion } from "../lib/types";
+import type { BoardStep, GateCriterion, LoopIteration } from "../lib/types";
 
 function ForkIcon() {
   return (
@@ -88,6 +88,54 @@ function CriterionRow({ c }: { c: GateCriterion }) {
   );
 }
 
+function LoopIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" className="text-iris">
+      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4m14-1v2a4 4 0 0 1-4 4H3" />
+    </svg>
+  );
+}
+
+const SUB_DOT: Record<string, string> = {
+  done: "bg-mint",
+  failed: "bg-rose",
+  running: "bg-cyan animate-pulse",
+  checking: "bg-amber",
+  pending: "bg-line-2",
+};
+
+function IterationRow({ it }: { it: LoopIteration }) {
+  const retried = it.steps.find((s) => s.attempt > 1);
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+          it.failed ? "bg-rose" : it.done ? "bg-mint" : "bg-cyan"
+        }`}
+      />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-mist-2">
+        {it.item}
+      </span>
+      {retried && (
+        <span className="rounded border border-amber/30 px-1 font-mono text-[9px] text-amber">
+          ×{retried.attempt}
+        </span>
+      )}
+      <span className="flex shrink-0 gap-1">
+        {it.steps.map((s, i) => (
+          <span
+            key={i}
+            title={`${s.id}: ${s.status}`}
+            className={`h-1.5 w-1.5 rounded-full ${
+              SUB_DOT[s.gate === "checking" ? "checking" : s.status] ?? "bg-line-2"
+            }`}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}
+
 const ACCENT: Record<string, string> = {
   done: "border-mint/25",
   failed: "border-rose/40",
@@ -100,8 +148,10 @@ const SPRING = { type: "spring", stiffness: 520, damping: 38, mass: 0.8 } as con
 
 export function StepCard({ step }: { step: BoardStep }) {
   const [open, setOpen] = useState(false);
-  const hasCriteria = step.criteria.length > 0;
+  const loop = step.isLoop ? step.loop : undefined;
+  const expandable = loop ? loop.iterations.length > 0 : step.criteria.length > 0;
   const dim = step.column === "pending" ? "opacity-70" : "";
+  const pct = loop && loop.total ? Math.round((loop.completed / loop.total) * 100) : 0;
 
   return (
     <motion.div
@@ -111,15 +161,19 @@ export function StepCard({ step }: { step: BoardStep }) {
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.92 }}
       transition={SPRING}
-      onClick={() => hasCriteria && setOpen((o) => !o)}
+      onClick={() => expandable && setOpen((o) => !o)}
       className={`rounded-xl border bg-panel px-3 py-2.5 ${ACCENT[step.column]} ${dim} ${
-        hasCriteria ? "cursor-pointer" : ""
+        expandable ? "cursor-pointer" : ""
       } ${step.column === "done" ? "opacity-85" : ""}`}
     >
       <div className="flex items-center gap-2">
         {step.isCondition ? (
           <span className="grid h-5 w-5 place-items-center rounded-md bg-amber/10">
             <ForkIcon />
+          </span>
+        ) : loop ? (
+          <span className="grid h-5 w-5 place-items-center rounded-md bg-iris/10">
+            <LoopIcon />
           </span>
         ) : (
           <span className="grid h-5 w-5 place-items-center rounded-md bg-iris/15 font-mono text-[10px] text-iris">
@@ -129,7 +183,7 @@ export function StepCard({ step }: { step: BoardStep }) {
         <span className="flex-1 truncate font-mono text-[12.5px] text-chalk">
           {step.id}
         </span>
-        {step.attempt > 1 && (
+        {!loop && step.attempt > 1 && (
           <span
             title={`${step.attempt} attempts`}
             className="rounded border border-amber/30 bg-amber/10 px-1 font-mono text-[9px] text-amber"
@@ -140,6 +194,62 @@ export function StepCard({ step }: { step: BoardStep }) {
         <StatusGlyph step={step} />
       </div>
 
+      {/* ---- loop body ---- */}
+      {loop ? (
+        <>
+        <div className="mt-2 pl-7">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[10px] text-mist-2">
+              {loop.completed}/{loop.total} iterations
+            </span>
+            {loop.currentItem && step.column === "running" && (
+              <span className="max-w-[130px] truncate font-mono text-[10px] text-cyan">
+                {loop.currentItem}
+              </span>
+            )}
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-panel-2">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-iris to-cyan transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md border border-iris/25 bg-iris/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-iris">
+              loop
+            </span>
+            {step.over && (
+              <span className="rounded-md border border-line-2 bg-ink/40 px-1.5 py-0.5 font-mono text-[10px] text-mist">
+                over {step.over}
+              </span>
+            )}
+            {expandable && (
+              <span className="font-mono text-[10px] text-line-2">
+                {open ? "▾ hide" : "▸ iterations"}
+              </span>
+            )}
+          </div>
+        </div>
+        <AnimatePresence initial={false}>
+          {open && loop.iterations.length > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-2.5 border-t border-line pt-2 pl-7">
+                {loop.iterations.map((it) => (
+                  <IterationRow key={it.item} it={it} />
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        </>
+      ) : (
+        <>
       {step.firstLine && (
         <p className="mt-1.5 line-clamp-2 pl-7 text-[11.5px] leading-snug text-mist">
           {step.firstLine}
@@ -183,7 +293,7 @@ export function StepCard({ step }: { step: BoardStep }) {
       </div>
 
       <AnimatePresence initial={false}>
-        {open && hasCriteria && (
+        {open && step.criteria.length > 0 && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -199,6 +309,8 @@ export function StepCard({ step }: { step: BoardStep }) {
           </motion.div>
         )}
       </AnimatePresence>
+        </>
+      )}
     </motion.div>
   );
 }

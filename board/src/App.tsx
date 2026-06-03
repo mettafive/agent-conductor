@@ -30,7 +30,7 @@ export function App() {
     }
     let alive = true;
     setRecord(null);
-    fetch(`/api/history/${encodeURIComponent(selected)}`)
+    fetch(`/history/${encodeURIComponent(selected)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((rec: RunRecord | null) => alive && setRecord(rec))
       .catch(() => alive && setSelected(null));

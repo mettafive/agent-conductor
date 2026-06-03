@@ -81,9 +81,13 @@ steps:
 Hand it to your agent:
 
 ```
-Execute this conductor. Maintain .conductor/status.json as you go,
-validate every gate before advancing, and retry — never skip — on failure.
+Execute this conductor. Save it to .conductor/conductor.yaml, maintain
+.conductor/status.json as you go, validate every gate before advancing,
+and retry — never skip — on failure.
 ```
+
+Start the board *first*, then point your agent at the conductor — it writes both
+files into `.conductor/` and the board lights up on its own.
 
 Watch it run:
 
@@ -118,6 +122,7 @@ gate can't be satisfied).
 | [`basic-report.yaml`](./examples/basic-report.yaml) | Linear | Gates, inputs, output passing |
 | [`treatment-page.yaml`](./examples/treatment-page.yaml) | Branching | `condition`, `if_true`/`if_false`, `then` rejoin |
 | [`code-review.yaml`](./examples/code-review.yaml) | Gates-heavy | Multiple conditions, mixed soft + hard gates |
+| [`batch-review.yaml`](./examples/batch-review.yaml) | Loop | `type: loop` over a list, per-iteration gated sub-steps |
 
 ## The spec
 

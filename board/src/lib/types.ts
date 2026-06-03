@@ -27,6 +27,32 @@ export interface ConductorStep {
   requires: string[];
   soft: string[];
   hard: HardGate[];
+  // loops (§4.3)
+  isLoop: boolean;
+  over?: string;
+  as?: string;
+  subSteps?: ConductorStep[];
+}
+
+export interface IterationStep {
+  id: string;
+  status: string;
+  gate: string;
+  attempt: number;
+}
+
+export interface LoopIteration {
+  item: string;
+  steps: IterationStep[];
+  done: boolean;
+  failed: boolean;
+}
+
+export interface LoopState {
+  total: number;
+  completed: number;
+  currentItem?: string;
+  iterations: LoopIteration[];
 }
 
 export interface BoardStep extends ConductorStep {
@@ -37,6 +63,7 @@ export interface BoardStep extends ConductorStep {
   branchTaken?: string;
   output_value?: unknown;
   criteria: GateCriterion[];
+  loop?: LoopState;
 }
 
 export interface BoardModel {
@@ -56,6 +83,7 @@ export interface BoardModel {
 
 export interface HistoryRun {
   run_id: string;
+  filename: string;
   workflow: string;
   status: string; // done | failed
   started_at?: string | null;

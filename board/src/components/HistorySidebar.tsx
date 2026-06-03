@@ -12,6 +12,18 @@ function fmtTime(iso?: string | null): string {
   });
 }
 
+function fmtDuration(start?: string | null, end?: string | null): string | null {
+  if (!start || !end) return null;
+  const a = new Date(start).getTime();
+  const b = new Date(end).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+  const secs = Math.round((b - a) / 1000);
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}m ${s}s`;
+}
+
 function groupByWorkflow(runs: HistoryRun[]): [string, HistoryRun[]][] {
   const map = new Map<string, HistoryRun[]>();
   for (const r of runs) {
@@ -87,15 +99,32 @@ export function HistorySidebar({ runs, selected, onSelect }: Props) {
                       }`}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-[11px] text-chalk">
-                        {fmtTime(r.completed_at || r.archived_at || r.started_at)}
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate font-mono text-[11px] text-chalk">
+                          {fmtTime(r.completed_at || r.archived_at || r.started_at)}
+                        </span>
+                        {(() => {
+                          const dur = fmtDuration(r.started_at, r.completed_at);
+                          return dur ? (
+                            <span className="shrink-0 font-mono text-[10px] text-mist">
+                              {dur}
+                            </span>
+                          ) : null;
+                        })()}
                       </span>
-                      <span
-                        className={`font-mono text-[10px] ${
-                          failed ? "text-rose" : "text-mist"
-                        }`}
-                      >
-                        {failed ? "failed" : "done"} · {r.done}/{r.total}
+                      <span className="mt-0.5 flex items-center gap-1.5">
+                        <span
+                          className={`rounded px-1 font-mono text-[9px] ${
+                            failed
+                              ? "border border-rose/30 bg-rose/10 text-rose"
+                              : "border border-mint/25 bg-mint/10 text-mint"
+                          }`}
+                        >
+                          {failed ? "failed" : "done"}
+                        </span>
+                        <span className="font-mono text-[10px] text-mist">
+                          {r.done}/{r.total}
+                        </span>
                       </span>
                     </span>
                   </button>

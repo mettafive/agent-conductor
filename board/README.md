@@ -48,7 +48,7 @@ status-only.
 
 When a run reaches `done` or `failed`, the server archives a **self-contained**
 record (the final status plus the conductor that produced it) to
-`.conductor/history/<run_id>.json`. The board's history sidebar lists past runs
+`.conductor/history/<run_id>_<workflow>.json`. The board's history sidebar lists past runs
 grouped by workflow; selecting one shows its frozen final state. Deep-link a run
 with `?run=<run_id>`.
 
@@ -58,8 +58,8 @@ runs archive cleanly instead of overwriting each other.
 | Endpoint | Returns |
 | --- | --- |
 | `GET /api/state` | current `{ status, conductorYaml }` snapshot |
-| `GET /api/history` | summaries of archived runs, newest first |
-| `GET /api/history/:run_id` | one full archived run (status + conductor) |
+| `GET /history` | summaries of archived runs, newest first |
+| `GET /history/:filename` | one full archived run (also resolves by `run_id`) |
 | `GET /events` | SSE stream of `update` and `history` events |
 
 ## Card anatomy
@@ -67,6 +67,8 @@ runs archive cleanly instead of overwriting each other.
 - Step ID, first line of the instruction, and soft/hard gate badges
 - Attempt counter (`×2`) when a step has been retried
 - Condition steps show a fork icon and the branch taken
+- Loop steps (`type: loop`) show an `n/total` iterations bar; expand to see each
+  iteration's sub-step statuses and per-iteration retries
 - `requires` dependencies render as a chip on the card
 - Click a card to expand its gate criteria with per-criterion pass/fail
 
@@ -94,9 +96,10 @@ npm run build              # build the React app into dist/
 npm start                  # serve the board (node bin/cli.js)
 
 # drive a demo workflow through the board to see the animations + history:
-npm run simulate -- --fail security-audit       # one run, with a retry
-npm run simulate -- --fatal coverage-check      # a run that ends failed
-npm run simulate -- --loop                      # keep archiving runs
+npm run simulate -- --fail security-audit                 # one run, with a retry
+npm run simulate -- --fatal coverage-check                # a run that ends failed
+npm run simulate -- --loop                                # keep archiving runs
+npm run simulate -- ../examples/batch-review.yaml --fail critique   # a loop run
 ```
 
 `scripts/simulate.js` is a dev-only tool that walks a conductor and writes

@@ -11,6 +11,9 @@ interface RawStep {
   then?: string;
   requires?: string[];
   output?: string;
+  over?: string;
+  as?: string;
+  steps?: RawStep[];
 }
 
 function splitGates(gate: unknown[] | undefined): { soft: string[]; hard: HardGate[] } {
@@ -38,6 +41,33 @@ const firstLineOf = (s: string) =>
     .map((l) => l.trim())
     .find((l) => l.length > 0) ?? "";
 
+function toStep(s: RawStep, index: number): ConductorStep {
+  const instruction = (s.instruction ?? "").trim();
+  const { soft, hard } = splitGates(s.gate);
+  const isLoop = s.type === "loop";
+  return {
+    id: s.id,
+    index,
+    instruction,
+    firstLine: firstLineOf(instruction),
+    isCondition: s.type === "condition",
+    ifTrue: s.if_true,
+    ifFalse: s.if_false,
+    then: s.then,
+    output: s.output,
+    requires: Array.isArray(s.requires) ? s.requires : [],
+    soft,
+    hard,
+    isLoop,
+    over: s.over,
+    as: s.as,
+    subSteps:
+      isLoop && Array.isArray(s.steps)
+        ? s.steps.filter((x) => x && x.id).map((x, i) => toStep(x, i))
+        : undefined,
+  };
+}
+
 export interface ParsedConductor {
   name?: string;
   description?: string;
@@ -54,25 +84,6 @@ export function parseConductor(src: string | null): ParsedConductor | null {
     return null;
   }
   const rawSteps = Array.isArray(doc.steps) ? doc.steps : [];
-  const steps: ConductorStep[] = rawSteps
-    .filter((s) => s && s.id)
-    .map((s, index) => {
-      const instruction = (s.instruction ?? "").trim();
-      const { soft, hard } = splitGates(s.gate);
-      return {
-        id: s.id,
-        index,
-        instruction,
-        firstLine: firstLineOf(instruction),
-        isCondition: s.type === "condition",
-        ifTrue: s.if_true,
-        ifFalse: s.if_false,
-        then: s.then,
-        output: s.output,
-        requires: Array.isArray(s.requires) ? s.requires : [],
-        soft,
-        hard,
-      };
-    });
+  const steps = rawSteps.filter((s) => s && s.id).map((s, i) => toStep(s, i));
   return { name: doc.name, description: doc.description, steps };
 }

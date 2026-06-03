@@ -95,7 +95,8 @@ function listHistory(historyDir) {
   for (const f of fs.readdirSync(historyDir)) {
     if (!f.endsWith(".json")) continue;
     try {
-      out.push(summarize(JSON.parse(fs.readFileSync(path.join(historyDir, f), "utf8"))));
+      const rec = JSON.parse(fs.readFileSync(path.join(historyDir, f), "utf8"));
+      out.push({ ...summarize(rec), filename: f });
     } catch {
       /* skip a corrupt archive */
     }
@@ -105,25 +106,28 @@ function listHistory(historyDir) {
   return out.sort((a, b) => String(key(b)).localeCompare(String(key(a))));
 }
 
+/** Resolve a history record by filename (with or without .json) or by run_id. */
 function getHistory(historyDir, id) {
-  const direct = path.join(historyDir, `${safeId(id)}.json`);
-  if (fs.existsSync(direct)) {
+  if (!fs.existsSync(historyDir)) return null;
+  const read = (f) => {
     try {
-      return JSON.parse(fs.readFileSync(direct, "utf8"));
+      return JSON.parse(fs.readFileSync(path.join(historyDir, f), "utf8"));
     } catch {
       return null;
     }
+  };
+  // exact filename
+  for (const cand of [id, `${id}.json`]) {
+    if (cand.endsWith(".json") && fs.existsSync(path.join(historyDir, cand))) {
+      const rec = read(cand);
+      if (rec) return rec;
+    }
   }
-  // fall back to scanning by run_id
-  if (!fs.existsSync(historyDir)) return null;
+  // scan: match run_id or filename
   for (const f of fs.readdirSync(historyDir)) {
     if (!f.endsWith(".json")) continue;
-    try {
-      const rec = JSON.parse(fs.readFileSync(path.join(historyDir, f), "utf8"));
-      if (rec.run_id === id) return rec;
-    } catch {
-      /* skip */
-    }
+    const rec = read(f);
+    if (rec && (rec.run_id === id || f === id || f === `${id}.json`)) return rec;
   }
   return null;
 }
@@ -135,10 +139,12 @@ function archiveIfDone(historyDir, snapshot, archived) {
 
   const runId =
     status.run_id ||
-    (status.started_at ? `run-${safeId(status.started_at)}` : null);
+    (status.started_at ? safeId(status.started_at).replace(/-\d+Z$/, "") : null);
   if (!runId || archived.has(runId)) return null;
 
-  const file = path.join(historyDir, `${safeId(runId)}.json`);
+  const workflow = status.workflow || "workflow";
+  // {run_id}_{workflow}.json — e.g. 2026-06-03T14-30-00_treatment-page.json
+  const file = path.join(historyDir, `${safeId(runId)}_${safeId(workflow)}.json`);
   if (fs.existsSync(file)) {
     archived.add(runId);
     return null;
@@ -246,14 +252,14 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       return;
     }
 
-    if (url === "/api/history") {
+    if (url === "/history") {
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify(listHistory(historyDir)));
       return;
     }
 
-    if (url.startsWith("/api/history/")) {
-      const id = decodeURIComponent(url.slice("/api/history/".length));
+    if (url.startsWith("/history/")) {
+      const id = decodeURIComponent(url.slice("/history/".length));
       const rec = getHistory(historyDir, id);
       if (!rec) {
         res.writeHead(404, { "content-type": "application/json" }).end('{"error":"not found"}');

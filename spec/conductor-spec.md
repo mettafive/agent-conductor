@@ -1,6 +1,6 @@
 # The Conductor Spec
 
-**Version `1.0.0`**
+**Version `1.1.0`** · adds [loops](#43-loops) (`type: loop`)
 
 A conductor is a single YAML file that turns a loose pile of instructions into a
 **gated workflow**. Each step must pass its gate before the next one unlocks. The
@@ -75,10 +75,13 @@ step — it does **not** skip ahead.
 | `id`          | string          | Unique identifier for the step.                                  |
 | `instruction` | string (block)  | What the agent should do. May reference `{inputs}` and outputs.  |
 | `gate`        | list            | Criteria that must all pass before advancing. See §3.            |
-| `type`        | `condition`     | Marks a branching step. See §4.                                  |
+| `type`        | `condition` `loop` | Marks a branching (§4.1) or looping (§4.3) step.              |
 | `if_true`     | step id         | Where to go when a condition evaluates true.                     |
 | `if_false`    | step id         | Where to go when a condition evaluates false.                    |
 | `then`        | step id         | Rejoin point after a branch step completes. See §4.              |
+| `over`        | variable name   | The list a `loop` iterates over (inputs or output). See §4.3.    |
+| `as`          | string          | The loop variable name, templated into sub-steps. See §4.3.      |
+| `steps`       | list            | Sub-steps run on each loop iteration. See §4.3.                  |
 | `requires`    | list of step ids| Explicit dependencies that must be `done` first.                 |
 | `output`      | string          | Names a variable downstream steps can template in.              |
 
@@ -184,6 +187,63 @@ so both branches converge.
     - "Naming and formatting match the surrounding code"
 ```
 
+### 4.3 Loops
+
+A step with `type: loop` repeats a sequence of sub-steps for each item in a list.
+The list comes from a prior step's `output` or from `inputs`.
+
+```yaml
+- id: process-clinics
+  type: loop
+  over: clinic_list          # variable name (from input or prior output)
+  as: clinic                 # loop variable name, templated into sub-steps
+  steps:
+    - id: scrape
+      instruction: "Find current treatment prices for {clinic}."
+      gate:
+        - "At least one price found with a source URL"
+    - id: validate
+      instruction: "Validate prices for {clinic} against existing data."
+      gate:
+        - "Prices are within expected range or flagged as outliers"
+```
+
+Each iteration runs the full sub-step sequence with gates. The loop step is `done`
+when all iterations complete. If any iteration's gate fails, that iteration
+retries — other iterations are not affected.
+
+**Design rules for loops**
+
+- Loops are **sequential by default** (one iteration at a time). Parallel iteration
+  is out of scope for v1.1.
+- Sub-steps inside a loop follow all the same rules as top-level steps (gates,
+  conditions, output passing).
+- `over` must reference a **list** (from `inputs` or a prior step's `output`). If it
+  is not a list, the step fails.
+- Loop variables use the same `{name}` template syntax as inputs.
+
+The loop's status records progress across iterations:
+
+```json
+"process-clinics": {
+  "status": "running",
+  "type": "loop",
+  "total": 10,
+  "completed": 6,
+  "current_item": "Evidensia Stockholm",
+  "iterations": {
+    "Evidensia Stockholm": {
+      "scrape":   { "status": "done",    "gate": "passed" },
+      "validate": { "status": "running", "gate": "pending" }
+    },
+    "AniCura Göteborg": {
+      "scrape":   { "status": "pending" },
+      "validate": { "status": "pending" }
+    }
+  }
+}
+```
+
 ---
 
 ## 5. Inputs & output passing
@@ -233,12 +293,18 @@ you hand a conductor to an agent, you are also handing it these instructions:
 
 ```
 As you execute this conductor workflow:
-1. Create `.conductor/status.json` before starting.
-2. After completing each step, update the status file.
-3. After each gate check, record pass/fail for every criterion.
-4. If a gate fails, retry the step — do not skip it.
-5. Record which branch was taken at every condition step.
+1. Save the conductor to `.conductor/conductor.yaml`.
+2. Create `.conductor/status.json` with every step set to pending.
+3. After completing each step, update the status file.
+4. After each gate check, record pass/fail for every criterion.
+5. If a gate fails, retry the step — do not skip it.
+6. Record which branch was taken at every condition step.
 ```
+
+Saving the conductor next to the status file is what makes the board *seamless*:
+start the board first, then tell the agent to go. The agent writes both files into
+`.conductor/`, and the board auto-discovers them and lights up — no manual copying,
+no "put this YAML here."
 
 ### 6.1 Status file format
 
@@ -249,7 +315,7 @@ board watches.
 {
   "conductor": "1.0.0",
   "workflow": "workflow-name",
-  "run_id": "run-2026-06-03T09-00-00",
+  "run_id": "2026-06-03T09-00-00",
   "started_at": "2026-06-03T09:00:00Z",
   "status": "running",
   "current_step": "write-draft",
@@ -306,9 +372,10 @@ required.
 
 When a run reaches `done` or `failed`, the board archives a self-contained copy
 of it (the final status plus the conductor that produced it) to
-`.conductor/history/<run_id>.json`. Past runs stay browsable in the board's
-history panel, grouped by workflow. Give every run a distinct `run_id` so they
-archive cleanly instead of overwriting each other.
+`.conductor/history/<run_id>_<workflow>.json` (e.g.
+`2026-06-03T14-30-00_treatment-page.json`). Past runs stay browsable in the
+board's history panel, grouped by workflow. Give every run a distinct `run_id`
+so they archive cleanly instead of overwriting each other.
 
 ---
 

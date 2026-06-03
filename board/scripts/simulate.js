@@ -19,7 +19,12 @@ const dir = path.resolve(process.cwd(), flag("--dir", ".conductor"));
 const loop = args.includes("--loop");
 const failStep = flag("--fail", null);
 const fatalStep = flag("--fatal", null);
+const itemsArg = flag("--items", null);
 const SPEED = Number(flag("--speed", 1)) || 1;
+
+const DEFAULT_ITEMS = ["src/auth.ts", "src/api/users.ts", "db/schema.sql", "ui/Login.tsx"];
+const loopItems = () =>
+  itemsArg ? String(itemsArg).split(",").map((s) => s.trim()).filter(Boolean) : DEFAULT_ITEMS;
 
 const conductorPath =
   conductorArg ?? path.join(dir, "conductor.yaml");
@@ -54,8 +59,76 @@ function gateDetail(step, passed) {
   });
 }
 
+async function runLoop(step, state) {
+  const items = loopItems();
+  const subs = (step.steps || []).filter((s) => s && s.id);
+  const entry = {
+    status: "running",
+    type: "loop",
+    total: items.length,
+    completed: 0,
+    current_item: null,
+    started_at: nowIso(),
+    iterations: {},
+  };
+  for (const item of items) {
+    entry.iterations[item] = {};
+    for (const sub of subs) {
+      entry.iterations[item][sub.id] = { status: "pending", gate: "pending", attempt: 1 };
+    }
+  }
+  state.steps[step.id] = entry;
+  write({ ...state });
+  await sleep(500);
+
+  for (const item of items) {
+    entry.current_item = item;
+    for (const sub of subs) {
+      const cell = entry.iterations[item][sub.id];
+      cell.status = "running";
+      write({ ...state });
+      await sleep(650);
+      if (gateCount(sub) > 0) {
+        cell.gate = "checking";
+        write({ ...state });
+        await sleep(650);
+      }
+      // per-iteration retry on the first item, to show the retry counter
+      if (failStep === sub.id && item === items[0] && cell.attempt === 1) {
+        cell.gate = "failed";
+        write({ ...state });
+        await sleep(650);
+        cell.attempt = 2;
+        cell.gate = "pending";
+        cell.status = "running";
+        write({ ...state });
+        await sleep(650);
+        if (gateCount(sub) > 0) {
+          cell.gate = "checking";
+          write({ ...state });
+          await sleep(650);
+        }
+      }
+      cell.status = "done";
+      cell.gate = gateCount(sub) > 0 ? "passed" : "pending";
+      write({ ...state });
+      await sleep(220);
+    }
+    entry.completed += 1;
+    write({ ...state });
+    await sleep(280);
+  }
+
+  entry.status = "done";
+  entry.gate = "passed";
+  entry.current_item = null;
+  entry.completed_at = nowIso();
+  write({ ...state });
+}
+
 async function run() {
-  const runId = "run-" + nowIso().replace(/[:.]/g, "-");
+  // timestamp run id, e.g. 2026-06-03T14-30-00 (matches the archive filename prefix)
+  const runId = nowIso().replace(/\.\d+Z$/, "").replace(/:/g, "-");
   const state = {
     conductor: "1.0.0",
     workflow: doc.name || "workflow",
@@ -83,6 +156,13 @@ async function run() {
     visited.add(step.id);
     state.current_step = step.id;
     const entry = state.steps[step.id];
+
+    // loop step — walk each item through the sub-step sequence
+    if (step.type === "loop") {
+      await runLoop(step, state);
+      i++;
+      continue;
+    }
 
     // running
     entry.status = "running";

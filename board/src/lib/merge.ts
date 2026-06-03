@@ -5,6 +5,7 @@ import type {
   Column,
   ConductorStep,
   GateCriterion,
+  LoopState,
   Snapshot,
 } from "./types";
 
@@ -20,6 +21,49 @@ interface RawStepStatus {
     passed?: boolean;
     exit_code?: number;
   }>;
+  // loops
+  type?: string;
+  total?: number;
+  completed?: number;
+  current_item?: string;
+  iterations?: Record<string, Record<string, RawStepStatus>>;
+}
+
+function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefined {
+  if (!step.isLoop) return undefined;
+  const subDefs = step.subSteps ?? [];
+  const raw = st.iterations ?? {};
+  const items = Object.keys(raw);
+
+  const iterations = items.map((item) => {
+    const itStatus = raw[item] ?? {};
+    const ids = subDefs.length ? subDefs.map((s) => s.id) : Object.keys(itStatus);
+    const steps = ids.map((id) => {
+      const ss = itStatus[id] ?? {};
+      return {
+        id,
+        status: ss.status ?? "pending",
+        gate: ss.gate ?? "pending",
+        attempt: ss.attempt ?? 1,
+      };
+    });
+    return {
+      item,
+      steps,
+      done: steps.length > 0 && steps.every((s) => s.status === "done"),
+      failed: steps.some((s) => s.status === "failed"),
+    };
+  });
+
+  return {
+    total: typeof st.total === "number" ? st.total : items.length,
+    completed:
+      typeof st.completed === "number"
+        ? st.completed
+        : iterations.filter((i) => i.done).length,
+    currentItem: st.current_item,
+    iterations,
+  };
 }
 
 function columnFor(rawStatus: string, gate: string): Column {
@@ -64,6 +108,7 @@ function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): Conduc
     requires: [],
     soft: [],
     hard: [],
+    isLoop: statusSteps[id]?.type === "loop",
   }));
 }
 
@@ -90,6 +135,7 @@ export function buildModel(snap: Snapshot): BoardModel {
       branchTaken: st.branch_taken,
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),
+      loop: buildLoop(s, st),
     };
   });
 
