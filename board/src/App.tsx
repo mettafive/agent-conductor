@@ -7,7 +7,6 @@ import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sou
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { StatusBar } from "./components/StatusBar";
 import { Board } from "./components/Board";
-import { LoopBoard } from "./components/LoopBoard";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { OptimizationPanel } from "./components/OptimizationPanel";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
@@ -26,7 +25,6 @@ export function App() {
   const [muted, setMutedState] = useState(isMuted());
   const [pinned, setPinned] = useState<string[]>([]);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
-  const [loopId, setLoopId] = useState<string | null>(params.get("loop")); // drilled-into loop step
 
   // live heartbeat stream across every workflow — drives the monitor, the heart,
   // and the tick sound. Arrivals are seeded on load so nothing false-fires.
@@ -75,9 +73,8 @@ export function App() {
     const url = new URL(window.location.href);
     activeWf ? url.searchParams.set("wf", activeWf) : url.searchParams.delete("wf");
     selectedRun ? url.searchParams.set("run", selectedRun) : url.searchParams.delete("run");
-    loopId ? url.searchParams.set("loop", loopId) : url.searchParams.delete("loop");
     window.history.replaceState(null, "", url);
-  }, [activeWf, selectedRun, loopId]);
+  }, [activeWf, selectedRun]);
 
   // fetch a frozen past run for the active workflow
   useEffect(() => {
@@ -99,12 +96,10 @@ export function App() {
   const pickWorkflow = (name: string) => {
     setSelectedWf(name);
     setSelectedRun(null);
-    setLoopId(null); // leave any loop child board on an explicit switch
   };
   const pickRun = (wf: string, runId: string) => {
     setSelectedWf(wf);
     setSelectedRun(runId);
-    setLoopId(null);
   };
   const togglePin = (name: string) =>
     setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
@@ -183,10 +178,6 @@ export function App() {
   );
   const showBoard = viewing ? !!record : liveStarted;
 
-  // if we've drilled into a loop, find it in the current model (null = main board)
-  const activeLoop =
-    loopId && model ? (model.steps.find((s) => s.id === loopId && s.isLoop) ?? null) : null;
-
   const closePanel = () => {
     if (!viewing && liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
     setPanelOpen(false);
@@ -264,39 +255,15 @@ export function App() {
                 <span className="font-mono text-xs text-mist">loading run…</span>
               </div>
             ) : showBoard && model ? (
-              <AnimatePresence mode="wait" initial={false}>
-                {activeLoop ? (
-                  <motion.div
-                    key={`loop:${activeWf}:${activeLoop.id}`}
-                    initial={{ opacity: 0, x: 36 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 36 }}
-                    transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                    className="h-full"
-                  >
-                    <LoopBoard
-                      loopStep={activeLoop}
-                      workflow={model.workflow}
-                      onBack={() => setLoopId(null)}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key={`main:${activeWf}:${selectedRun ?? "live"}`}
-                    initial={{ opacity: 0, x: -24 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -24 }}
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                    className="h-full"
-                  >
-                    <Board
-                      model={model}
-                      onOpenLoop={setLoopId}
-                      onApprove={viewing ? undefined : applyApproval}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <motion.div
+                key={`${activeWf}:${selectedRun ?? "live"}`}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                className="board-scroll h-full overflow-y-auto"
+              >
+                <Board model={model} onApprove={viewing ? undefined : applyApproval} />
+              </motion.div>
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
             )}

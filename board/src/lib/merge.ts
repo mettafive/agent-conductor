@@ -214,15 +214,20 @@ export function buildModel(snap: Snapshot): BoardModel {
   const total = steps.length;
   const done = steps.filter((s) => s.column === "done").length;
 
-  // Weighted progress: a loop contributes one unit per iteration, so a 5-page
-  // loop reads as 5 units of work instead of a single step stuck at "1/6".
+  // Weighted progress: a loop contributes one unit per sub-step per iteration,
+  // so a 5-page × 4-sub-step loop reads as 20 units instead of one stuck step.
   let unitsTotal = 0;
   let unitsDone = 0;
   for (const s of steps) {
     if (s.isLoop && s.loop) {
       const iters = s.loop.iterations;
-      unitsTotal += s.loop.total || iters.length || 1;
-      unitsDone += iters.filter((it) => it.done).length;
+      const subCount = s.subSteps?.length || iters[0]?.steps.length || 1;
+      const totalIters = s.loop.total || iters.length || 0;
+      unitsTotal += totalIters * subCount;
+      unitsDone += iters.reduce(
+        (n, it) => n + it.steps.filter((ss) => ss.status === "done").length,
+        0,
+      );
     } else {
       unitsTotal += 1;
       if (s.column === "done") unitsDone += 1;
