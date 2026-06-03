@@ -33,6 +33,10 @@ const HELP = `
     setup                    Write setup.conductor.yaml (the bootstrap conductor)
     check <step-id>          Board-sync pre-gate check — fails if the board is
                              stale for this step (use as a step's first gate)
+    ps                       List every conductor-board running on this machine
+    stop [--all]             Stop this project's board (or every board)
+    clean [--keep N]         Trim history to the last N runs; add
+          [--prune-heartbeats] to archive old beats (keeps finalBeats + insights)
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
@@ -79,6 +83,21 @@ if (command === "setup") {
 if (command === "check") {
   const { runCheck } = await import("../cli/check.js");
   process.exit((await runCheck(rest)) ? 0 : 1);
+}
+
+if (command === "ps") {
+  const { runPs } = await import("../cli/ps.js");
+  process.exit((await runPs()) ? 0 : 1);
+}
+
+if (command === "stop") {
+  const { runStop } = await import("../cli/stop.js");
+  process.exit((await runStop(rest)) ? 0 : 1);
+}
+
+if (command === "clean") {
+  const { runClean } = await import("../cli/clean.js");
+  process.exit((await runClean(rest)) ? 0 : 1);
 }
 
 if (command && command !== "board") {

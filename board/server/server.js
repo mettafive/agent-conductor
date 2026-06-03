@@ -525,12 +525,53 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     const wfs = () => discoverWorkflows(conductorDir, absStatus, explicitConductor);
 
     if (url === "/health") {
+      const workflows = {};
+      for (const wf of wfs()) {
+        let kb = 0;
+        let beats = 0;
+        let st = null;
+        try {
+          kb = Math.round(fs.statSync(wf.statusPath).size / 1024);
+        } catch {
+          /* no status file yet */
+        }
+        try {
+          const s = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+          st = s.status ?? "idle";
+          beats = Object.values(s.steps || {}).reduce(
+            (n, x) => n + (Array.isArray(x && x.heartbeat) ? x.heartbeat.length : 0),
+            0,
+          );
+        } catch {
+          /* unreadable / not started */
+        }
+        let archiveLines = 0;
+        try {
+          archiveLines = fs
+            .readFileSync(path.join(wf.dir, "heartbeat-archive.jsonl"), "utf8")
+            .split("\n")
+            .filter(Boolean).length;
+        } catch {
+          /* no archive */
+        }
+        workflows[wf.name] = {
+          status: st ?? "idle",
+          status_file_kb: kb,
+          heartbeat_count: beats,
+          archive_lines: archiveLines,
+          history_count: listHistory(wf.historyDir).length,
+        };
+      }
       return json(res, 200, {
         status: "ok",
         version: VERSION,
-        watching: path.relative(process.cwd(), conductorDir) || conductorDir,
+        pid: process.pid,
         port: server.address()?.port ?? null,
-        workflows: wfs().map((w) => w.name),
+        uptime_seconds: Math.round(process.uptime()),
+        memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        watching: path.relative(process.cwd(), conductorDir) || conductorDir,
+        workflows,
+        sse_connections: clients.size,
       });
     }
 
@@ -740,6 +781,11 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     }
 
     if (url === "/events") {
+      if (clients.size >= 5) {
+        // cap concurrent streams so stray tabs can't silently pile up memory
+        res.writeHead(429, { "content-type": "text/plain" });
+        return res.end("Too many board connections (max 5). Close a tab and reload.");
+      }
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
