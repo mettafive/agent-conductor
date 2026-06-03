@@ -29,7 +29,9 @@ function StepTree({
   return (
     <div className="ml-2 mt-1 space-y-0.5 border-l border-line/60 pl-2">
       {model.steps.map((s) => {
-        const on = activeStep === s.id;
+        // a step is "on" when it's the selection, or when an iteration of this
+        // loop is selected ("loopId::item") so the parent stays highlighted too
+        const on = activeStep === s.id || (!!activeStep && activeStep.startsWith(`${s.id}::`));
         return (
           <div key={s.id}>
             <button
@@ -54,14 +56,21 @@ function StepTree({
               <div className="ml-3 space-y-0.5 border-l border-line/40 pl-2">
                 {s.loop.iterations.map((it) => {
                   const c = iterationColumn(it);
+                  const iterId = `${s.id}::${it.item}`;
+                  const onIter = activeStep === iterId;
                   return (
                     <button
                       key={it.item}
-                      onClick={() => onSelectStep?.(s.id)}
-                      className="flex w-full items-center gap-1.5 rounded px-1 py-px text-left font-mono text-[9.5px] hover:bg-panel/60"
+                      onClick={() => onSelectStep?.(iterId)}
+                      title={it.item}
+                      className={`flex w-full items-center gap-1.5 rounded px-1 py-px text-left font-mono text-[9.5px] transition-colors ${
+                        onIter ? "bg-iris/15" : "hover:bg-panel/60"
+                      }`}
                     >
                       <span className="w-3 shrink-0 text-center">{TREE_GLYPH[c] ?? "·"}</span>
-                      <span className={`min-w-0 flex-1 truncate ${c === "running" ? "text-cyan" : "text-mist"}`}>
+                      <span
+                        className={`min-w-0 flex-1 truncate ${c === "running" ? "text-cyan" : onIter ? "text-chalk" : "text-mist"}`}
+                      >
                         {it.item}
                       </span>
                     </button>

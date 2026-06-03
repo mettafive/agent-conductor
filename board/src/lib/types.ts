@@ -51,7 +51,7 @@ export interface ConductorStep {
   isLoop: boolean;
   over?: string;
   as?: string;
-  parallel?: boolean;
+  parallel?: boolean | "auto";
   subSteps?: ConductorStep[];
   // human approval (§4.4)
   isApproval: boolean;
@@ -63,6 +63,10 @@ export interface IterationStep {
   status: string;
   gate: string;
   attempt: number;
+  started_at?: string;
+  completed_at?: string;
+  /** per-criterion results, when the agent / gate-runner recorded gate_detail */
+  criteria: GateCriterion[];
 }
 
 export interface LoopIteration {
@@ -97,6 +101,8 @@ export interface HeartbeatEntry {
   at: string;
   note: string;
   iteration?: string;
+  /** the loop sub-step this beat belongs to (when bubbled from a sub-step) */
+  sub?: string;
   insight?: Insight;
   /** The last beat of a step — summarizes + carries context to the next step. */
   finalBeat?: boolean;
@@ -145,6 +151,8 @@ export interface BoardStep extends ConductorStep {
   rawStatus: string; // pending | running | done | failed | (unknown)
   gateState: string; // pending | checking | passed | failed
   attempt: number;
+  started_at?: string;
+  completed_at?: string;
   branchTaken?: string;
   output_value?: unknown;
   criteria: GateCriterion[];

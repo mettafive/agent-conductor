@@ -19,8 +19,17 @@ const COL_LABEL: Record<string, string> = {
   pending: "Pending",
 };
 
+function fmtDur(start?: string, end?: string): string {
+  if (!start || !end) return "";
+  const a = new Date(start).getTime();
+  const b = new Date(end).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return "";
+  const s = Math.round((b - a) / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
 /** The active non-loop step, shown large and centred in the main area. */
-export function StepView({
+export function StepDetail({
   step,
   onApprove,
 }: {
@@ -37,6 +46,9 @@ export function StepView({
     );
   }
 
+  const finalBeat = step.heartbeat.find((h) => h.finalBeat);
+  const dur = fmtDur(step.started_at, step.completed_at);
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
       <div className="rounded-2xl border border-line bg-panel/50 p-5">
@@ -45,6 +57,7 @@ export function StepView({
             {step.index + 1}
           </span>
           <span className="flex-1 font-mono text-base font-medium text-chalk">{step.id}</span>
+          {dur && <span className="font-mono text-[11px] text-mist">{dur}</span>}
           <span
             className={`rounded-md border px-2 py-0.5 font-mono text-[11px] ${COL_TINT[step.column] ?? COL_TINT.pending}`}
           >
@@ -113,6 +126,21 @@ export function StepView({
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {finalBeat?.handoff && (
+          <div className="mt-3 rounded-lg border border-cyan/25 bg-cyan/[0.06] px-3 py-2">
+            <div className="font-mono text-[10px] uppercase tracking-wide text-cyan">·→ handoff</div>
+            {finalBeat.handoff.to && (
+              <p className="mt-1 font-mono text-[11px] text-chalk">to {finalBeat.handoff.to}</p>
+            )}
+            {finalBeat.handoff.context && (
+              <p className="mt-0.5 text-[11.5px] leading-snug text-mist-2">{finalBeat.handoff.context}</p>
+            )}
+            {finalBeat.handoff.produced && (
+              <p className="mt-0.5 font-mono text-[10.5px] text-mist">produced: {finalBeat.handoff.produced}</p>
+            )}
           </div>
         )}
 

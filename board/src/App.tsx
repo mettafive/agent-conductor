@@ -6,9 +6,10 @@ import { buildModel } from "./lib/merge";
 import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sounds";
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { StatusBar } from "./components/StatusBar";
-import { StepView } from "./components/StepView";
+import { StepDetail } from "./components/StepDetail";
 import { SummaryView } from "./components/SummaryView";
-import { SwimLaneSection } from "./components/SwimLaneSection";
+import { LoopOverview } from "./components/LoopOverview";
+import { IterationKanban } from "./components/IterationKanban";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { OptimizationPanel } from "./components/OptimizationPanel";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
@@ -183,10 +184,17 @@ export function App() {
   );
   const showBoard = viewing ? !!record : liveStarted;
 
-  // Three-zone layout: the main area shows ONE thing — the active step (or the
-  // one focused from the sidebar), a loop's swim lanes, or a completion summary.
-  const activeStepId =
-    selectedStep && model?.steps.some((s) => s.id === selectedStep)
+  // Three-zone layout: the main area shows exactly ONE view at a time —
+  //   • a completion summary,
+  //   • one iteration's full kanban (sidebar selection "loopId::item"),
+  //   • a loop's overview of all iterations (a loop is the active step),
+  //   • a single non-loop step's detail.
+  // The sidebar is the only navigator; the main area never stacks kanbans.
+  const iterSel =
+    selectedStep && selectedStep.includes("::") ? selectedStep.split("::") : null;
+  const activeStepId = iterSel
+    ? iterSel[0]
+    : selectedStep && model?.steps.some((s) => s.id === selectedStep)
       ? selectedStep
       : (model?.currentStep ?? null);
   const activeStep =
@@ -226,7 +234,7 @@ export function App() {
             onPin={togglePin}
             width={sidebarWidth}
             onResize={setSidebarWidth}
-            activeStep={activeStepId}
+            activeStep={selectedStep ?? activeStepId}
             onSelectStep={setSelectedStep}
           />
         )}
@@ -274,7 +282,7 @@ export function App() {
               </div>
             ) : showBoard && model ? (
               <motion.div
-                key={`${activeWf}:${selectedRun ?? "live"}:${showSummary ? "sum" : (activeStep?.id ?? "none")}`}
+                key={`${activeWf}:${selectedRun ?? "live"}:${showSummary ? "sum" : (selectedStep ?? activeStep?.id ?? "none")}`}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
@@ -282,12 +290,19 @@ export function App() {
               >
                 {showSummary ? (
                   <SummaryView model={model} onOpenInsights={() => setPanelOpen(true)} />
+                ) : iterSel && activeStep?.isLoop ? (
+                  <IterationKanban
+                    loopStep={activeStep}
+                    item={iterSel[1]}
+                    onBack={() => setSelectedStep(activeStep.id)}
+                  />
                 ) : activeStep?.isLoop ? (
-                  <div className="mx-auto max-w-[1400px] px-5 py-6">
-                    <SwimLaneSection loopStep={activeStep} />
-                  </div>
+                  <LoopOverview
+                    loopStep={activeStep}
+                    onOpenIteration={(item) => setSelectedStep(`${activeStep.id}::${item}`)}
+                  />
                 ) : activeStep ? (
-                  <StepView step={activeStep} onApprove={viewing ? undefined : applyApproval} />
+                  <StepDetail step={activeStep} onApprove={viewing ? undefined : applyApproval} />
                 ) : (
                   <div className="grid h-full place-items-center">
                     <span className="font-mono text-xs text-mist">select a step from the sidebar</span>

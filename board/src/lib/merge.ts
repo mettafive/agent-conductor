@@ -17,6 +17,8 @@ interface RawStepStatus {
   attempt?: number;
   branch_taken?: string;
   output?: unknown;
+  started_at?: string;
+  completed_at?: string;
   gate_detail?: Array<{
     criterion?: string;
     kind?: string;
@@ -40,6 +42,7 @@ interface RawStepStatus {
     at?: string;
     note?: string;
     iteration?: string;
+    sub?: string;
     insight?: { type?: string; seed?: string; step?: string; confidence?: string };
     finalBeat?: boolean;
     handoff?: { to?: string; to_iteration?: string; context?: string; produced?: string };
@@ -55,6 +58,7 @@ function buildHeartbeat(st: RawStepStatus) {
           at: h.at as string,
           note: h.note as string,
           iteration: h.iteration,
+          sub: h.sub,
           insight:
             h.insight && typeof h.insight.type === "string"
               ? {
@@ -86,7 +90,7 @@ function collectSubBeats(st: RawStepStatus) {
     const sub = iters[item] ?? {};
     for (const subId of Object.keys(sub)) {
       for (const h of buildHeartbeat(sub[subId])) {
-        out.push({ ...h, iteration: h.iteration ?? item });
+        out.push({ ...h, iteration: h.iteration ?? item, sub: h.sub ?? subId });
       }
     }
   }
@@ -104,11 +108,15 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
     const ids = subDefs.length ? subDefs.map((s) => s.id) : Object.keys(itStatus);
     const steps = ids.map((id) => {
       const ss = itStatus[id] ?? {};
+      const def = subDefs.find((d) => d.id === id);
       return {
         id,
         status: ss.status ?? "pending",
         gate: ss.gate ?? "pending",
         attempt: ss.attempt ?? 1,
+        started_at: ss.started_at,
+        completed_at: ss.completed_at,
+        criteria: def ? buildCriteria(def, ss.gate_detail) : [],
       };
     });
     return {
@@ -216,6 +224,8 @@ export function buildModel(snap: Snapshot): BoardModel {
       rawStatus,
       gateState,
       attempt: st.attempt ?? 1,
+      started_at: st.started_at,
+      completed_at: st.completed_at,
       branchTaken: st.branch_taken,
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),
