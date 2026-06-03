@@ -110,11 +110,12 @@ function Card({
 interface Props {
   workflow: string;
   suggestions: Suggestion[];
-  onApply: (ids: string[]) => Promise<{ ok: boolean; error?: string }>;
+  viewing?: boolean;
+  onApply: (items: Suggestion[]) => Promise<{ ok: boolean; error?: string }>;
   onClose: () => void;
 }
 
-export function OptimizationPanel({ workflow, suggestions, onApply, onClose }: Props) {
+export function OptimizationPanel({ workflow, suggestions, viewing, onApply, onClose }: Props) {
   const [states, setStates] = useState<Record<string, "pending" | "applied" | "skipped">>({});
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -126,7 +127,8 @@ export function OptimizationPanel({ workflow, suggestions, onApply, onClose }: P
   const apply = async (ids: string[]) => {
     if (ids.length === 0 || busy) return;
     setBusy(true);
-    const res = await onApply(ids);
+    const items = suggestions.filter((s) => ids.includes(s.id));
+    const res = await onApply(items);
     setBusy(false);
     if (res.ok) {
       setStates((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, "applied"])) }));
@@ -154,6 +156,14 @@ export function OptimizationPanel({ workflow, suggestions, onApply, onClose }: P
         <span className="grid h-5 min-w-5 place-items-center rounded-md bg-iris/15 px-1 font-mono text-[11px] text-iris">
           {suggestions.length}
         </span>
+        {viewing && (
+          <span
+            title="From a past run — applying still updates the current conductor"
+            className="rounded border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] text-amber"
+          >
+            past run
+          </span>
+        )}
         <button onClick={onClose} className="ml-auto text-mist hover:text-chalk" title="Close">
           ✕
         </button>

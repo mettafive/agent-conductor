@@ -11,7 +11,7 @@ import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { OptimizationPanel } from "./components/OptimizationPanel";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
-import type { BoardModel, RunRecord, Snapshot } from "./lib/types";
+import type { BoardModel, RunRecord, Snapshot, Suggestion } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -96,8 +96,11 @@ export function App() {
   const togglePin = (name: string) =>
     setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
 
-  // post-run optimization panel (slides in ~1.5s after a run reaches done)
-  const [optimizeRunId, setOptimizeRunId] = useState<string | null>(null);
+  // Optimization review. It auto-opens ~1.5s after a live run first reaches
+  // done, but is also openable any time from the status bar — including for a
+  // past run picked from history, whose suggestions are stored on disk. This is
+  // what makes insights browsable instead of flashing by when the loop moves on.
+  const [panelOpen, setPanelOpen] = useState(false);
   const dismissedRuns = useRef<Set<string>>(new Set());
   const liveRunId = (liveSnap.status as { run_id?: string } | null)?.run_id;
   useEffect(() => {
@@ -108,15 +111,16 @@ export function App() {
       liveRunId &&
       !dismissedRuns.current.has(`${activeWf}:${liveRunId}`)
     ) {
-      const t = setTimeout(() => setOptimizeRunId(liveRunId), 1500);
+      const t = setTimeout(() => setPanelOpen(true), 1500);
       return () => clearTimeout(t);
     }
-    setOptimizeRunId(null);
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveModel.overallStatus, liveModel.suggestions.length, liveRunId, activeWf]);
+  }, [liveModel.overallStatus, liveModel.suggestions.length, liveRunId, activeWf, selectedRun]);
 
-  const applySuggestions = async (ids: string[]) => {
+  // Send the full suggestion objects so applying works for a past run too —
+  // the server no longer has to find them in the (possibly reset) live status.
+  const applySuggestions = async (items: Suggestion[]) => {
     if (!activeWf) return { ok: false, error: "no active workflow" };
     try {
       const r = await fetch(
@@ -124,7 +128,7 @@ export function App() {
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ suggestions: ids }),
+          body: JSON.stringify({ suggestions: items }),
         },
       );
       const d = await r.json().catch(() => ({}));
@@ -147,6 +151,13 @@ export function App() {
     Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0
   );
   const showBoard = viewing ? !!record : liveStarted;
+
+  // suggestions for whatever run is on screen — live, or a frozen past run
+  const shownSuggestions = model?.suggestions ?? [];
+  const closePanel = () => {
+    if (!viewing && liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
+    setPanelOpen(false);
+  };
 
   return (
     <>
@@ -179,6 +190,9 @@ export function App() {
             }}
             onBackToLive={() => setSelectedRun(null)}
             onToggleSidebar={() => setSidebarOpen((o) => !o)}
+            optimizeCount={shownSuggestions.length}
+            optimizeOpen={panelOpen}
+            onToggleOptimize={() => setPanelOpen((o) => !o)}
           />
 
           {pinned.length > 0 && (
@@ -211,15 +225,13 @@ export function App() {
             )}
 
             <AnimatePresence>
-              {optimizeRunId && activeWf && (
+              {panelOpen && shownSuggestions.length > 0 && activeWf && (
                 <OptimizationPanel
                   workflow={activeWf}
-                  suggestions={liveModel.suggestions}
+                  suggestions={shownSuggestions}
+                  viewing={viewing}
                   onApply={applySuggestions}
-                  onClose={() => {
-                    if (liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
-                    setOptimizeRunId(null);
-                  }}
+                  onClose={closePanel}
                 />
               )}
             </AnimatePresence>

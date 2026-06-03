@@ -448,23 +448,32 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       const wf = findWf(decodeURIComponent(m[1]));
       if (!wf) return json(res, 404, { error: "workflow not found" });
       readBody(req).then((bodyStr) => {
-        let ids;
+        let payload;
         try {
-          ids = JSON.parse(bodyStr || "{}").suggestions;
+          payload = JSON.parse(bodyStr || "{}").suggestions;
         } catch {
           return json(res, 400, { error: "invalid request body" });
         }
-        if (!Array.isArray(ids)) return json(res, 400, { error: "suggestions must be an array" });
+        if (!Array.isArray(payload) || payload.length === 0)
+          return json(res, 400, { error: "suggestions must be a non-empty array" });
         if (!wf.conductorPath || !fs.existsSync(wf.conductorPath))
           return json(res, 400, { error: "no conductor file for this workflow" });
 
-        let status;
-        try {
-          status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
-        } catch {
-          return json(res, 500, { error: "could not read status.json" });
+        // Accept either a list of ids (resolved against the live status) or full
+        // suggestion objects — the latter lets a past run's suggestions apply
+        // even after the live status has moved on to another run.
+        let chosen;
+        if (payload.every((x) => typeof x === "string")) {
+          let status;
+          try {
+            status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+          } catch {
+            return json(res, 500, { error: "could not read status.json" });
+          }
+          chosen = (status.suggestions || []).filter((s) => payload.includes(s.id));
+        } else {
+          chosen = payload.filter((x) => x && typeof x === "object");
         }
-        const chosen = (status.suggestions || []).filter((s) => ids.includes(s.id));
         if (chosen.length === 0) return json(res, 400, { error: "no matching suggestions" });
 
         const original = fs.readFileSync(wf.conductorPath, "utf8");

@@ -52,6 +52,9 @@ interface Props {
   onToggleMute: () => void;
   onBackToLive: () => void;
   onToggleSidebar: () => void;
+  optimizeCount?: number;
+  optimizeOpen?: boolean;
+  onToggleOptimize?: () => void;
 }
 
 export function StatusBar({
@@ -62,6 +65,9 @@ export function StatusBar({
   onToggleMute,
   onBackToLive,
   onToggleSidebar,
+  optimizeCount = 0,
+  optimizeOpen = false,
+  onToggleOptimize,
 }: Props) {
   const running = !viewing && model.overallStatus === "running";
   const duration = useDuration(model.startedAt, model.endedAt, running);
@@ -127,6 +133,19 @@ export function StatusBar({
             >
               💡 {model.insightCount} insight{model.insightCount === 1 ? "" : "s"}
             </span>
+          )}
+          {optimizeCount > 0 && onToggleOptimize && (
+            <button
+              onClick={onToggleOptimize}
+              title="Review the optimization suggestions from this run"
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
+                optimizeOpen
+                  ? "border-iris/50 bg-iris/15 text-chalk"
+                  : "border-iris/30 bg-iris/10 text-iris hover:bg-iris/15"
+              }`}
+            >
+              ✨ {optimizeCount}
+            </button>
           )}
           {lastBeat && (
             <span className="flex items-center gap-1.5 font-mono text-[11px] text-mist">
