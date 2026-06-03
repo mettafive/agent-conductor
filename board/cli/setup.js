@@ -27,11 +27,14 @@ steps:
 
   - id: start-board
     instruction: |
-      Start the board server in the background. It opens the browser
-      automatically — do NOT pass --no-open here, that defeats the live view.
+      Start the board server ONCE in the background and leave it running for the
+      whole run. It opens the browser automatically — do NOT pass --no-open here,
+      that defeats the live view.
         npx conductor-board >/tmp/conductor-board.log 2>&1 &
       Wait ~3 seconds for it to initialize. It auto-detects a free port if 3042
-      is taken and records the chosen port in .conductor/server.json.
+      is taken and records the chosen port in .conductor/server.json. Do NOT run
+      this command again later — one board per run. Re-running just reuses the
+      live server, but repeatedly launching is how you end up with stray tabs.
     requires: [preflight]
     gate:
       - name: "Server config file exists"
@@ -77,8 +80,13 @@ steps:
       Create .conductor/status.json with all steps pending and a timestamp run_id.
       Set the top-level "goal" from the conductor's description, and refresh
       "current_step_goal" each time current_step changes.
-      Walk each step in order, updating status.json after every step and gate
-      change. Retry on gate failure — never skip.
+      Walk each step in order, updating status.json after EVERY transition
+      (pending -> running -> gate checking -> passed/failed -> done). The human is
+      watching the board to follow along — never do real work without updating the
+      board first. Doing work the board doesn't reflect ("freeballing") is not
+      allowed: if you drift, stop, re-sync the board, restart the step cleanly, and
+      apologize. The board shows a red "Freeballing?" banner after ~3 minutes
+      without a heartbeat. Retry on gate failure — never skip.
       At least once per minute, append a heartbeat {at, note} to the current
       step's heartbeat array (read prior entries first; orient against the gate
       AND the goal; use [text](url) links for any PRs or pages you produce).

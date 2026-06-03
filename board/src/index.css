@@ -145,6 +145,15 @@
   filter: drop-shadow(0 0 4px color-mix(in oklab, var(--color-amber) 75%, transparent));
 }
 
+/* freeball warning — insistent but not seizure-inducing */
+@keyframes freeball-flash {
+  0%, 100% { background-color: color-mix(in oklab, var(--color-rose) 12%, transparent); }
+  50%      { background-color: color-mix(in oklab, var(--color-rose) 22%, transparent); }
+}
+.freeball-flash {
+  animation: freeball-flash 1.6s ease-in-out infinite;
+}
+
 /* teletype block cursor */
 @keyframes tw-blink {
   0%, 49%   { opacity: 1; }

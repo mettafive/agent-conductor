@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import type { BoardModel } from "../lib/types";
 import { useNow } from "../lib/useNow";
-import { relativeTime } from "../lib/heartbeat";
+import { relativeTime, secondsSince } from "../lib/heartbeat";
 import { AnimatedHeart } from "./AnimatedHeart";
+
+const FREEBALL_SECONDS = 180; // 3 min of silence while running → strong warning
+
+function fmtStall(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
 
 type Conn = "connecting" | "live" | "lost";
 
@@ -74,6 +82,12 @@ export function StatusBar({
   const now = useNow(1000);
   const lastBeat = running && model.lastBeatAt ? relativeTime(model.lastBeatAt, now) : null;
   const pct = model.total ? Math.round((model.done / model.total) * 100) : 0;
+
+  // Freeball detection: running, but nothing has touched the board for a while.
+  // Time from the last beat, or — if it never beat — from when the run started.
+  const silenceRef = model.lastBeatAt ?? model.startedAt;
+  const silence = running && silenceRef ? secondsSince(silenceRef, now) : null;
+  const freeball = silence !== null && silence > FREEBALL_SECONDS;
 
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-ink/80 backdrop-blur-xl">
@@ -207,7 +221,7 @@ export function StatusBar({
         </div>
       </div>
 
-      {!viewing && running && model.currentStepGoal && (
+      {!viewing && running && !freeball && model.currentStepGoal && (
         <div className="flex items-center gap-2 border-t border-line/60 px-5 py-1.5">
           <span className="font-mono text-[10px] uppercase tracking-wide text-cyan">
             now
@@ -216,6 +230,22 @@ export function StatusBar({
             <span className="font-mono text-[11px] text-chalk">{model.currentStep}</span>
           )}
           <span className="truncate text-xs text-mist">{model.currentStepGoal}</span>
+        </div>
+      )}
+
+      {freeball && silence !== null && (
+        <div className="freeball-flash flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-rose/50 bg-rose/15 px-5 py-2">
+          <span className="text-base leading-none text-rose">⚠</span>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-wide text-rose">
+            Freeballing?
+          </span>
+          <span className="font-mono text-[11px] text-rose">
+            no heartbeat for {fmtStall(silence)}
+          </span>
+          <span className="text-xs text-rose/90">
+            The agent looks like it's doing work without updating the board — that's
+            not allowed. It must check in now, or stop, restart cleanly, and apologize.
+          </span>
         </div>
       )}
     </header>

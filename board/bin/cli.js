@@ -154,15 +154,23 @@ function pidAlive(pid) {
 }
 
 /**
- * Before binding a port, look for a board that's already running here. A live
- * one we offer to reclaim; a dead pid leaves a stale server.json we just clear.
+ * Before binding a port, look for a board already serving this project.
+ *
+ *  - dead pid / no file → clear any stale server.json, start fresh (returns null)
+ *  - live board, non-interactive → REUSE it (returns its info). This is the key
+ *    guard against the tab flood: re-running `npx conductor-board` no longer
+ *    spawns a second server on the next port and opens another browser tab.
+ *  - live board, interactive → ask. "y" kills it and starts fresh (null);
+ *    anything else reuses the existing one (returns its info).
+ *
+ * One board per project — you should never end up with a pile of tabs.
  */
 async function preflightStaleBoard(serverJsonPath) {
   let info;
   try {
     info = JSON.parse(fs.readFileSync(serverJsonPath, "utf8"));
   } catch {
-    return; // no (readable) server.json — nothing to do
+    return null; // no (readable) server.json — nothing to do
   }
   const pid = info && info.pid;
   const clear = () => {
@@ -178,14 +186,24 @@ async function preflightStaleBoard(serverJsonPath) {
       clear();
       console.log(dim(`\n  cleared a stale server.json (pid ${pid} is no longer running).`));
     }
-    return;
+    return null;
   }
+
+  const reuse = {
+    reuse: true,
+    pid,
+    url: info.url || `http://localhost:${info.port ?? "?"}`,
+    when: info.started_at ? ago(info.started_at) : "",
+  };
+
+  // Non-interactive (an agent, a script): never duplicate — reuse silently.
+  if (!process.stdin.isTTY) return reuse;
 
   const port = info.port ?? "?";
   const when = info.started_at ? `, started ${ago(info.started_at)}` : "";
   console.log("");
   console.log(`  ${amber("⚠")}  A board is already running on port ${bold(port)} (pid ${pid}${when}).`);
-  const yes = await ask(`     Kill it and start fresh? ${dim("[y/N]")} `);
+  const yes = await ask(`     Kill it and start a fresh one? ${dim("[y/N]")} `);
   if (yes) {
     try {
       process.kill(pid, "SIGTERM");
@@ -195,14 +213,28 @@ async function preflightStaleBoard(serverJsonPath) {
     await new Promise((r) => setTimeout(r, 600)); // let it release the port
     clear();
     console.log(dim(`     stopped pid ${pid}.`));
-  } else {
-    console.log(dim(`     leaving it running — starting on the next free port.`));
+    return null;
   }
+  return reuse;
 }
 
-await preflightStaleBoard(
-  path.join(path.dirname(path.resolve(process.cwd(), statusPath)), "server.json"),
+const preflightServerJson = path.join(
+  path.dirname(path.resolve(process.cwd(), statusPath)),
+  "server.json",
 );
+const existing = await preflightStaleBoard(preflightServerJson);
+if (existing) {
+  console.log("");
+  console.log(`  ${iris("🎼 conductor-board")}`);
+  console.log(
+    `  ${bold("Already live at")} ${mint(existing.url)} ${dim(
+      `— reusing it (pid ${existing.pid}${existing.when ? ", started " + existing.when : ""})`,
+    )}`,
+  );
+  console.log(`  ${dim("one board per project — not opening another tab. stop that process to restart.")}`);
+  console.log("");
+  process.exit(0);
+}
 
 const { conductorPath: resolvedConductor, absStatus, server, serverJsonPath } =
   await listenWithFallback(wantedPort);

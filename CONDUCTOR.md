@@ -8,14 +8,44 @@
 
 ## Quick Setup
 
-Start the board in the background first — it **opens your browser automatically**:
+Start the board **once**, in the background, and **leave it running** — it opens
+your browser automatically and serves one board for the whole run:
 
 ```bash
 npx conductor-board &
 ```
 
-Don't add `--no-open` here; that's only for CI/headless. Then read
-`setup.conductor.yaml` and execute it.
+**One board per run.** Start it once and reuse that server. If you run
+`npx conductor-board` again it now detects the live board and reuses it instead of
+spawning a second server and opening another tab — but don't rely on that as an
+excuse to re-launch repeatedly (that's how you end up with a pile of tabs). Tips:
+
+- **Don't `@latest` on every call.** Pin the version you start with for the run;
+  re-resolving `@latest` each time hits the network and can leave hung processes.
+- **Validation doesn't open anything** — `npx conductor-board validate <file>` is a
+  CLI command that prints and exits. Use it freely.
+- **`--no-open`** is only for CI/headless. Don't add it to the first start.
+
+Then read `setup.conductor.yaml` and execute it.
+
+## The board is the contract — no freeballing
+
+Using the board is **not** optional decoration. The discipline *is* the board, and
+there is no automatic runner — "using the board" means **you** keep
+`.conductor/status.json` current as you actually work:
+
+- **Update status at every transition** — pending → running → gate (`checking`) →
+  passed/failed → done. The human is watching the board to follow along; a stale
+  board is a broken contract.
+- **Heartbeat at least once per minute** while a step runs (see below).
+- **Doing real work without updating the board is "freeballing" — not allowed.**
+  If you notice you've drifted (worked ahead of what the board shows, or gone quiet
+  for minutes), **stop, re-sync the board to reality, restart the step cleanly, and
+  apologize to the user.** Don't silently back-fill afterwards and pretend it was
+  live.
+- The board raises a red **"Freeballing?"** banner after ~3 minutes with no
+  heartbeat. If it shows — or the user calls it out — that's a hard stop: re-sync
+  and resume the discipline.
 
 The setup conductor will:
 

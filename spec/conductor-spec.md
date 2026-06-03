@@ -470,6 +470,12 @@ context and start the next step before another beat is expected. Variable interv
 are normal (20s during a busy scrape, 60s during a quiet write); 90s is the
 "something might be wrong" threshold, and everything under it is healthy rhythm.
 
+After ~3 minutes of silence while a step is `running`, the board escalates from the
+subtle 90s pulse to a red **"Freeballing?"** banner. That's a signal the agent may
+be doing real work without updating the board — which the execution contract
+forbids (§7). The remedy is not to back-fill the board after the fact: stop,
+re-sync `status.json` to reality, restart the step cleanly, and tell the user.
+
 The agent also maintains the top-level `goal` (copied from the conductor's
 `description` at init) and `current_step_goal` (a one-line summary of the active
 step, refreshed whenever `current_step` changes). Both are shown on the board
@@ -534,6 +540,9 @@ compatibility — new workflows should prefer the subdirectory convention.
 - **Gates are mandatory.** A step without a gate is a step the agent can fake.
   Prefer at least one criterion per step.
 - **Retry, never skip.** A failed gate sends the agent back into the step.
+- **Keep the board live.** Update `status.json` at every transition and heartbeat
+  as you go. Doing work the board doesn't reflect ("freeballing") breaks the
+  contract — re-sync and restart the step rather than back-filling after the fact.
 - **Plain language is a feature.** Soft gates let non-engineers author workflows.
 - **Hard checks earn trust.** Anything verifiable should be a `check`.
 - **One file, zero deps.** A conductor is portable by construction.
