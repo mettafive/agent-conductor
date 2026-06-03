@@ -32,6 +32,11 @@ export function renderNote(note: string): ReactNode[] {
   return out;
 }
 
+/** Strip markdown link syntax to its display text — for plain streaming. */
+export function plainNote(note: string): string {
+  return note.replace(LINK, "$1");
+}
+
 /** Seconds between an ISO timestamp and `now` (ms). */
 export function secondsSince(iso: string | undefined, now: number): number | null {
   if (!iso) return null;

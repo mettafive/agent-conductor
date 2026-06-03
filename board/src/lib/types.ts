@@ -62,11 +62,21 @@ export interface Insight {
   confidence?: string;
 }
 
+export interface Handoff {
+  to?: string;
+  to_iteration?: string;
+  context?: string;
+  produced?: string;
+}
+
 export interface HeartbeatEntry {
   at: string;
   note: string;
   iteration?: string;
   insight?: Insight;
+  /** The last beat of a step — summarizes + carries context to the next step. */
+  finalBeat?: boolean;
+  handoff?: Handoff;
 }
 
 export interface Suggestion {

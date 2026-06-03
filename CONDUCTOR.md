@@ -39,6 +39,16 @@ step's gate **and** the workflow's `goal`. Use `[text](url)` links for any PR or
 page you produce — the board renders them clickable. After each loop iteration,
 distill durable patterns into the step's `learnings` (max 5).
 
+**End every step with a finalBeat.** Before you mark a step `done`, append one last
+heartbeat with `"finalBeat": true` that summarizes what the step accomplished and
+carries context forward: `"handoff": { "to": "<next-step>", "context": "<what the
+next step needs>", "produced": "<file/artifact>" }`. End its note with
+*"Handing off to <next-step>."* Before starting a step, read the previous step's
+finalBeat. The board marks finalBeats with a `·→` handoff arrow — and the stall
+timer resets on **every** heartbeat, finalBeats included, so the cooldown starts
+fresh after each handoff and you get natural transition time before the next beat
+is due.
+
 When a beat captures something that would improve the workflow for future runs (a
 drift you corrected, a faster path, a too-strict gate, a missing instruction), tag
 it with an `insight` object — `{ type, seed, step, confidence }`. After the last

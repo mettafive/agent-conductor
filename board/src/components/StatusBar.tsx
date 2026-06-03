@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { BoardModel } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { relativeTime } from "../lib/heartbeat";
+import { AnimatedHeart } from "./AnimatedHeart";
 
 type Conn = "connecting" | "live" | "lost";
 
@@ -129,7 +130,7 @@ export function StatusBar({
           )}
           {lastBeat && (
             <span className="flex items-center gap-1.5 font-mono text-[11px] text-mist">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan" />
+              <AnimatedHeart lastBeatIso={model.lastBeatAt} size={13} title={`last beat: ${lastBeat}`} />
               last beat: {lastBeat}
             </span>
           )}

@@ -367,7 +367,7 @@ board watches.
 | `attempt`      | integer ≥ 1                             | Increments on every retry.                     |
 | `branch_taken` | step id                                 | Only on `condition` steps.                     |
 | `output`       | any                                     | Only when the step declared `output`.          |
-| `heartbeat`    | array of `{at, note, insight?}`          | Append-only self-regulation log. `note` supports markdown links; `insight` flags an improvement signal. See §6.5, §9. |
+| `heartbeat`    | array of `{at, note, insight?, finalBeat?, handoff?}` | Append-only self-regulation log. `note` supports markdown links; `insight` flags an improvement signal; `finalBeat: true` marks a step's closing handoff beat. See §6.5, §9. |
 | `learnings`    | array of strings (max 5)                | Patterns distilled from the heartbeats. See §6.5. |
 | `suggestions` (top) | array                              | Post-run optimization suggestions the agent writes before `done`. See §9. |
 
@@ -441,6 +441,35 @@ it to the right sub-card:
 { "at": "…", "iteration": "ale-djurklinik", "note": "Sitemap has /behandlingar/priser, fetching." }
 ```
 
+**finalBeats — handoffs between steps.** Before marking a step `done`, the agent
+writes one last heartbeat with `"finalBeat": true`. It summarizes what the step
+accomplished and carries context to the next step via a `handoff` object. The note
+should end with *"Handing off to <next-step>."*
+
+```json
+{
+  "at": "2026-06-03T15:53:00Z",
+  "note": "5 clinics claimed, all with live pricing pages. Handing off to snapshot-before.",
+  "finalBeat": true,
+  "handoff": {
+    "to": "snapshot-before",
+    "context": "Clinic ids [12, 45, 78, 102, 156]; Ahlbergs has known price URLs.",
+    "produced": "candidates.json"
+  }
+}
+```
+
+Loop iterations get finalBeats too — use `"to_iteration"` in the handoff. Before
+starting a step (or iteration), the agent **reads the previous finalBeat** so
+context flows forward without loss. The board marks finalBeats with a `·→` arrow.
+
+**The stall timer resets on every heartbeat, finalBeats included.** The board warns
+when no beat has landed for 90s. Because a step's finalBeat resets that timer, the
+cooldown starts fresh at each handoff — giving the agent a natural window to read
+context and start the next step before another beat is expected. Variable intervals
+are normal (20s during a busy scrape, 60s during a quiet write); 90s is the
+"something might be wrong" threshold, and everything under it is healthy rhythm.
+
 The agent also maintains the top-level `goal` (copied from the conductor's
 `description` at init) and `current_step_goal` (a one-line summary of the active
 step, refreshed whenever `current_step` changes). Both are shown on the board
@@ -483,8 +512,10 @@ compatibility — new workflows should prefer the subdirectory convention.
    - Execute the `instruction` (template in inputs and prior outputs).
    - **At least once per minute, append a heartbeat** to the step's `heartbeat`
      array (read prior entries first; orient against the step gate and `goal`).
+   - Before starting, read the previous step's `finalBeat` for handed-off context.
    - Evaluate the `gate`: run every `check`, self-validate every soft criterion.
-   - **All pass** → mark `done`, record `output` if declared, advance.
+   - **All pass** → append a `finalBeat` (summary + `handoff`), mark `done`, record
+     `output` if declared, advance.
    - **Any fail** → increment `attempt`, retry the step. Do not advance.
    - On a `condition` step → evaluate, set `branch_taken`, jump to `if_true` /
      `if_false`.

@@ -3,11 +3,14 @@ import { AnimatePresence } from "framer-motion";
 import { EMPTY, useBoardState } from "./lib/useBoardState";
 import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
-import { isMuted, playFailure, playSuccess, setMuted } from "./lib/sounds";
+import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sounds";
+import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { StatusBar } from "./components/StatusBar";
 import { Board } from "./components/Board";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { OptimizationPanel } from "./components/OptimizationPanel";
+import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
+import type { MonitorMode } from "./components/HeartbeatMonitor";
 import type { BoardModel, RunRecord, Snapshot } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
@@ -21,6 +24,16 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(248);
   const [muted, setMutedState] = useState(isMuted());
   const [pinned, setPinned] = useState<string[]>([]);
+  const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
+
+  // live heartbeat stream across every workflow — drives the monitor, the heart,
+  // and the tick sound. Arrivals are seeded on load so nothing false-fires.
+  const { beats, arrival } = useHeartbeatStream(workflows, order);
+  const globalLastBeat = lastBeatIso(beats);
+
+  useEffect(() => {
+    if (arrival) playTick();
+  }, [arrival]);
 
   // resolve the active workflow: explicit pick, else first running, else first
   const activeWf =
@@ -211,6 +224,15 @@ export function App() {
               )}
             </AnimatePresence>
           </div>
+
+          <HeartbeatMonitor
+            beats={beats}
+            arrival={arrival}
+            order={order}
+            mode={monitorMode}
+            onMode={setMonitorMode}
+            lastBeatIso={globalLastBeat}
+          />
         </div>
       </div>
     </>

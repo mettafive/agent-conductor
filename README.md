@@ -175,7 +175,10 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
 - **Phase 5 — multi-workflow workspace + self-improvement.** ✅ Run many workflows
   side by side; **heartbeats** carry **insights** that become **optimization
   suggestions** you apply back to the conductor — the workflow is refined by its
-  own execution history.
+  own execution history. The board makes the heartbeat its center: a beating heart
+  that weakens when an agent goes quiet, a live **heartbeat monitor** that streams
+  every beat character by character, and per-step timelines with **finalBeat**
+  handoffs that pass context cleanly from one step to the next.
 
 ## Design principles
 

@@ -113,6 +113,58 @@
   animation: spin 0.9s linear infinite;
 }
 
+/* ---- the heartbeat ---- */
+/* resting rhythm: a quick lub-dub, then a long rest — a real heartbeat */
+@keyframes heart-rest {
+  0%   { transform: scale(1);    }
+  7%   { transform: scale(1.22); }
+  14%  { transform: scale(1);    }
+  21%  { transform: scale(1.14); }
+  28%  { transform: scale(1);    }
+  100% { transform: scale(1);    }
+}
+.heart-rest {
+  animation: heart-rest 1.15s ease-in-out infinite;
+  transform-origin: center;
+}
+/* one-shot strong pulse when a fresh beat arrives */
+@keyframes heart-strong {
+  0%   { transform: scale(1);   }
+  28%  { transform: scale(1.34); }
+  100% { transform: scale(1);   }
+}
+.heart-strong {
+  animation: heart-strong 0.46s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center;
+}
+/* weakened: beats have gone quiet (90s+) — slower, dimmer, amber warning */
+.heart-weak {
+  animation: heart-rest 2.1s ease-in-out infinite;
+  transform-origin: center;
+  opacity: 0.5;
+  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--color-amber) 75%, transparent));
+}
+
+/* teletype block cursor */
+@keyframes tw-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.tw-cursor {
+  animation: tw-blink 0.53s steps(1) infinite;
+}
+
+/* subtle scanline/grain for the heartbeat monitor terminal */
+.monitor-grain {
+  background-image: repeating-linear-gradient(
+    0deg,
+    color-mix(in oklab, var(--color-chalk) 2%, transparent) 0px,
+    color-mix(in oklab, var(--color-chalk) 2%, transparent) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
 /* thin, dark scrollbar for board columns */
 .board-scroll {
   scrollbar-width: thin;

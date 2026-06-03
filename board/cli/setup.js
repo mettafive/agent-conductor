@@ -82,6 +82,9 @@ steps:
       At least once per minute, append a heartbeat {at, note} to the current
       step's heartbeat array (read prior entries first; orient against the gate
       AND the goal; use [text](url) links for any PRs or pages you produce).
+      Before marking each step done, append a finalBeat — {at, note, finalBeat:
+      true, handoff: {to, context, produced}} — summarizing the step and handing
+      off to the next; read the previous step's finalBeat before you start one.
       For loop steps, update "completed" and the "iterations" object as EACH
       iteration finishes — don't wait until the loop ends.
       Tag heartbeats with an "insight" object when you spot a way to improve the

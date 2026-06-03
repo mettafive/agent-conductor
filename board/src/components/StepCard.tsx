@@ -2,7 +2,8 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { BoardStep, GateCriterion, HeartbeatEntry, LoopIteration } from "../lib/types";
 import { useNow } from "../lib/useNow";
-import { relativeTime, renderNote, secondsSince } from "../lib/heartbeat";
+import { renderNote, secondsSince } from "../lib/heartbeat";
+import { HeartbeatTimeline } from "./HeartbeatTimeline";
 
 function ForkIcon() {
   return (
@@ -98,11 +99,9 @@ const SUB_DOT: Record<string, string> = {
 function IterationRow({
   it,
   beats,
-  now,
 }: {
   it: LoopIteration;
   beats: HeartbeatEntry[];
-  now: number;
 }) {
   const [open, setOpen] = useState(false);
   const running = it.steps.some((s) => s.status === "running");
@@ -149,80 +148,6 @@ function IterationRow({
               </span>
             ))}
           </div>
-          {beats.length > 0 && (
-            <div className="mt-1.5 space-y-1">
-              {[...beats].reverse().map((h, i) => (
-                <div key={i} className="flex gap-1.5">
-                  <span className="mt-px shrink-0 font-mono text-[9px] text-line-2">
-                    {relativeTime(h.at, now)}
-                  </span>
-                  <span className="flex-1 text-[10.5px] leading-snug text-mist-2">
-                    {renderNote(h.note)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HeartbeatLog({
-  entries,
-  learnings,
-  now,
-}: {
-  entries: HeartbeatEntry[];
-  learnings: string[];
-  now: number;
-}) {
-  return (
-    <div className="mt-2.5 border-t border-line pt-2 pl-7">
-      {learnings.length > 0 && (
-        <div className="mb-2 rounded-lg border border-cyan/20 bg-cyan/[0.06] px-2.5 py-2">
-          <div className="mb-1 font-mono text-[9px] uppercase tracking-wide text-cyan">learnings</div>
-          <ul className="space-y-0.5">
-            {learnings.map((l, i) => (
-              <li key={i} className="flex gap-1.5 text-[11px] leading-snug text-mist-2">
-                <span className="text-cyan">·</span>
-                <span>{l}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {entries.length > 0 && (
-        <div className="space-y-1.5">
-          {[...entries].reverse().map((h, i) => (
-            <div
-              key={i}
-              className={`flex gap-2 ${
-                h.insight
-                  ? "-ml-1.5 rounded-md border-l-2 border-amber/50 bg-amber/[0.05] py-0.5 pl-1.5"
-                  : ""
-              }`}
-            >
-              <span className="mt-px shrink-0 font-mono text-[9px] text-line-2">
-                {relativeTime(h.at, now)}
-              </span>
-              <span className="flex-1 text-[11px] leading-snug text-mist-2">
-                {h.iteration && (
-                  <span className="mr-1 rounded bg-iris/10 px-1 font-mono text-[9px] text-iris">
-                    {h.iteration}
-                  </span>
-                )}
-                {h.insight && <span className="mr-1">💡</span>}
-                {renderNote(h.note)}
-                {h.insight && (
-                  <span className="mt-0.5 block text-[10px] italic text-amber/90">
-                    ↳ {h.insight.seed}
-                  </span>
-                )}
-              </span>
-            </div>
-          ))}
         </div>
       )}
     </div>
@@ -409,7 +334,13 @@ export function StepCard({ step }: { step: BoardStep }) {
             className="overflow-hidden"
           >
             {hasBeats && (
-              <HeartbeatLog entries={step.heartbeat} learnings={step.learnings} now={now} />
+              <HeartbeatTimeline
+                entries={step.heartbeat}
+                learnings={step.learnings}
+                now={now}
+                running={step.column === "running"}
+                loop={loop}
+              />
             )}
 
             {loop && loop.iterations.length > 0 && (
@@ -418,7 +349,6 @@ export function StepCard({ step }: { step: BoardStep }) {
                   <IterationRow
                     key={it.item}
                     it={it}
-                    now={now}
                     beats={step.heartbeat.filter((h) => h.iteration === it.item)}
                   />
                 ))}
