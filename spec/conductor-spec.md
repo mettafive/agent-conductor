@@ -56,6 +56,25 @@ Steps execute **top to bottom** unless a condition redirects the flow. Every ste
 has an `id` (unique, kebab-case) and an `instruction`. Everything else is optional
 and unlocks more behavior.
 
+### 2.0 What makes a good card
+
+On the board a step is a **card** — a bite-size phase of work that ends where a
+gate makes sense and the next action builds from it.
+
+**Good cards** — research per a spec · write or fix a text · generate an image ·
+take an item off a queue and update it · check syntax or links · run a test suite ·
+scrape a site · deploy to production.
+
+**Not cards** — setup for the real work (opening files, loading config, reading
+instructions) · a mechanical sub-action inside a phase (save, close, format) · a
+single item of a batch (check link 1, check link 2 → use a loop, or one "check all
+links" card) · splitting one action into micro-steps (write paragraph 1, write
+paragraph 2 → that's one "write the page" card).
+
+**The test:** *can this card's gate **genuinely fail**, and does that failure change
+what happens next?* If yes, it's a card. Aim for visibility and structure, not
+granularity — a workflow with hundreds of micro-cards helps no one.
+
 ### 2.1 A standard gated step
 
 ```yaml

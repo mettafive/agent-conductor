@@ -99,7 +99,16 @@ view) + `insights.json`, and tracks which the user applies or dismisses. So:
   past runs learned. Don't re-surface insights already recorded there; prefer
   acting on the ones still marked **Open**.
 - Writing zero suggestions when the run clearly surfaced improvements wastes the
-  whole loop — capture them so the next run is better than this one.
+  whole loop — capture them so the next run is better than this one. Make it
+  enforceable: give your **final step** a hard gate that fails on an empty
+  suggestions array, e.g.
+  `check: "node -e \"process.exit((require('./.conductor/status.json').suggestions||[]).length>=3?0:1)\""`.
+- Use `conductor-board suggest "title" --type … --step …` rather than hand-editing.
+
+**One workflow, one subdirectory.** Keep each workflow in
+`.conductor/<workflow-name>/` (`conductor.yaml`, `status.json`, `insights.md`,
+`history/`). The flat `.conductor/status.json` still works for a single workflow,
+but subdirectories are the convention.
 
 See the **[Heartbeat Guide](./spec/heartbeat-guide.md)** for how to write good ones.
 
