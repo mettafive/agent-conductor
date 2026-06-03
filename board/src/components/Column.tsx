@@ -14,10 +14,12 @@ export function Column({
   col,
   steps,
   side,
+  onOpenLoop,
 }: {
   col: Col;
   steps: BoardStep[];
   side?: boolean;
+  onOpenLoop?: (id: string) => void;
 }) {
   const m = META[col];
   const compact = steps.length >= 6; // tighten spacing when a column gets busy
@@ -47,7 +49,7 @@ export function Column({
           <div className={`flex flex-col ${compact ? "gap-1.5" : "gap-2"}`}>
             <AnimatePresence mode="popLayout" initial={false}>
               {steps.map((s) => (
-                <StepCard key={s.id} step={s} />
+                <StepCard key={s.id} step={s} onOpenLoop={onOpenLoop} />
               ))}
             </AnimatePresence>
           </div>

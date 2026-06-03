@@ -4,7 +4,13 @@ import { Column } from "./Column";
 
 const MAIN: Col[] = ["pending", "running", "gate", "done"];
 
-export function Board({ model }: { model: BoardModel }) {
+export function Board({
+  model,
+  onOpenLoop,
+}: {
+  model: BoardModel;
+  onOpenLoop?: (id: string) => void;
+}) {
   const byCol = (c: Col) => model.steps.filter((s) => s.column === c);
   const failed = byCol("failed");
 
@@ -19,9 +25,11 @@ export function Board({ model }: { model: BoardModel }) {
           } sm:grid-cols-2`}
         >
           {MAIN.map((c) => (
-            <Column key={c} col={c} steps={byCol(c)} />
+            <Column key={c} col={c} steps={byCol(c)} onOpenLoop={onOpenLoop} />
           ))}
-          {failed.length > 0 && <Column col="failed" steps={failed} side />}
+          {failed.length > 0 && (
+            <Column col="failed" steps={failed} side onOpenLoop={onOpenLoop} />
+          )}
         </div>
       </div>
     </LayoutGroup>

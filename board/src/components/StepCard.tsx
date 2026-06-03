@@ -173,7 +173,13 @@ const MOVE = {
   default: { duration: 0.2, ease: EASE },
 } as const;
 
-export function StepCard({ step }: { step: BoardStep }) {
+export function StepCard({
+  step,
+  onOpenLoop,
+}: {
+  step: BoardStep;
+  onOpenLoop?: (id: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const now = useNow(5000);
   const loop = step.isLoop ? step.loop : undefined;
@@ -194,9 +200,12 @@ export function StepCard({ step }: { step: BoardStep }) {
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96, y: -2 }}
       transition={MOVE}
-      onClick={() => expandable && setOpen((o) => !o)}
+      onClick={() => {
+        if (loop && onOpenLoop) return onOpenLoop(step.id); // drill into the child board
+        if (expandable) setOpen((o) => !o);
+      }}
       className={`rounded-xl border bg-panel px-3 py-2.5 ${ACCENT[step.column]} ${dim} ${
-        expandable ? "cursor-pointer" : ""
+        expandable || (loop && onOpenLoop) ? "cursor-pointer" : ""
       } ${step.column === "done" ? "opacity-85" : ""}`}
     >
       <div className="flex items-center gap-2">
@@ -259,10 +268,19 @@ export function StepCard({ step }: { step: BoardStep }) {
                 over {step.over}
               </span>
             )}
-            {expandable && (
-              <span className="font-mono text-[10px] text-line-2">
-                {open ? "▾ hide" : "▸ iterations"}
+            {onOpenLoop ? (
+              <span className="ml-auto inline-flex items-center gap-1 font-mono text-[10px] text-cyan">
+                Open loop board
+                <svg width="10" height="10" viewBox="0 0 24 24">
+                  <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
               </span>
+            ) : (
+              expandable && (
+                <span className="font-mono text-[10px] text-line-2">
+                  {open ? "▾ hide" : "▸ iterations"}
+                </span>
+              )
             )}
           </div>
         </div>
