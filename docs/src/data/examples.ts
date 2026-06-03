@@ -155,7 +155,109 @@ steps:
       - check: "test -f review.md"
 `;
 
+export const DAILY_PRICE = `conductor: 2.0.0
+name: daily-price
+description: Scrape each clinic's prices in parallel, validate, snapshot.
+
+inputs:
+  - region
+
+steps:
+  - id: pick-clinics
+    instruction: |
+      List active clinics in {region} that have a website.
+    gate:
+      - "Every clinic has a name and a reachable URL"
+    output: clinics
+
+  - id: scrape-and-price
+    type: loop
+    over: clinics
+    as: clinic
+    parallel: true            # iterations run simultaneously
+    steps:
+      - id: discover-prices
+        instruction: Scrape {clinic} via nav + sitemap.
+        gate:
+          - check: "npx conductor-board check scrape-and-price"
+          - "Prices extracted verbatim with currency"
+      - id: persist
+        instruction: Write {clinic}'s prices to the database.
+        gate:
+          - check: "node verify-write.js {clinic}"
+
+  - id: summarize
+    instruction: Compare before/after; write the report.
+    requires: [scrape-and-price]
+    gate:
+      - "Report flags anomalies per clinic"
+`;
+
+export const CONTENT_PIPELINE = `conductor: 2.0.0
+name: content-pipeline
+description: Polish a batch of pages, then a human approves before shipping.
+
+inputs:
+  - page_list
+
+steps:
+  - id: polish
+    type: loop
+    over: page_list
+    as: page
+    steps:
+      - id: write-page
+        instruction: Polish {page} to the bar.
+        gate:
+          - "Reads naturally; no placeholder text remains"
+      - id: check-links
+        instruction: Verify every link on {page} resolves.
+        gate:
+          - check: "node check-links.js {page}"
+
+  - id: approve-batch
+    type: approval            # pauses for a human decision
+    instruction: Review the polished pages before they ship.
+    requires: [polish]
+    approval:
+      prompt: "Ship these pages to production?"
+      items:
+        - "{page} — ready to ship"
+      actions:
+        approve: ship
+        reject: revise
+
+  - id: ship
+    instruction: Ship the approved pages live.
+    requires: [approve-batch]
+    gate:
+      - check: "node verify-deployment.js"
+
+  - id: revise
+    instruction: Take rejected pages back through polish.
+    gate:
+      - "Every rejected page has been addressed"
+`;
+
+// Ordered impressive → approachable: land on the real-world one, click down to simpler.
 export const EXAMPLES: Example[] = [
+  {
+    id: "daily-price",
+    name: "daily-price",
+    tagline:
+      "A real-world parallel loop — scrape each clinic at once, mixed soft + hard gates.",
+    pattern: "Parallel loop",
+    accent: "mint",
+    yaml: DAILY_PRICE,
+  },
+  {
+    id: "content-pipeline",
+    name: "content-pipeline",
+    tagline: "A polish loop held at a `type: approval` human gate before anything ships.",
+    pattern: "Loop + approval",
+    accent: "cyan",
+    yaml: CONTENT_PIPELINE,
+  },
   {
     id: "basic-report",
     name: "basic-report",

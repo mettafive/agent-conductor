@@ -62,6 +62,24 @@ export function StepNode({ data }: NodeProps<StepNode>) {
           {data.instruction}
         </p>
 
+        {data.type === "loop" && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md border border-iris/30 bg-iris/10 px-1.5 py-0.5 font-mono text-[10px] text-iris">
+              ⟳ loop{data.over ? ` over ${data.over}` : ""}
+            </span>
+            {data.parallel && (
+              <span className="rounded-md border border-cyan/30 bg-cyan/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan">
+                ∥ parallel
+              </span>
+            )}
+          </div>
+        )}
+        {data.type === "approval" && (
+          <span className="mt-2 inline-block rounded-md border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[10px] text-amber">
+            ⏳ human approval
+          </span>
+        )}
+
         {(soft > 0 || hard > 0) && (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
             {soft > 0 && (

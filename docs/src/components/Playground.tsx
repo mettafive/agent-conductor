@@ -3,8 +3,8 @@ import { EXAMPLES } from "../data/examples";
 import { FlowDiagram } from "./FlowDiagram";
 
 export function Playground() {
-  const [active, setActive] = useState(EXAMPLES[1].id); // treatment-page shows a branch
-  const [yaml, setYaml] = useState(EXAMPLES[1].yaml);
+  const [active, setActive] = useState(EXAMPLES[0].id); // daily-price — land on the impressive one
+  const [yaml, setYaml] = useState(EXAMPLES[0].yaml);
   const [dirty, setDirty] = useState(false);
 
   const select = (id: string) => {

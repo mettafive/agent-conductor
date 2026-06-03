@@ -8,12 +8,14 @@ export type GateCriterion =
 export interface StepNodeData {
   stepId: string;
   index: number;
-  type: "step" | "condition";
+  type: "step" | "condition" | "loop" | "approval";
   instruction: string;
   gates: GateCriterion[];
   requires: string[];
   output?: string;
   isCondition: boolean;
+  over?: string;
+  parallel?: boolean;
   [key: string]: unknown;
 }
 
@@ -36,6 +38,9 @@ interface RawStep {
   then?: string;
   requires?: string[];
   output?: string;
+  over?: string;
+  parallel?: boolean;
+  approval?: { actions?: { approve?: string; reject?: string } };
 }
 
 function normalizeGates(gate: unknown[] | undefined): GateCriterion[] {
@@ -103,10 +108,17 @@ export function parseConductor(src: string): ParsedConductor {
       if (s.if_true) lane.set(s.if_true, -1);
       if (s.if_false) lane.set(s.if_false, 1);
     }
+    if (s?.type === "approval") {
+      const a = s.approval?.actions;
+      if (a?.approve) lane.set(a.approve, -1);
+      if (a?.reject) lane.set(a.reject, 1);
+    }
   });
 
   const nodes: Node<StepNodeData>[] = steps.map((s, i) => {
     const isCondition = s.type === "condition";
+    const kind =
+      s.type === "loop" ? "loop" : s.type === "approval" ? "approval" : isCondition ? "condition" : "step";
     const laneX = (lane.get(s.id) ?? 0) * X_GAP;
     return {
       id: s.id,
@@ -115,12 +127,14 @@ export function parseConductor(src: string): ParsedConductor {
       data: {
         stepId: s.id,
         index: i,
-        type: isCondition ? "condition" : "step",
+        type: kind,
         instruction: (s.instruction ?? "").trim(),
         gates: normalizeGates(s.gate),
         requires: Array.isArray(s.requires) ? s.requires : [],
         output: s.output,
         isCondition,
+        over: s.over,
+        parallel: s.parallel === true,
       },
     };
   });
@@ -157,6 +171,35 @@ export function parseConductor(src: string): ParsedConductor {
         });
       }
       return; // conditions route only via if_true/if_false
+    }
+
+    if (s.type === "approval") {
+      const a = s.approval?.actions;
+      if (a?.approve && idToIndex.has(a.approve)) {
+        pushEdge({
+          id: `${s.id}->approve->${a.approve}`,
+          source: s.id,
+          target: a.approve,
+          label: "approve",
+          type: "smoothstep",
+          animated: true,
+          style: { stroke: "var(--color-mint)", strokeWidth: 1.5 },
+          labelStyle: { fill: "var(--color-mint)" },
+        });
+      }
+      if (a?.reject && idToIndex.has(a.reject)) {
+        pushEdge({
+          id: `${s.id}->reject->${a.reject}`,
+          source: s.id,
+          target: a.reject,
+          label: "reject",
+          type: "smoothstep",
+          animated: true,
+          style: { stroke: "var(--color-rose)", strokeWidth: 1.5 },
+          labelStyle: { fill: "var(--color-rose)" },
+        });
+      }
+      return; // approval routes only via approve/reject
     }
 
     // explicit rejoin
