@@ -286,23 +286,64 @@ function loadInsights(wf) {
   return { workflow: wf.name, items: [] };
 }
 
+// Confidence auto-escalates with evidence (§5.2):
+//   low (1×) → medium (2–3×) → high (4×) → proven (applied + measured impact,
+//   or observed 5×+). A higher confidence is never downgraded.
+const CONF_RANK = { low: 0, medium: 1, high: 2, proven: 3 };
+function deriveConfidence(item) {
+  const obs = item.times_observed || 1;
+  const applied = item.times_applied || 0;
+  let evidence = "low";
+  if ((applied >= 1 && item.impact_when_applied) || obs >= 5) evidence = "proven";
+  else if (obs >= 4) evidence = "high";
+  else if (obs >= 2) evidence = "medium";
+  const declared = item.confidence || "low";
+  return CONF_RANK[evidence] >= CONF_RANK[declared] ? evidence : declared;
+}
+
+const CONF_BADGE = { proven: "✅", high: "🟢", medium: "🟡", low: "⚪" };
+
 function renderInsightsMd(ledger) {
-  const of = (st) => ledger.items.filter((i) => i.status === st);
-  const line = (i) =>
-    `- [${i.type}] ${i.title}${i.confidence ? ` · ${i.confidence}` : ""}${
-      i.provenance ? ` · _${i.provenance}_` : ""
-    }`;
+  const open = ledger.items.filter((i) => i.status === "open");
+  const applied = ledger.items.filter((i) => i.status === "applied");
+  const dismissed = ledger.items.filter((i) => i.status === "dismissed");
+  const byConf = (c) => open.filter((i) => (i.confidence || "low") === c && (i.scope || "this-conductor") === "this-conductor");
+  const byScope = (sc) => open.filter((i) => (i.scope || "this-conductor") === sc);
+
+  const line = (i) => {
+    const n = i.times_observed || 1;
+    const seen = `${n}× observed`;
+    const ap = i.times_applied ? `, applied` : "";
+    const imp = i.impact_when_applied ? ` — ${i.impact_when_applied}` : "";
+    return `- ${CONF_BADGE[i.confidence || "low"] || "⚪"} ${i.title} ${`_(${seen}${ap})_`}${imp}`;
+  };
   const sect = (title, items) =>
     `## ${title}\n${items.length ? items.map(line).join("\n") : "_none yet_"}\n`;
+
   return (
     `# Conductor insights — ${ledger.workflow}\n\n` +
-    `_Accumulated across runs. The agent reads this at the start of each run to carry ` +
-    `learnings forward; the board appends new insights and tracks which you apply or dismiss._\n\n` +
-    sect("Open", of("open")) +
+    `_Accumulated across runs. The agent reads this at the start of each run and ` +
+    `automatically applies **proven** patterns; the board appends new sightings, ` +
+    `escalates confidence with evidence, and routes cross-cutting insights by scope._\n\n` +
+    sect("Proven — auto-applied", byConf("proven")) +
     `\n` +
-    sect("Applied", of("applied")) +
+    sect("High confidence", byConf("high")) +
     `\n` +
-    sect("Dismissed", of("dismissed"))
+    sect("Emerging (2–3×, watching)", byConf("medium")) +
+    `\n` +
+    sect("New (1×)", byConf("low")) +
+    `\n` +
+    sect("Upstream — routed outside this conductor", byScope("upstream")) +
+    `\n` +
+    sect("Template", byScope("template")) +
+    `\n` +
+    sect("Tooling — improvements to agent-conductor itself", byScope("tooling")) +
+    `\n` +
+    sect("Corpus", byScope("corpus")) +
+    `\n` +
+    sect("Applied", applied) +
+    `\n` +
+    sect("Dismissed", dismissed)
   );
 }
 
@@ -317,35 +358,134 @@ function saveInsights(wf, ledger) {
   }
 }
 
-/** Merge a run's suggestions into the ledger as `open`, deduped by key. */
+/**
+ * Merge a run's suggestions into the ledger. A repeat sighting of an existing
+ * insight is NOT dropped — it adds an observation, bumps times_observed, and
+ * re-escalates confidence (§5.2). New insights enter as `open` at low/declared
+ * confidence. Returns true if anything changed.
+ */
 function mergeInsights(wf, suggestions, runId, at) {
   if (!Array.isArray(suggestions) || suggestions.length === 0) return false;
   const ledger = loadInsights(wf);
-  const have = new Set(ledger.items.map(insightKey));
-  let added = 0;
+  const byKey = new Map(ledger.items.map((i) => [i.key, i]));
+  const when = at || new Date().toISOString();
+  let changed = 0;
   for (const s of suggestions) {
     if (!s || !s.title) continue;
     const key = insightKey(s);
-    if (have.has(key)) continue;
-    have.add(key);
-    ledger.items.push({
-      key,
-      type: s.type || "note",
-      step: s.step,
-      title: s.title,
-      rationale: s.rationale,
-      current: s.current,
-      proposed: s.proposed,
-      confidence: s.confidence,
-      source_heartbeat: s.source_heartbeat,
-      status: "open",
-      provenance: `run ${runId || "?"}`,
-      first_seen_at: at || new Date().toISOString(),
-    });
-    added += 1;
+    const obs = { run: runId || "?", at: when, note: s.rationale || s.title };
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.observations = Array.isArray(existing.observations) ? existing.observations : [];
+      // don't double-count the same run
+      if (!existing.observations.some((o) => o.run === obs.run)) {
+        existing.observations.push(obs);
+        existing.times_observed = (existing.times_observed || existing.observations.length || 1);
+      }
+      // freshen mutable fields if the new sighting carries more detail
+      if (s.scope) existing.scope = s.scope;
+      if (s.impact) existing.impact_when_applied = s.impact;
+      if (s.current) existing.current = s.current;
+      if (s.proposed) existing.proposed = s.proposed;
+      if (s.rationale) existing.rationale = s.rationale;
+      if (existing.status !== "dismissed") existing.confidence = deriveConfidence(existing);
+      changed += 1;
+    } else {
+      const item = {
+        key,
+        type: s.type || "note",
+        step: s.step,
+        scope: s.scope || "this-conductor",
+        title: s.title,
+        rationale: s.rationale,
+        current: s.current,
+        proposed: s.proposed,
+        impact_when_applied: s.impact,
+        confidence: s.confidence || "low",
+        observations: [obs],
+        times_observed: 1,
+        times_applied: 0,
+        source_heartbeat: s.source_heartbeat,
+        status: "open",
+        provenance: `run ${runId || "?"}`,
+        first_seen_at: when,
+      };
+      item.confidence = deriveConfidence(item);
+      ledger.items.push(item);
+      byKey.set(key, item);
+      changed += 1;
+    }
   }
-  if (added) saveInsights(wf, ledger);
-  return added > 0;
+  if (changed) saveInsights(wf, ledger);
+  return changed > 0;
+}
+
+/**
+ * Promote proven insights into the conductor's `knowledge:` section and
+ * auto-apply proven `this-conductor` insights (§5.3, §5.4). Proven patterns no
+ * longer need human gatekeeping — they travel with the repo as knowledge, and
+ * step-scoped ones mutate the conductor directly. Returns true if files changed.
+ */
+function consolidateProven(wf) {
+  const ledger = loadInsights(wf);
+  const proven = ledger.items.filter(
+    (i) => i.status !== "dismissed" && (i.confidence || "low") === "proven",
+  );
+  if (proven.length === 0) return false;
+  if (!wf.conductorPath || !fs.existsSync(wf.conductorPath)) return false;
+
+  let doc;
+  try {
+    doc = yaml.load(fs.readFileSync(wf.conductorPath, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!doc || typeof doc !== "object") return false;
+
+  let docChanged = false;
+  let ledgerChanged = false;
+
+  // 1. knowledge promotion — every proven insight becomes a knowledge line
+  doc.knowledge = Array.isArray(doc.knowledge) ? doc.knowledge : [];
+  for (const i of proven) {
+    const tag = `[proven, ${i.times_observed || 1} run${(i.times_observed || 1) === 1 ? "" : "s"}]`;
+    const lineKey = i.title.trim().toLowerCase();
+    const already = doc.knowledge.some(
+      (k) => typeof k === "string" && k.trim().toLowerCase().startsWith(lineKey),
+    );
+    if (!already) {
+      doc.knowledge.push(`${i.title} ${tag}`);
+      docChanged = true;
+    }
+  }
+
+  // 2. auto-apply proven, step-scoped (this-conductor) insights still open
+  const appliable = proven.filter(
+    (i) => i.status === "open" && (i.scope || "this-conductor") === "this-conductor",
+  );
+  if (appliable.length) {
+    applyMutations(doc, appliable);
+    const errors = validateConductor(doc);
+    if (errors.length === 0) {
+      for (const i of appliable) {
+        i.status = "applied";
+        i.times_applied = (i.times_applied || 0) + 1;
+        i.decided_at = new Date().toISOString();
+        ledgerChanged = true;
+      }
+      docChanged = true;
+    }
+  }
+
+  if (docChanged) {
+    try {
+      fs.writeFileSync(wf.conductorPath, yaml.dump(doc, { lineWidth: 100 }));
+    } catch (e) {
+      console.warn(`[conductor-board] could not write knowledge: ${e.message}`);
+    }
+  }
+  if (ledgerChanged) saveInsights(wf, ledger);
+  return docChanged || ledgerChanged;
 }
 
 /** Mark ledger items applied/dismissed/open by key. */
@@ -488,8 +628,12 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       sendAll("update", snap);
       const rec = archiveIfDone(wf.historyDir, snap, archivedSetFor(wf));
       if (rec) {
-        if (mergeInsights(wf, rec.snapshot?.status?.suggestions, rec.run_id, rec.completed_at)) {
+        const merged = mergeInsights(wf, rec.snapshot?.status?.suggestions, rec.run_id, rec.completed_at);
+        // promote/auto-apply proven insights, then push the refreshed ledger
+        const consolidated = consolidateProven(wf);
+        if (merged || consolidated) {
           sendAll("insights", { workflow: wf.name, ledger: loadInsights(wf) });
+          if (consolidated) sendAll("update", snapshotFor(wf)); // conductor may have changed
         }
         sendAll("history", { workflow: wf.name, runs: listHistory(wf.historyDir) });
       }

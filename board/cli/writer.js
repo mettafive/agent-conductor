@@ -179,31 +179,56 @@ export async function runLoop(args) {
   return ok(`${loopId}/${item}/${subId} → ${status}`);
 }
 
-// conductor-board suggest "title" --type T --step S --confidence C --rationale R [--current X --proposed Y]
+// conductor-board suggest "title" --type T --scope SC --step S --confidence C
+//   --rationale R [--current X --proposed Y --impact Z]
+//
+// --scope routes the insight: this-conductor (default, auto-appliable) |
+// upstream | template | tooling | corpus. Non-this-conductor scopes are logged
+// and surfaced but require human action outside the conductor (§5.1).
+const SCOPES = ["this-conductor", "upstream", "template", "tooling", "corpus"];
+
 export async function runSuggest(args) {
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(
+      'usage: conductor-board suggest "title" --type <kind> --scope <scope> [--step <id>]\n' +
+        "         [--confidence low|medium|high|proven] [--rationale R] [--current X]\n" +
+        "         [--proposed Y] [--impact Z]\n" +
+        `  --scope: ${SCOPES.join(" | ")}  (default this-conductor)`,
+    );
+    return true;
+  }
   const sp = statusPathOf(args);
   const [title] = positionals(args);
-  if (!title) return fail('usage: conductor-board suggest "title" --type instruction --step <id>');
+  if (!title) return fail('usage: conductor-board suggest "title" --type instruction --scope this-conductor');
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   const str = (names, def) => {
     const v = flag(args, names);
     return typeof v === "string" ? v : def;
   };
+  let scope = str(["--scope"], "this-conductor");
+  if (!SCOPES.includes(scope)) {
+    console.error(red(`✗ --scope must be one of: ${SCOPES.join(", ")}`));
+    return false;
+  }
   s.suggestions = Array.isArray(s.suggestions) ? s.suggestions : [];
   s.suggestions.push({
     id: `sg-${s.suggestions.length + 1}`,
     title,
     type: str(["--type"], "instruction"),
+    scope,
     step: str(["--step"], undefined),
-    confidence: str(["--confidence"], "medium"),
+    confidence: str(["--confidence"], undefined),
     rationale: str(["--rationale"], undefined),
     current: str(["--current"], undefined),
     proposed: str(["--proposed"], undefined),
+    impact: str(["--impact"], undefined),
     source_heartbeat: now(),
   });
   save(sp, s);
-  return ok(`suggestion #${s.suggestions.length}: ${title.length > 50 ? title.slice(0, 50) + "…" : title}`);
+  return ok(
+    `suggestion #${s.suggestions.length} [${scope}]: ${title.length > 50 ? title.slice(0, 50) + "…" : title}`,
+  );
 }
 
 // conductor-board status-init <conductor.yaml> [--run-id ID]

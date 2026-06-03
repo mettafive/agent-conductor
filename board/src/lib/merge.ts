@@ -43,7 +43,7 @@ interface RawStepStatus {
     note?: string;
     iteration?: string;
     sub?: string;
-    insight?: { type?: string; seed?: string; step?: string; confidence?: string };
+    insight?: { type?: string; seed?: string; step?: string; scope?: string; confidence?: string };
     finalBeat?: boolean;
     handoff?: { to?: string; to_iteration?: string; context?: string; produced?: string };
   }>;
@@ -65,6 +65,7 @@ function buildHeartbeat(st: RawStepStatus) {
                   type: h.insight.type,
                   seed: h.insight.seed ?? "",
                   step: h.insight.step,
+                  scope: h.insight.scope as import("./types").Scope | undefined,
                   confidence: h.insight.confidence,
                 }
               : undefined,

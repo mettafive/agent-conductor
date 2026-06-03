@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { EMPTY, useBoardState } from "./lib/useBoardState";
 import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
@@ -11,7 +11,7 @@ import { SummaryView } from "./components/SummaryView";
 import { LoopOverview } from "./components/LoopOverview";
 import { IterationKanban } from "./components/IterationKanban";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
-import { OptimizationPanel } from "./components/OptimizationPanel";
+import { InsightsDashboard } from "./components/InsightsDashboard";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
 import type { BoardModel, RunRecord, Snapshot, Suggestion } from "./lib/types";
@@ -110,27 +110,13 @@ export function App() {
   const togglePin = (name: string) =>
     setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
 
-  // Optimization review. It auto-opens ~1.5s after a live run first reaches
-  // done, but is also openable any time from the status bar — including for a
-  // past run picked from history, whose suggestions are stored on disk. This is
-  // what makes insights browsable instead of flashing by when the loop moves on.
-  const [panelOpen, setPanelOpen] = useState(false);
-  const dismissedRuns = useRef<Set<string>>(new Set());
+  // Insights are now a persistent, browsable page (✨ in the status bar) rather
+  // than a popup that forces itself open and flashes by when the loop moves on.
+  // Proven patterns auto-apply server-side; the dashboard is informational and
+  // the open items still get manual apply/dismiss controls (§5.5/§5.6).
+  const [showInsights, setShowInsights] = useState(false);
   const liveRunId = (liveSnap.status as { run_id?: string } | null)?.run_id;
-  useEffect(() => {
-    if (
-      selectedRun === null &&
-      liveModel.overallStatus === "done" &&
-      openInsights.length > 0 &&
-      liveRunId &&
-      !dismissedRuns.current.has(`${activeWf}:${liveRunId}`)
-    ) {
-      const t = setTimeout(() => setPanelOpen(true), 1500);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveModel.overallStatus, openInsights.length, liveRunId, activeWf, selectedRun]);
+  void liveRunId;
 
   // Send the full suggestion objects so applying works for a past run too —
   // the server no longer has to find them in the (possibly reset) live status.
@@ -202,10 +188,6 @@ export function App() {
   const showSummary =
     !selectedStep && !!model && (model.overallStatus === "done" || model.overallStatus === "failed");
 
-  const closePanel = () => {
-    if (!viewing && liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
-    setPanelOpen(false);
-  };
   const dismissInsights = async (keys: string[]) => {
     if (!activeWf || keys.length === 0) return;
     try {
@@ -253,8 +235,8 @@ export function App() {
             onBackToLive={() => setSelectedRun(null)}
             onToggleSidebar={() => setSidebarOpen((o) => !o)}
             optimizeCount={openInsights.length}
-            optimizeOpen={panelOpen}
-            onToggleOptimize={() => setPanelOpen((o) => !o)}
+            optimizeOpen={showInsights}
+            onToggleOptimize={() => setShowInsights((o) => !o)}
           />
 
           {pinned.length > 0 && (
@@ -276,7 +258,23 @@ export function App() {
           )}
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            {viewing && !record ? (
+            {showInsights ? (
+              <motion.div
+                key="insights-dashboard"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                className="board-scroll h-full overflow-y-auto"
+              >
+                <InsightsDashboard
+                  workflow={activeWf ?? "workflow"}
+                  ledger={activeLedger}
+                  runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
+                  onApply={applySuggestions}
+                  onDismiss={dismissInsights}
+                />
+              </motion.div>
+            ) : viewing && !record ? (
               <div className="grid h-full place-items-center">
                 <span className="font-mono text-xs text-mist">loading run…</span>
               </div>
@@ -289,7 +287,7 @@ export function App() {
                 className="board-scroll h-full overflow-y-auto"
               >
                 {showSummary ? (
-                  <SummaryView model={model} onOpenInsights={() => setPanelOpen(true)} />
+                  <SummaryView model={model} onOpenInsights={() => setShowInsights(true)} />
                 ) : iterSel && activeStep?.isLoop ? (
                   <IterationKanban
                     loopStep={activeStep}
@@ -312,18 +310,6 @@ export function App() {
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
             )}
-
-            <AnimatePresence>
-              {panelOpen && openInsights.length > 0 && activeWf && (
-                <OptimizationPanel
-                  workflow={activeWf}
-                  suggestions={openInsights}
-                  onApply={applySuggestions}
-                  onDismiss={dismissInsights}
-                  onClose={closePanel}
-                />
-              )}
-            </AnimatePresence>
           </div>
 
           <HeartbeatMonitor

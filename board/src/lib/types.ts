@@ -83,10 +83,14 @@ export interface LoopState {
   iterations: LoopIteration[];
 }
 
+/** Where an insight applies — drives whether it can be auto-applied (§5.1). */
+export type Scope = "this-conductor" | "upstream" | "template" | "tooling" | "corpus";
+
 export interface Insight {
   type: string;
   seed: string;
   step?: string;
+  scope?: Scope;
   confidence?: string;
 }
 
@@ -113,6 +117,7 @@ export interface Suggestion {
   id: string;
   type: string;
   step?: string;
+  scope?: Scope;
   title: string;
   rationale?: string;
   source_heartbeat?: string;
@@ -124,16 +129,29 @@ export interface Suggestion {
   provenance?: string; // e.g. "run 2026-06-03T18-34" — set by the ledger
 }
 
+/** A single sighting of an insight, accumulated across runs (§5.2). */
+export interface Observation {
+  run?: string;
+  at?: string;
+  note?: string;
+}
+
 /** One entry in a workflow's persistent insights ledger (.conductor/insights). */
 export interface InsightItem {
   key: string;
   type: string;
   step?: string;
+  scope?: Scope;
   title: string;
   rationale?: string;
   current?: string;
   proposed?: string;
+  /** low | medium | high | proven — auto-escalates with evidence (§5.2). */
   confidence?: string;
+  impact_when_applied?: string;
+  observations?: Observation[];
+  times_observed?: number;
+  times_applied?: number;
   source_heartbeat?: string;
   status: "open" | "applied" | "dismissed";
   provenance?: string;

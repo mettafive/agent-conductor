@@ -158,7 +158,7 @@ export function StatusBar({
           {optimizeCount > 0 && onToggleOptimize && (
             <button
               onClick={onToggleOptimize}
-              title="Review the optimization suggestions from this run"
+              title="Browse the insights dashboard — proven patterns auto-apply"
               className={`flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
                 optimizeOpen
                   ? "border-iris/50 bg-iris/15 text-chalk"
