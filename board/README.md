@@ -1,16 +1,26 @@
-# agent-conductor (board)
+# conductor-board
 
-The live local Kanban board for [Agent Conductor](../README.md). It watches
-`.conductor/status.json` and renders your conductor workflow in real time as the
-agent executes it.
+The CLI and live local Kanban board for [Agent Conductor](../README.md). It
+watches `.conductor/status.json` and renders your conductor workflow in real time
+as the agent executes it — and scaffolds and validates conductors.
 
 ```bash
-npx agent-conductor
+npx conductor-board
 ```
 
 ```
-🎼 agent-conductor
+🎼 conductor-board
 Board live at http://localhost:3042 — watching .conductor/status.json
+```
+
+## Commands
+
+```bash
+npx conductor-board                         # serve the live board (default)
+npx conductor-board init                    # scaffold .conductor/conductor.yaml
+npx conductor-board init --name w --steps 4 # non-interactive scaffold
+npx conductor-board validate [path]         # check a conductor against the spec
+npx conductor-board --help                  # all commands + options
 ```
 
 ## What it does
@@ -36,8 +46,8 @@ Board live at http://localhost:3042 — watching .conductor/status.json
 | `--help`, `-h` | — | Show help |
 
 ```bash
-npx agent-conductor --path ./run/status.json --port 3001
-npx agent-conductor --conductor ./workflows/review.yaml
+npx conductor-board --path ./run/status.json --port 3001
+npx conductor-board --conductor ./workflows/review.yaml
 ```
 
 The board reads `status.json` for live **state** and the conductor file for step
@@ -85,8 +95,10 @@ runs archive cleanly instead of overwriting each other.
                        browser: parse + merge + render
 ```
 
-The server has **zero runtime dependencies** — plain `node:http`, `fs`, and
-`fs.watch`. YAML is parsed in the browser, so the server never needs a parser.
+The **board server has zero runtime dependencies** — plain `node:http`, `fs`, and
+`fs.watch`. YAML is parsed in the browser, so the server never needs a parser. The
+package's only dependency is `js-yaml`, used by the `validate` command (it has no
+dependencies of its own, so `npx` stays instant).
 
 ## Develop
 

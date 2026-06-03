@@ -3,6 +3,7 @@ const LINKS = [
   { href: "#playground", label: "Playground" },
   { href: "#examples", label: "Examples" },
   { href: "#board", label: "Board" },
+  { href: "#agents", label: "For agents" },
 ];
 
 export function Nav() {

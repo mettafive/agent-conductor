@@ -4,6 +4,8 @@ import path from "node:path";
 import { startServer } from "../server/server.js";
 
 const argv = process.argv.slice(2);
+const command = argv[0] && !argv[0].startsWith("-") ? argv[0] : null;
+const rest = argv.slice(1);
 
 function flag(names, fallback) {
   for (const name of names) {
@@ -16,27 +18,59 @@ function flag(names, fallback) {
   return fallback;
 }
 
-if (flag(["--help", "-h"], false)) {
-  console.log(`
-  agent-conductor — live local Kanban board for gated agent workflows
+const HELP = `
+  conductor-board — gated workflows for AI agents, with a live Kanban board
 
   Usage
-    $ npx agent-conductor [options]
+    $ npx conductor-board [command] [options]
 
-  Options
+  Commands
+    (default)                Serve the live board (watches .conductor/)
+    init                     Scaffold a new .conductor/conductor.yaml
+    validate [path]          Check a conductor against the spec
+
+  Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
     --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
     --port <n>               Port to serve on        (default: 3042)
     --no-open                Don't open the browser
-    --help, -h               Show this help
+
+  init options
+    --name, -n <name>        Workflow name (skips the prompts)
+    --description, -d <text> One-line description
+    --steps, -s <n>          Number of placeholder steps
+    --force, -f              Overwrite an existing conductor.yaml
+
+  --help, -h                 Show this help
 
   Examples
-    $ npx agent-conductor
-    $ npx agent-conductor --path ./run/status.json --port 3001
-`);
+    $ npx conductor-board
+    $ npx conductor-board init --name clinic-update --steps 4
+    $ npx conductor-board validate .conductor/conductor.yaml
+`;
+
+// ---- subcommands ----
+if (command === "help" || (!command && flag(["--help", "-h"], false))) {
+  console.log(HELP);
   process.exit(0);
 }
 
+if (command === "init") {
+  const { runInit } = await import("../cli/init.js");
+  process.exit((await runInit(rest)) ? 0 : 1);
+}
+
+if (command === "validate") {
+  const { runValidate } = await import("../cli/validate.js");
+  process.exit((await runValidate(rest)) ? 0 : 1);
+}
+
+if (command && command !== "board") {
+  console.error(`Unknown command "${command}". Run with --help to see usage.`);
+  process.exit(1);
+}
+
+// ---- default: serve the board ----
 const statusPath = String(flag(["--path", "-p"], ".conductor/status.json"));
 const conductorArg = flag(["--conductor", "-c"], null);
 const conductorPath = conductorArg ? path.resolve(process.cwd(), String(conductorArg)) : null;
@@ -83,7 +117,7 @@ const url = `http://localhost:${port}`;
 const rel = (p) => (p ? path.relative(process.cwd(), p) || p : null);
 
 console.log("");
-console.log(`  ${iris("🎼 agent-conductor")}`);
+console.log(`  ${iris("🎼 conductor-board")}`);
 console.log(`  ${bold("Board live at")} ${mint(url)} ${dim("— watching " + rel(absStatus))}`);
 if (resolvedConductor) {
   console.log(`  ${dim("conductor:  " + rel(resolvedConductor))}`);

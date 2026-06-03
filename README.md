@@ -23,7 +23,7 @@ Agent Conductor is a single YAML file you hand to any agent — Claude Code, Cod
 Hermes, whatever — that breaks a task into **discrete steps with validation
 gates**. The agent reads the file, executes the steps in order, self-validates
 against each gate, and writes its progress to `.conductor/status.json`. Run
-`npx agent-conductor` and a local board lights up in real time as it works.
+`npx conductor-board` and a local board lights up in real time as it works.
 
 **Zero dependencies for the spec.** No SDK, no API wrapper, no runtime. The
 conductor file is the whole contract.
@@ -89,11 +89,27 @@ and retry — never skip — on failure.
 Start the board *first*, then point your agent at the conductor — it writes both
 files into `.conductor/` and the board lights up on its own.
 
+> **Or skip the manual setup** — point your agent at
+> **[CONDUCTOR.md](./CONDUCTOR.md)** and let it handle everything: converting your
+> skill into a conductor, saving it, and maintaining the status file.
+
 Watch it run:
 
 ```bash
-npx agent-conductor      # local Kanban board on http://localhost:3042
+npx conductor-board      # local Kanban board on http://localhost:3042
 ```
+
+## CLI
+
+```bash
+npx conductor-board                        # serve the live board
+npx conductor-board init                   # scaffold a .conductor/conductor.yaml
+npx conductor-board validate <file>        # check a conductor against the spec
+```
+
+`init --name <name> --steps <n>` scaffolds non-interactively. `validate` checks
+required keys, unique ids, well-formed gates, condition/loop shape, dangling
+references, dependency cycles, and unreachable steps.
 
 The board watches `.conductor/status.json` and updates automatically as the agent
 moves through **Pending → Running → Gate Check → Done** (and **Failed**, when a
@@ -105,7 +121,7 @@ gate can't be satisfied).
  conductor.yaml  ─►  agent reads + executes  ─►  .conductor/status.json
                           (gates each step)              │
                                                          ▼
-                                            npx agent-conductor (live board)
+                                            npx conductor-board (live board)
 ```
 
 1. The agent creates `.conductor/status.json` with every step `pending`.
@@ -132,14 +148,17 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
 ## Roadmap
 
 - **Phase 1 — Spec + docs site.** ✅ Live at the [docs site](https://mettafive.github.io/agent-conductor).
-- **Phase 2 — Local Kanban board.** ✅ [`board/`](./board) — `npx agent-conductor`
+- **Phase 2 — Local Kanban board.** ✅ [`board/`](./board) — `npx conductor-board`
   serves a live board that watches `.conductor/status.json` over Server-Sent
-  Events. Zero runtime dependencies.
+  Events. The board server runs on Node's standard library alone.
 - **Phase 2.5 — Run history.** ✅ Completed and failed runs are archived to
   `.conductor/history/`; the board's sidebar browses past runs and freezes any
   one to its final state.
-- **Phase 3 — npm package.** `init` scaffolds a conductor, `validate` checks one
-  against the spec; publish the board to npm.
+- **Phase 3 — npm package.** ✅ Published as
+  [`conductor-board`](https://www.npmjs.com/package/conductor-board) —
+  `npx conductor-board` serves the board, `init` scaffolds a conductor, and
+  `validate` checks one against the spec. Plus [CONDUCTOR.md](./CONDUCTOR.md), the
+  self-contained file you point any agent at.
 
 ## Design principles
 

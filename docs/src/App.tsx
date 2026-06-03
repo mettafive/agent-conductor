@@ -117,7 +117,7 @@ export function App() {
             </div>
             <div className="mt-7 flex items-center gap-2 font-mono text-sm text-mist">
               <span className="text-line-2">$</span>
-              <span className="text-mist-2">npx agent-conductor</span>
+              <span className="text-mist-2">npx conductor-board</span>
               <span className="h-4 w-px animate-pulse bg-iris" />
             </div>
           </div>
@@ -309,13 +309,13 @@ export function App() {
         {/* ---------------- BOARD ---------------- */}
         <section id="board" className="py-20">
           <SectionHead
-            kicker="The board · Phase 2"
-            title="npx agent-conductor"
-            sub="A local Kanban board watches the status file and moves each step through Pending → Running → Gate Check → Done as the agent works."
+            kicker="The board"
+            title="npx conductor-board"
+            sub="A local Kanban board watches the status file and moves each step through Pending → Running → Gate Check → Done as the agent works. Every completed run is archived to a browsable history sidebar."
           />
           <div className="mt-7 flex justify-center">
             <code className="rounded-lg border border-line bg-ink-2/80 px-4 py-2 font-mono text-xs text-mist-2">
-              <span className="text-line-2">$</span> npx agent-conductor{"  "}
+              <span className="text-line-2">$</span> npx conductor-board{"  "}
               <span className="text-mist">
                 → Board live at http://localhost:3042
               </span>
@@ -325,8 +325,64 @@ export function App() {
             <BoardPreview />
           </Reveal>
           <p className="mt-6 text-center font-mono text-xs text-mist">
-            preview — the board ships in Phase 2
+            board, run history & CLI ship in the conductor-board package
           </p>
+        </section>
+
+        {/* ---------------- FOR AGENTS ---------------- */}
+        <section id="agents" className="py-20">
+          <Reveal>
+            <div className="overflow-hidden rounded-3xl border border-line bg-panel/30 p-8 sm:p-12">
+              <div className="grid items-center gap-8 lg:grid-cols-[1.1fr_1fr]">
+                <div>
+                  <Eyebrow>For agents</Eyebrow>
+                  <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight text-chalk">
+                    Point your agent at one file.
+                  </h2>
+                  <p className="mt-3 text-pretty leading-relaxed text-mist-2">
+                    <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-cyan">
+                      CONDUCTOR.md
+                    </code>{" "}
+                    is a single, self-contained instruction file. Hand it to any
+                    agent and it converts your skill into a conductor, saves it,
+                    runs it, and keeps the status file live — no copy-paste, no
+                    "put this YAML here."
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <a
+                      href="https://github.com/mettafive/agent-conductor/blob/main/CONDUCTOR.md"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl border border-iris/40 bg-iris/10 px-5 py-3 text-sm font-medium text-iris transition-colors hover:bg-iris/15"
+                    >
+                      Read CONDUCTOR.md ↗
+                    </a>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-line bg-ink-2/70 p-5 font-mono text-xs leading-relaxed text-mist-2">
+                  <div className="text-mist">
+                    <span className="text-line-2">#</span> start the board, then tell
+                    your agent to go
+                  </div>
+                  <div className="mt-2">
+                    <span className="text-line-2">$</span> npx conductor-board
+                  </div>
+                  <div className="mt-3 text-mist">
+                    <span className="text-line-2">#</span> "Here's my skill. Read
+                    CONDUCTOR.md,
+                  </div>
+                  <div className="text-mist">
+                    <span className="text-line-2"> </span>{" "}
+                    convert it to a conductor, and run it."
+                  </div>
+                  <div className="mt-3 text-mint">
+                    → .conductor/conductor.yaml + status.json
+                  </div>
+                  <div className="text-mint">→ board lights up ✓</div>
+                </div>
+              </div>
+            </div>
+          </Reveal>
         </section>
 
         {/* ---------------- CTA ---------------- */}
