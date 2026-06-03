@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { CodeBlock } from "../components/CodeBlock";
+import { useScrollSpy } from "../lib/useScrollSpy";
 
 const HOME = import.meta.env.BASE_URL; // "/agent-conductor/"
 const GH = "https://github.com/mettafive/agent-conductor";
@@ -141,6 +142,20 @@ const COLUMNS = [
 ];
 
 export function BoardGuide() {
+  const active = useScrollSpy(TOC.map(([id]) => id));
+
+  // Honour a deep-link hash on load: the target only exists once React (and the
+  // async code highlighter) has rendered, so the browser's own jump misses it.
+  // Native smooth scroll respects each section's scroll-margin-top.
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const id = window.location.hash;
+    const t = setTimeout(() => {
+      document.querySelector(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 250);
+    return () => clearTimeout(t);
+  }, []);
+
   return (
     <div className="min-h-screen">
       <div className="aurora" />
@@ -205,16 +220,29 @@ export function BoardGuide() {
                 On this page
               </div>
               <ul className="space-y-1.5 border-l border-line">
-                {TOC.map(([id, label]) => (
-                  <li key={id}>
-                    <a
-                      href={`#${id}`}
-                      className="-ml-px block border-l border-transparent py-0.5 pl-3 text-sm text-mist transition-colors hover:border-iris hover:text-chalk"
-                    >
-                      {label}
-                    </a>
-                  </li>
-                ))}
+                {TOC.map(([id, label]) => {
+                  const on = active === id;
+                  return (
+                    <li key={id}>
+                      <a
+                        href={`#${id}`}
+                        aria-current={on ? "true" : undefined}
+                        className={`-ml-px flex items-center gap-2 border-l py-0.5 pl-3 text-sm transition-all duration-200 ${
+                          on
+                            ? "border-iris font-medium text-chalk"
+                            : "border-transparent text-mist hover:border-iris/50 hover:text-chalk"
+                        }`}
+                      >
+                        <span
+                          className={`h-1 w-1 shrink-0 rounded-full transition-all duration-200 ${
+                            on ? "scale-100 bg-iris" : "scale-0 bg-transparent"
+                          }`}
+                        />
+                        {label}
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           </aside>
