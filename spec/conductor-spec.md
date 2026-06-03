@@ -145,6 +145,12 @@ gate passes or it explicitly marks the step `failed` and stops.
 > agent didn't vibe through. Use soft for *"is this good?"*, hard for *"is this
 > true?"*.
 
+> **Note on shell commands in gates.** If your project uses CommonJS (the default
+> for most Node.js projects), inline `tsx -e` or `node -e` blocks with **top-level
+> `await`** will fail. Wrap async code in `async function main() { … } main()`, or
+> — better — put it in a small `.ts`/`.js` helper script that the gate's `check:`
+> calls. Helper scripts are more reliable and readable than complex one-liners.
+
 ---
 
 ## 4. Conditions & branching
@@ -315,10 +321,12 @@ board watches.
 {
   "conductor": "1.0.0",
   "workflow": "workflow-name",
+  "goal": "Research, write, and ship a publish-ready report on the topic.",
   "run_id": "2026-06-03T09-00-00",
   "started_at": "2026-06-03T09:00:00Z",
   "status": "running",
   "current_step": "write-draft",
+  "current_step_goal": "Write an 800-word draft where every claim cites a source.",
   "steps": {
     "research": {
       "status": "done",
@@ -331,7 +339,14 @@ board watches.
       "status": "running",
       "gate": "pending",
       "started_at": "2026-06-03T09:04:11Z",
-      "attempt": 2
+      "attempt": 2,
+      "heartbeat": [
+        { "at": "2026-06-03T09:05:00Z", "note": "Drafting section 2. Gate needs every claim cited — tracking sources as I go." },
+        { "at": "2026-06-03T09:06:30Z", "note": "Found a stronger source: [BLS data](https://example.com/bls). Swapping it in." }
+      ],
+      "learnings": [
+        "The first two sources overlap — prefer the primary one."
+      ]
     }
   }
 }
@@ -342,14 +357,18 @@ board watches.
 | Field          | Values                                  | Notes                                          |
 | -------------- | --------------------------------------- | ---------------------------------------------- |
 | `run_id`       | string                                  | Unique id for this run (recommended: timestamp). Lets the board archive and group past runs. |
+| `goal` (top)   | string                                  | The workflow's end goal — copied from the conductor's `description`. Shown on the board header. |
 | `status` (top) | `running` `done` `failed`               | Overall workflow state.                        |
 | `current_step` | step id                                 | The step in flight.                            |
+| `current_step_goal` (top) | string                       | One-line summary of the current step's purpose (instruction + gate). Updated on each step transition. |
 | `completed_at` (top) | ISO-8601                          | Set when the workflow reaches `done` or `failed`. |
 | `status`       | `pending` `running` `done` `failed`     | Per-step lifecycle.                            |
 | `gate`         | `pending` `checking` `passed` `failed`  | Gate result. `checking` is transient — set while the gate is being evaluated (drives the board's Gate Check column). |
 | `attempt`      | integer ≥ 1                             | Increments on every retry.                     |
 | `branch_taken` | step id                                 | Only on `condition` steps.                     |
 | `output`       | any                                     | Only when the step declared `output`.          |
+| `heartbeat`    | array of `{at, note}`                   | Append-only self-regulation log. `note` supports markdown links. See §6.5. |
+| `learnings`    | array of strings (max 5)                | Patterns distilled from the heartbeats. See §6.5. |
 
 ### 6.3 Optional per-criterion detail
 
@@ -377,21 +396,79 @@ of it (the final status plus the conductor that produced it) to
 board's history panel, grouped by workflow. Give every run a distinct `run_id`
 so they archive cleanly instead of overwriting each other.
 
+### 6.5 Heartbeats — agent self-regulation
+
+Long steps are where agents drift. A **heartbeat** is a structured pulse the agent
+writes to itself to stay oriented — at least **once per minute** while a step runs.
+
+- The agent **appends** an entry to the current step's `heartbeat` array at least
+  once per minute. Each entry is `{ at, note }` — an ISO-8601 timestamp and one or
+  two sentences. `note` may include markdown links (`[text](url)`).
+- The `heartbeat` array is **append-only** — never clear or overwrite prior
+  entries. It is the run's audit trail.
+- **Before writing a heartbeat, the agent reads its prior entries** to keep
+  continuity. Before starting each loop iteration, it reads heartbeats and
+  `learnings` from prior iterations.
+- **Every heartbeat is written with two goals in view:** the workflow's end goal
+  (`goal`, from the conductor's `description`) and the current step's gate. Each
+  beat answers: *am I advancing toward this step's gate **and** the workflow's
+  purpose, or am I drifting?*
+- `learnings` (max 5 strings per step) distills durable patterns from the beats.
+  Replace weaker entries as better ones emerge.
+
+```json
+"discover-prices": {
+  "status": "running",
+  "gate": "pending",
+  "attempt": 1,
+  "heartbeat": [
+    { "at": "2026-06-03T15:50:00Z", "note": "Starting extraction. Gate needs 5 sources with URLs." },
+    { "at": "2026-06-03T15:51:30Z", "note": "3/5 found via sitemap. Crawling nav for the rest." },
+    { "at": "2026-06-03T16:03:00Z", "note": "PR opened: [run 2026-06-03](https://github.com/org/repo/pull/42)." }
+  ],
+  "learnings": [
+    "Swedish vet pricing pages are usually at /priser or /prislista.",
+    "Sitemap-first discovery beats nav-first for most clinics."
+  ]
+}
+```
+
+In a **loop**, tag a beat with the iteration it belongs to so the board can route
+it to the right sub-card:
+
+```json
+{ "at": "…", "iteration": "ale-djurklinik", "note": "Sitemap has /behandlingar/priser, fetching." }
+```
+
+The agent also maintains the top-level `goal` (copied from the conductor's
+`description` at init) and `current_step_goal` (a one-line summary of the active
+step, refreshed whenever `current_step` changes). Both are shown on the board
+header so the human always sees the destination.
+
+> For detailed guidance on writing effective heartbeats, see the
+> [Heartbeat Guide](./heartbeat-guide.md).
+
 ---
 
 ## 7. Execution model (the contract, in full)
 
 1. Read the conductor. Resolve `inputs`.
-2. Create `.conductor/status.json` with every step `pending`.
+2. Create `.conductor/status.json` with every step `pending`. Set top-level `goal`
+   from the conductor's `description`.
 3. Walk steps in order. For each step:
-   - Mark it `running`, set `current_step`, set `started_at`.
+   - Mark it `running`, set `current_step`, set `started_at`, and refresh
+     `current_step_goal` with a one-line summary of this step.
    - If `requires` is present, confirm all dependencies are `done` first.
    - Execute the `instruction` (template in inputs and prior outputs).
+   - **At least once per minute, append a heartbeat** to the step's `heartbeat`
+     array (read prior entries first; orient against the step gate and `goal`).
    - Evaluate the `gate`: run every `check`, self-validate every soft criterion.
    - **All pass** → mark `done`, record `output` if declared, advance.
    - **Any fail** → increment `attempt`, retry the step. Do not advance.
    - On a `condition` step → evaluate, set `branch_taken`, jump to `if_true` /
      `if_false`.
+   - On a `loop` step → update `completed` and the `iterations` object as **each**
+     iteration finishes; don't wait until the loop ends.
    - On a `then` step → after completing, jump to the `then` target.
 4. When the last reachable step is `done`, set top-level `status: done`.
 5. If a gate cannot be satisfied, set the step and the workflow to `failed` and

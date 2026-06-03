@@ -39,6 +39,17 @@ const STATUS_JSON = `{
   }
 }`;
 
+const HEARTBEAT_JSON = `"discover-prices": {
+  "status": "running",
+  "heartbeat": [
+    { "at": "…", "note": "3/5 sources found via sitemap." },
+    { "at": "…", "note": "PR opened: [run](https://github.com/org/repo/pull/42)." }
+  ],
+  "learnings": [
+    "Pricing pages are usually at /priser or /prislista."
+  ]
+}`;
+
 const GATE_SNIPPET = `gate:
   - "Output reads naturally"          # soft
   - "No placeholder text remains"     # soft
@@ -326,6 +337,74 @@ export function App() {
           </Reveal>
           <p className="mt-6 text-center font-mono text-xs text-mist">
             board, run history & CLI ship in the conductor-board package
+          </p>
+        </section>
+
+        {/* ---------------- HEARTBEATS ---------------- */}
+        <section id="heartbeats" className="py-20">
+          <SectionHead
+            kicker="Self-regulation"
+            title="Agents that check in"
+            sub="On long steps, agents drift. A heartbeat is a pulse the agent writes to itself at least once a minute — re-anchoring to the step's gate and the workflow's goal. The board shows it live, links and all."
+          />
+          <div className="mt-12 grid items-center gap-5 lg:grid-cols-2">
+            <Reveal>
+              <CodeBlock code={HEARTBEAT_JSON} filename="status.json" lang="json" />
+            </Reveal>
+            <Reveal>
+              <div className="rounded-2xl border border-cyan/30 bg-panel/50 p-4 pulse-ring">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-5 w-5 place-items-center rounded-md bg-iris/10">
+                    <svg width="13" height="13" viewBox="0 0 24 24" className="text-iris">
+                      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4m14-1v2a4 4 0 0 1-4 4H3" />
+                    </svg>
+                  </span>
+                  <span className="flex-1 font-mono text-[13px] text-chalk">discover-prices</span>
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-cyan" />
+                </div>
+                <div className="mt-2 flex items-start gap-1.5 pl-7 text-[11.5px] italic leading-snug text-mist">
+                  <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-cyan" />
+                  PR opened:{" "}
+                  <span className="text-cyan underline-offset-2 hover:underline">
+                    run ↗
+                  </span>
+                  . Ready for review.
+                </div>
+                <div className="mt-3 rounded-lg border border-cyan/20 bg-cyan/[0.06] px-2.5 py-2 ml-7">
+                  <div className="mb-1 font-mono text-[9px] uppercase tracking-wide text-cyan">
+                    learnings
+                  </div>
+                  <div className="flex gap-1.5 text-[11px] text-mist-2">
+                    <span className="text-cyan">·</span>
+                    <span>Pricing pages are usually at /priser or /prislista.</span>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1.5 border-t border-line pt-2 pl-7">
+                  {[
+                    ["2m ago", "Found /priser via nav, 23 items."],
+                    ["90s ago", "Sitemap had /prislista — 18 prices."],
+                    ["30s ago", "PR opened, ready for review."],
+                  ].map(([t, n]) => (
+                    <div key={t} className="flex gap-2">
+                      <span className="shrink-0 font-mono text-[9px] text-line-2">{t}</span>
+                      <span className="text-[11px] text-mist-2">{n}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Reveal>
+          </div>
+          <p className="mt-6 text-center text-sm text-mist">
+            Every beat is append-only — the run's audit trail. See the{" "}
+            <a
+              href="https://github.com/mettafive/agent-conductor/blob/main/spec/heartbeat-guide.md"
+              target="_blank"
+              rel="noreferrer"
+              className="text-cyan underline-offset-2 hover:underline"
+            >
+              Heartbeat Guide ↗
+            </a>
+            .
           </p>
         </section>
 

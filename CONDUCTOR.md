@@ -29,6 +29,25 @@ The setup conductor will:
 Each step is **hard-gated** — it can't proceed until the check passes, so you can't
 vibe through setup.
 
+## Heartbeats
+
+While executing, pulse a heartbeat to yourself **at least once per minute** so you —
+and the human watching the board — stay oriented. Append
+`{ "at": "<ISO-8601>", "note": "<1–2 sentences>" }` to the current step's
+`heartbeat` array. Read your prior beats first, and orient each one against the
+step's gate **and** the workflow's `goal`. Use `[text](url)` links for any PR or
+page you produce — the board renders them clickable. After each loop iteration,
+distill durable patterns into the step's `learnings` (max 5).
+
+See the **[Heartbeat Guide](./spec/heartbeat-guide.md)** for how to write good ones.
+
+## Gate commands & CommonJS
+
+If the project uses CommonJS (the Node.js default), inline `node -e` / `tsx -e`
+blocks with **top-level `await`** will fail. Wrap async in
+`async function main() { … } main()`, or call a small `.ts`/`.js` helper script from
+the gate's `check:` — helper scripts are more reliable than complex one-liners.
+
 ---
 
 Need the conductor format while converting a skill? It's in

@@ -1,17 +1,21 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { BoardStep, GateCriterion, LoopIteration } from "../lib/types";
+import type { BoardStep, GateCriterion, HeartbeatEntry, LoopIteration } from "../lib/types";
+import { useNow } from "../lib/useNow";
+import { relativeTime, renderNote, secondsSince } from "../lib/heartbeat";
 
 function ForkIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" className="text-amber">
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        d="M6 4v6a4 4 0 0 0 4 4h0M6 4v16M6 10a4 4 0 0 1 4-4h0m8 0-3-3m3 3-3 3m3-3h-4"
-      />
+      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M6 4v6a4 4 0 0 0 4 4h0M6 4v16M6 10a4 4 0 0 1 4-4h0m8 0-3-3m3 3-3 3m3-3h-4" />
+    </svg>
+  );
+}
+
+function LoopIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" className="text-iris">
+      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4m14-1v2a4 4 0 0 1-4 4H3" />
     </svg>
   );
 }
@@ -69,13 +73,7 @@ function CriterionRow({ c }: { c: GateCriterion }) {
   return (
     <div className="flex items-start gap-2 py-1">
       <span className="mt-0.5 w-3 shrink-0 text-center font-mono text-[11px]">{mark}</span>
-      <span
-        className={`rounded border px-1 py-px font-mono text-[9px] ${
-          c.kind === "hard"
-            ? "border-mint/25 text-mint"
-            : "border-line-2 text-mist"
-        }`}
-      >
+      <span className={`rounded border px-1 py-px font-mono text-[9px] ${c.kind === "hard" ? "border-mint/25 text-mint" : "border-line-2 text-mist"}`}>
         {c.kind}
       </span>
       <span className="flex-1 font-mono text-[11px] leading-snug text-mist-2">
@@ -88,14 +86,6 @@ function CriterionRow({ c }: { c: GateCriterion }) {
   );
 }
 
-function LoopIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" className="text-iris">
-      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4m14-1v2a4 4 0 0 1-4 4H3" />
-    </svg>
-  );
-}
-
 const SUB_DOT: Record<string, string> = {
   done: "bg-mint",
   failed: "bg-rose",
@@ -104,34 +94,124 @@ const SUB_DOT: Record<string, string> = {
   pending: "bg-line-2",
 };
 
-function IterationRow({ it }: { it: LoopIteration }) {
+/** One iteration of a loop — name, status dot, latest-beat summary, click to expand. */
+function IterationRow({
+  it,
+  beats,
+  now,
+}: {
+  it: LoopIteration;
+  beats: HeartbeatEntry[];
+  now: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const running = it.steps.some((s) => s.status === "running");
+  const dot = it.failed ? "bg-rose" : it.done ? "bg-mint" : running ? "bg-cyan animate-pulse" : "bg-line-2";
+  const latest = beats.at(-1);
+  const summary = latest
+    ? renderNote(latest.note)
+    : it.done
+      ? "done"
+      : running
+        ? "running"
+        : "pending";
   const retried = it.steps.find((s) => s.attempt > 1);
+
   return (
-    <div className="flex items-center gap-2 py-1">
-      <span
-        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-          it.failed ? "bg-rose" : it.done ? "bg-mint" : "bg-cyan"
-        }`}
-      />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-mist-2">
-        {it.item}
-      </span>
-      {retried && (
-        <span className="rounded border border-amber/30 px-1 font-mono text-[9px] text-amber">
-          ×{retried.attempt}
-        </span>
+    <div className="border-b border-line/40 last:border-0">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        className="flex w-full items-center gap-2 py-1.5 text-left"
+      >
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+        <span className="shrink-0 font-mono text-[11px] text-mist-2">{it.item}</span>
+        {retried && (
+          <span className="shrink-0 rounded border border-amber/30 px-1 font-mono text-[9px] text-amber">
+            ×{retried.attempt}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 truncate text-[11px] italic text-mist">{summary}</span>
+      </button>
+
+      {open && (
+        <div className="pb-2 pl-3.5">
+          <div className="flex flex-wrap gap-1.5">
+            {it.steps.map((s, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 rounded border border-line-2 px-1.5 py-0.5 font-mono text-[9px] text-mist"
+              >
+                <span className={`h-1 w-1 rounded-full ${SUB_DOT[s.gate === "checking" ? "checking" : s.status] ?? "bg-line-2"}`} />
+                {s.id}
+              </span>
+            ))}
+          </div>
+          {beats.length > 0 && (
+            <div className="mt-1.5 space-y-1">
+              {[...beats].reverse().map((h, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <span className="mt-px shrink-0 font-mono text-[9px] text-line-2">
+                    {relativeTime(h.at, now)}
+                  </span>
+                  <span className="flex-1 text-[10.5px] leading-snug text-mist-2">
+                    {renderNote(h.note)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
-      <span className="flex shrink-0 gap-1">
-        {it.steps.map((s, i) => (
-          <span
-            key={i}
-            title={`${s.id}: ${s.status}`}
-            className={`h-1.5 w-1.5 rounded-full ${
-              SUB_DOT[s.gate === "checking" ? "checking" : s.status] ?? "bg-line-2"
-            }`}
-          />
-        ))}
-      </span>
+    </div>
+  );
+}
+
+function HeartbeatLog({
+  entries,
+  learnings,
+  now,
+}: {
+  entries: HeartbeatEntry[];
+  learnings: string[];
+  now: number;
+}) {
+  return (
+    <div className="mt-2.5 border-t border-line pt-2 pl-7">
+      {learnings.length > 0 && (
+        <div className="mb-2 rounded-lg border border-cyan/20 bg-cyan/[0.06] px-2.5 py-2">
+          <div className="mb-1 font-mono text-[9px] uppercase tracking-wide text-cyan">learnings</div>
+          <ul className="space-y-0.5">
+            {learnings.map((l, i) => (
+              <li key={i} className="flex gap-1.5 text-[11px] leading-snug text-mist-2">
+                <span className="text-cyan">·</span>
+                <span>{l}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {entries.length > 0 && (
+        <div className="space-y-1.5">
+          {[...entries].reverse().map((h, i) => (
+            <div key={i} className="flex gap-2">
+              <span className="mt-px shrink-0 font-mono text-[9px] text-line-2">
+                {relativeTime(h.at, now)}
+              </span>
+              <span className="flex-1 text-[11px] leading-snug text-mist-2">
+                {h.iteration && (
+                  <span className="mr-1 rounded bg-iris/10 px-1 font-mono text-[9px] text-iris">
+                    {h.iteration}
+                  </span>
+                )}
+                {renderNote(h.note)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -144,12 +224,25 @@ const ACCENT: Record<string, string> = {
   pending: "border-line-2",
 };
 
-const SPRING = { type: "spring", stiffness: 520, damping: 38, mass: 0.8 } as const;
+// Position (layout) moves use a spring; the crossfade is a quick tween so a card
+// sliding between columns reads crisply instead of fighting its own opacity.
+const MOVE = {
+  layout: { type: "spring", stiffness: 480, damping: 40, mass: 0.9 },
+  opacity: { duration: 0.16 },
+  scale: { duration: 0.16 },
+  default: { duration: 0.16 },
+} as const;
 
 export function StepCard({ step }: { step: BoardStep }) {
   const [open, setOpen] = useState(false);
+  const now = useNow(5000);
   const loop = step.isLoop ? step.loop : undefined;
-  const expandable = loop ? loop.iterations.length > 0 : step.criteria.length > 0;
+  const latest = step.heartbeat.at(-1);
+  const stalled =
+    step.column === "running" && latest != null && (secondsSince(latest.at, now) ?? 0) > 90;
+  const hasBeats = step.heartbeat.length > 0 || step.learnings.length > 0;
+  const hasDetail = loop ? loop.iterations.length > 0 : step.criteria.length > 0;
+  const expandable = hasDetail || hasBeats;
   const dim = step.column === "pending" ? "opacity-70" : "";
   const pct = loop && loop.total ? Math.round((loop.completed / loop.total) * 100) : 0;
 
@@ -160,7 +253,7 @@ export function StepCard({ step }: { step: BoardStep }) {
       initial={{ opacity: 0, scale: 0.92, y: 6 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.92 }}
-      transition={SPRING}
+      transition={MOVE}
       onClick={() => expandable && setOpen((o) => !o)}
       className={`rounded-xl border bg-panel px-3 py-2.5 ${ACCENT[step.column]} ${dim} ${
         expandable ? "cursor-pointer" : ""
@@ -180,9 +273,13 @@ export function StepCard({ step }: { step: BoardStep }) {
             {step.index + 1}
           </span>
         )}
-        <span className="flex-1 truncate font-mono text-[12.5px] text-chalk">
-          {step.id}
-        </span>
+        <span className="flex-1 truncate font-mono text-[12.5px] text-chalk">{step.id}</span>
+        {stalled && (
+          <span
+            title="No heartbeat for 90s — agent may be stalled"
+            className="h-2 w-2 animate-pulse rounded-full bg-amber"
+          />
+        )}
         {!loop && step.attempt > 1 && (
           <span
             title={`${step.attempt} attempts`}
@@ -194,9 +291,8 @@ export function StepCard({ step }: { step: BoardStep }) {
         <StatusGlyph step={step} />
       </div>
 
-      {/* ---- loop body ---- */}
+      {/* ---- collapsed body ---- */}
       {loop ? (
-        <>
         <div className="mt-2 pl-7">
           <div className="flex items-center justify-between gap-2">
             <span className="font-mono text-[10px] text-mist-2">
@@ -230,70 +326,65 @@ export function StepCard({ step }: { step: BoardStep }) {
             )}
           </div>
         </div>
-        <AnimatePresence initial={false}>
-          {open && loop.iterations.length > 0 && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.22 }}
-              className="overflow-hidden"
-            >
-              <div className="mt-2.5 border-t border-line pt-2 pl-7">
-                {loop.iterations.map((it) => (
-                  <IterationRow key={it.item} it={it} />
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        </>
       ) : (
         <>
-      {step.firstLine && (
-        <p className="mt-1.5 line-clamp-2 pl-7 text-[11.5px] leading-snug text-mist">
-          {step.firstLine}
-        </p>
+          {step.firstLine && (
+            <p className="mt-1.5 line-clamp-2 pl-7 text-[11.5px] leading-snug text-mist">
+              {step.firstLine}
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-7">
+            {step.soft.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-line-2 bg-ink/50 px-1.5 py-0.5 font-mono text-[10px] text-mist-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-iris" />
+                {step.soft.length} soft
+              </span>
+            )}
+            {step.hard.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-mint/25 bg-mint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-mint">
+                <span className="h-1.5 w-1.5 rounded-full bg-mint" />
+                {step.hard.length} check
+              </span>
+            )}
+            {step.isCondition && step.branchTaken && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[10px] text-amber">
+                → {step.branchTaken}
+              </span>
+            )}
+            {step.output && (
+              <span className="rounded-md border border-cyan/30 bg-cyan/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan">
+                → {step.output}
+              </span>
+            )}
+            {step.requires.length > 0 && (
+              <span
+                title={`requires ${step.requires.join(", ")}`}
+                className="inline-flex items-center gap-1 rounded-md border border-line-2 bg-ink/40 px-1.5 py-0.5 font-mono text-[10px] text-mist"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" className="text-line-2">
+                  <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" d="M9 6 4 12l5 6M15 6l5 6-5 6" />
+                </svg>
+                {step.requires.join(", ")}
+              </span>
+            )}
+          </div>
+        </>
       )}
 
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-7">
-        {step.soft.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-md border border-line-2 bg-ink/50 px-1.5 py-0.5 font-mono text-[10px] text-mist-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-iris" />
-            {step.soft.length} soft
-          </span>
-        )}
-        {step.hard.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-md border border-mint/25 bg-mint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-mint">
-            <span className="h-1.5 w-1.5 rounded-full bg-mint" />
-            {step.hard.length} check
-          </span>
-        )}
-        {step.isCondition && step.branchTaken && (
-          <span className="inline-flex items-center gap-1 rounded-md border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[10px] text-amber">
-            → {step.branchTaken}
-          </span>
-        )}
-        {step.output && (
-          <span className="rounded-md border border-cyan/30 bg-cyan/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan">
-            → {step.output}
-          </span>
-        )}
-        {step.requires.length > 0 && (
-          <span
-            title={`requires ${step.requires.join(", ")}`}
-            className="inline-flex items-center gap-1 rounded-md border border-line-2 bg-ink/40 px-1.5 py-0.5 font-mono text-[10px] text-mist"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" className="text-line-2">
-              <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" d="M9 6 4 12l5 6M15 6l5 6-5 6" />
-            </svg>
-            {step.requires.join(", ")}
-          </span>
-        )}
-      </div>
+      {/* ---- collapsed latest heartbeat ---- */}
+      {latest && (
+        <div
+          title={latest.note}
+          className="mt-2 flex items-start gap-1.5 pl-7 text-[11px] italic leading-snug text-mist"
+        >
+          <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-cyan" />
+          <span className="truncate">{renderNote(latest.note)}</span>
+        </div>
+      )}
 
+      {/* ---- expanded detail ---- */}
       <AnimatePresence initial={false}>
-        {open && step.criteria.length > 0 && (
+        {open && expandable && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -301,16 +392,33 @@ export function StepCard({ step }: { step: BoardStep }) {
             transition={{ duration: 0.22 }}
             className="overflow-hidden"
           >
-            <div className="mt-2.5 border-t border-line pt-2 pl-7">
-              {step.criteria.map((c, i) => (
-                <CriterionRow key={i} c={c} />
-              ))}
-            </div>
+            {hasBeats && (
+              <HeartbeatLog entries={step.heartbeat} learnings={step.learnings} now={now} />
+            )}
+
+            {loop && loop.iterations.length > 0 && (
+              <div className="mt-2.5 border-t border-line pt-1 pl-7">
+                {loop.iterations.map((it) => (
+                  <IterationRow
+                    key={it.item}
+                    it={it}
+                    now={now}
+                    beats={step.heartbeat.filter((h) => h.iteration === it.item)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {!loop && step.criteria.length > 0 && (
+              <div className="mt-2.5 border-t border-line pt-2 pl-7">
+                {step.criteria.map((c, i) => (
+                  <CriterionRow key={i} c={c} />
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
-        </>
-      )}
     </motion.div>
   );
 }

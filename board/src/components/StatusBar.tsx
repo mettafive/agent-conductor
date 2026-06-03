@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { BoardModel } from "../lib/types";
+import { useNow } from "../lib/useNow";
+import { relativeTime } from "../lib/heartbeat";
 
 type Conn = "connecting" | "live" | "lost";
 
@@ -50,11 +52,10 @@ interface Props {
 }
 
 export function StatusBar({ model, conn, viewing, onBackToLive, onToggleSidebar }: Props) {
-  const duration = useDuration(
-    model.startedAt,
-    model.endedAt,
-    !viewing && model.overallStatus === "running",
-  );
+  const running = !viewing && model.overallStatus === "running";
+  const duration = useDuration(model.startedAt, model.endedAt, running);
+  const now = useNow(1000);
+  const lastBeat = running && model.lastBeatAt ? relativeTime(model.lastBeatAt, now) : null;
   const pct = model.total ? Math.round((model.done / model.total) * 100) : 0;
 
   return (
@@ -72,9 +73,7 @@ export function StatusBar({ model, conn, viewing, onBackToLive, onToggleSidebar 
 
         <div className="flex items-center gap-2.5">
           <img src="./conductor.svg" alt="" className="h-6 w-6" />
-          <span className="font-mono text-sm font-medium text-chalk">
-            {model.workflow}
-          </span>
+          <span className="font-mono text-sm font-medium text-chalk">{model.workflow}</span>
           <span
             className={`rounded-md border px-2 py-0.5 font-mono text-[10px] capitalize ${
               STATUS_TINT[model.overallStatus] ?? STATUS_TINT.idle
@@ -95,14 +94,27 @@ export function StatusBar({ model, conn, viewing, onBackToLive, onToggleSidebar 
             past run — back to live
           </button>
         ) : (
-          model.description && (
-            <span className="hidden max-w-md truncate text-sm text-mist lg:block">
-              {model.description}
+          model.goal && (
+            <span
+              title={model.goal}
+              className="hidden max-w-md items-center gap-1.5 truncate text-sm text-mist-2 lg:flex"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" className="shrink-0 text-iris">
+                <path fill="none" stroke="currentColor" strokeWidth="2" d="M12 2v4m0 12v4M2 12h4m12 0h4" />
+                <circle cx="12" cy="12" r="3.2" fill="currentColor" />
+              </svg>
+              <span className="truncate">{model.goal}</span>
             </span>
           )
         )}
 
         <div className="ml-auto flex items-center gap-5">
+          {lastBeat && (
+            <span className="flex items-center gap-1.5 font-mono text-[11px] text-mist">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan" />
+              last beat: {lastBeat}
+            </span>
+          )}
           {duration && (
             <span className="flex items-center gap-1.5 font-mono text-xs text-mist">
               <svg width="12" height="12" viewBox="0 0 24 24" className="text-line-2">
@@ -138,6 +150,18 @@ export function StatusBar({ model, conn, viewing, onBackToLive, onToggleSidebar 
           )}
         </div>
       </div>
+
+      {!viewing && running && model.currentStepGoal && (
+        <div className="flex items-center gap-2 border-t border-line/60 px-5 py-1.5">
+          <span className="font-mono text-[10px] uppercase tracking-wide text-cyan">
+            now
+          </span>
+          {model.currentStep && (
+            <span className="font-mono text-[11px] text-chalk">{model.currentStep}</span>
+          )}
+          <span className="truncate text-xs text-mist">{model.currentStepGoal}</span>
+        </div>
+      )}
     </header>
   );
 }

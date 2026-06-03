@@ -27,6 +27,17 @@ interface RawStepStatus {
   completed?: number;
   current_item?: string;
   iterations?: Record<string, Record<string, RawStepStatus>>;
+  // heartbeats
+  heartbeat?: Array<{ at?: string; note?: string; iteration?: string }>;
+  learnings?: string[];
+}
+
+function buildHeartbeat(st: RawStepStatus) {
+  return Array.isArray(st.heartbeat)
+    ? st.heartbeat
+        .filter((h) => h && typeof h.at === "string" && typeof h.note === "string")
+        .map((h) => ({ at: h.at as string, note: h.note as string, iteration: h.iteration }))
+    : [];
 }
 
 function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefined {
@@ -136,15 +147,26 @@ export function buildModel(snap: Snapshot): BoardModel {
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),
       loop: buildLoop(s, st),
+      heartbeat: buildHeartbeat(st),
+      learnings: Array.isArray(st.learnings)
+        ? st.learnings.filter((x): x is string => typeof x === "string")
+        : [],
     };
   });
 
   const total = steps.length;
   const done = steps.filter((s) => s.column === "done").length;
+  const lastBeatAt = steps
+    .flatMap((s) => s.heartbeat.map((h) => h.at))
+    .sort()
+    .at(-1);
 
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
     description: parsed?.description ?? (status.description as string | undefined),
+    goal: (status.goal as string | undefined) ?? parsed?.description,
+    currentStepGoal: status.current_step_goal as string | undefined,
+    lastBeatAt,
     runId: status.run_id as string | undefined,
     startedAt: status.started_at as string | undefined,
     endedAt: status.completed_at as string | undefined,

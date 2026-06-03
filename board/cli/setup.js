@@ -75,9 +75,16 @@ steps:
     instruction: |
       Execute the generated conductor workflow.
       Create .conductor/status.json with all steps pending and a timestamp run_id.
+      Set the top-level "goal" from the conductor's description, and refresh
+      "current_step_goal" each time current_step changes.
       Walk each step in order, updating status.json after every step and gate
-      change. Retry on gate failure — never skip. Set the top-level status to
-      "done" when the last step completes.
+      change. Retry on gate failure — never skip.
+      At least once per minute, append a heartbeat {at, note} to the current
+      step's heartbeat array (read prior entries first; orient against the gate
+      AND the goal; use [text](url) links for any PRs or pages you produce).
+      For loop steps, update "completed" and the "iterations" object as EACH
+      iteration finishes — don't wait until the loop ends.
+      Set the top-level status to "done" when the last step completes.
     requires: [convert-to-conductor]
     gate:
       - name: "Status file exists"

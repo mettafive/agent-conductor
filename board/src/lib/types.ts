@@ -55,6 +55,12 @@ export interface LoopState {
   iterations: LoopIteration[];
 }
 
+export interface HeartbeatEntry {
+  at: string;
+  note: string;
+  iteration?: string;
+}
+
 export interface BoardStep extends ConductorStep {
   column: Column;
   rawStatus: string; // pending | running | done | failed | (unknown)
@@ -64,11 +70,16 @@ export interface BoardStep extends ConductorStep {
   output_value?: unknown;
   criteria: GateCriterion[];
   loop?: LoopState;
+  heartbeat: HeartbeatEntry[];
+  learnings: string[];
 }
 
 export interface BoardModel {
   workflow: string;
   description?: string;
+  goal?: string;
+  currentStepGoal?: string;
+  lastBeatAt?: string;
   runId?: string;
   startedAt?: string;
   endedAt?: string;

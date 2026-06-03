@@ -53,7 +53,13 @@ export function App() {
       : null
     : liveModel;
 
-  const hasRun = !!model && model.total > 0;
+  // "started" = the agent has actually written a status file with steps
+  const liveStarted = !!(
+    snap.status &&
+    typeof snap.status === "object" &&
+    Object.keys((snap.status as { steps?: object }).steps ?? {}).length > 0
+  );
+  const showBoard = viewing ? !!record : liveStarted;
 
   return (
     <>
@@ -84,10 +90,10 @@ export function App() {
             <div className="grid flex-1 place-items-center py-28">
               <span className="font-mono text-xs text-mist">loading run…</span>
             </div>
-          ) : hasRun && model ? (
+          ) : showBoard && model ? (
             <Board model={model} />
           ) : (
-            <WaitingState statusPath={snap.statusPath} hasConductor={!!snap.conductorYaml} />
+            <WaitingState model={liveModel} statusPath={snap.statusPath} />
           )}
         </div>
       </div>
@@ -95,36 +101,50 @@ export function App() {
   );
 }
 
-function WaitingState({
-  statusPath,
-  hasConductor,
-}: {
-  statusPath: string;
-  hasConductor: boolean;
-}) {
+function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
   return (
     <div className="grid flex-1 place-items-center px-5 py-28">
       <div className="max-w-md text-center">
         <img src="./conductor.svg" alt="" className="mx-auto h-12 w-12 opacity-80" />
-        <h1 className="mt-5 text-xl font-semibold text-chalk">Waiting for the agent…</h1>
-        <p className="mt-2 text-sm leading-relaxed text-mist">
-          No steps yet in{" "}
-          <code className="rounded bg-panel px-1.5 py-0.5 font-mono text-xs text-cyan">
-            {statusPath}
-          </code>
-          . The board updates the moment the agent writes its status file.
-        </p>
-        {!hasConductor && (
-          <p className="mt-3 text-xs text-mist">
-            No conductor file found nearby — cards will show status only. Pass{" "}
-            <code className="font-mono text-mist-2">--conductor &lt;file&gt;</code> for full
-            detail.
-          </p>
+
+        {model.hasConductor ? (
+          <>
+            <div className="mt-5 flex items-center justify-center gap-2">
+              <span className="font-mono text-sm font-medium text-chalk">
+                {model.workflow}
+              </span>
+              <span className="rounded-md border border-line bg-panel px-2 py-0.5 font-mono text-[11px] text-mist">
+                {model.total} step{model.total === 1 ? "" : "s"}
+              </span>
+            </div>
+            <h1 className="mt-4 text-xl font-semibold text-chalk">
+              Waiting for the agent to start execution.
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-mist">
+              Cards will appear the moment it writes{" "}
+              <code className="rounded bg-panel px-1.5 py-0.5 font-mono text-xs text-cyan">
+                {statusPath}
+              </code>
+              .
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="mt-5 text-xl font-semibold text-chalk">
+              Watching <span className="font-mono text-cyan">.conductor/</span> for changes
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-mist">
+              The board will light up when your agent writes a conductor and a status
+              file. Start your agent and point it at this project.
+            </p>
+          </>
         )}
+
         <div className="mt-6 flex items-center justify-center gap-2 font-mono text-xs text-mist">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mint" />
           watching for changes
         </div>
+        <p className="mt-2 font-mono text-[11px] text-line-2">{statusPath}</p>
       </div>
     </div>
   );

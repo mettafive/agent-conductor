@@ -3,6 +3,7 @@ const LINKS = [
   { href: "#playground", label: "Playground" },
   { href: "#examples", label: "Examples" },
   { href: "#board", label: "Board" },
+  { href: "#heartbeats", label: "Heartbeats" },
   { href: "#agents", label: "For agents" },
 ];
 

@@ -6,14 +6,15 @@ interface Card {
   id: string;
   soft: number;
   hard: number;
+  beat: string;
 }
 
 const STEPS: Card[] = [
-  { id: "research", soft: 1, hard: 0 },
-  { id: "insurance-relevant", soft: 0, hard: 0 },
-  { id: "compare-insurers", soft: 1, hard: 0 },
-  { id: "write-page", soft: 1, hard: 1 },
-  { id: "seo-check", soft: 1, hard: 1 },
+  { id: "research", soft: 1, hard: 0, beat: "3/5 sources found via sitemap." },
+  { id: "insurance-relevant", soft: 0, hard: 0, beat: "Insurance is relevant — branching." },
+  { id: "compare-insurers", soft: 1, hard: 0, beat: "Compared 3 insurers on excess." },
+  { id: "write-page", soft: 1, hard: 1, beat: "Draft done; every claim cited." },
+  { id: "seo-check", soft: 1, hard: 1, beat: "Title + meta within limits." },
 ];
 
 const ORDER: Col[] = ["pending", "running", "gate", "done"];
@@ -112,6 +113,12 @@ export function BoardPreview() {
                             {c.hard} check
                           </span>
                         )}
+                      </div>
+                    )}
+                    {col.key === "running" && (
+                      <div className="mt-1.5 flex items-start gap-1 text-[9.5px] italic leading-snug text-mist">
+                        <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-cyan" />
+                        <span className="truncate">{c.beat}</span>
                       </div>
                     )}
                   </div>
