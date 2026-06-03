@@ -179,12 +179,17 @@ function ExpandedMonitor({
     return () => clearTimeout(t);
   }, [streamKey]);
 
+  // Only touch React state when the pinned/at-bottom edge actually flips —
+  // calling setState on every scroll tick re-renders the whole log and is what
+  // made scrolling feel jagged.
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-    pinned.current = atBottom;
-    setShowJump(!atBottom);
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    if (pinned.current !== atBottom) {
+      pinned.current = atBottom;
+      setShowJump(!atBottom);
+    }
   };
 
   const jumpToLatest = () => {
@@ -266,7 +271,10 @@ function ExpandedMonitor({
           return (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => {
+                pinned.current = true;
+                setFilter(f);
+              }}
               className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
                 on
                   ? "border-iris/50 bg-iris/15 text-chalk"
@@ -292,9 +300,12 @@ function ExpandedMonitor({
         ) : (
           shown.map((b) => (
             <div key={b.key} className="flex items-start gap-2 py-px">
-              <span className="shrink-0 text-line-2">{clock(b.at)}</span>
-              {multi && <span className={`shrink-0 ${wfColor(b.workflow)}`}>{b.workflow}</span>}
-              <span className="w-32 shrink-0 truncate text-cyan/80" title={b.step}>
+              {/* prefixes are unselectable so a drag-copy grabs only the notes */}
+              <span className="shrink-0 select-none text-line-2">{clock(b.at)}</span>
+              {multi && (
+                <span className={`shrink-0 select-none ${wfColor(b.workflow)}`}>{b.workflow}</span>
+              )}
+              <span className="w-32 shrink-0 select-none truncate text-cyan/80" title={b.step}>
                 {b.step}
               </span>
               <span className="min-w-0 flex-1 text-mist-2">
@@ -305,11 +316,14 @@ function ExpandedMonitor({
                 )}
               </span>
               {b.finalBeat && (
-                <span className="shrink-0 text-line-2" title="final beat — handoff to next step">
+                <span
+                  className="shrink-0 select-none text-line-2"
+                  title="final beat — handoff to next step"
+                >
                   ·→
                 </span>
               )}
-              {b.insight && <span className="shrink-0">💡</span>}
+              {b.insight && <span className="shrink-0 select-none">💡</span>}
             </div>
           ))
         )}

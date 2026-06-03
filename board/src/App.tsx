@@ -28,7 +28,7 @@ export function App() {
 
   // live heartbeat stream across every workflow — drives the monitor, the heart,
   // and the tick sound. Arrivals are seeded on load so nothing false-fires.
-  const { beats, arrival } = useHeartbeatStream(workflows, order);
+  const { beats, log, arrival } = useHeartbeatStream(workflows, order);
   const globalLastBeat = lastBeatIso(beats);
 
   useEffect(() => {
@@ -226,7 +226,7 @@ export function App() {
           </div>
 
           <HeartbeatMonitor
-            beats={beats}
+            beats={log}
             arrival={arrival}
             order={order}
             mode={monitorMode}
