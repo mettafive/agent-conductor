@@ -143,6 +143,8 @@ export function validateConductor(doc) {
       if (!Array.isArray(s.steps) || s.steps.length === 0)
         errors.push(`Loop "${s.id}" has no sub-steps`);
       else validateSubSteps(s, errors);
+      if (s.parallel !== undefined && s.parallel !== true && s.parallel !== false && s.parallel !== "auto")
+        errors.push(`Loop "${s.id}" has invalid "parallel" (use true, false, or auto)`);
     }
 
     for (const [field, val] of [

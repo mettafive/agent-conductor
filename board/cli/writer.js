@@ -150,6 +150,38 @@ export async function runHeartbeat(args) {
   return ok(`${id}${typeof sub === "string" ? `/${it}/${sub}` : ""} ♥ ${note.length > 50 ? note.slice(0, 50) + "…" : note}`);
 }
 
+// conductor-board loop-scope <loopId> <item...> [--note "..."]
+//
+// Frontload a loop's whole iteration list as pending the moment it's determined
+// (§6.2): writes every item into the iterations map and sets total, so the board
+// shows the full plan before any card moves. Also appends a "scope beat" naming
+// the items, unless --note is given.
+export async function runLoopScope(args) {
+  const sp = statusPathOf(args);
+  const [loopId, ...items] = positionals(args);
+  if (!loopId || items.length === 0)
+    return fail("usage: conductor-board loop-scope <loopId> <item1> <item2> … [--note \"...\"]");
+  const s = load(sp);
+  if (!s) return fail("no status.json — run status-init first");
+  const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
+  lp.type = "loop";
+  lp.iterations = lp.iterations || {};
+  for (const item of items) {
+    lp.iterations[item] = lp.iterations[item] || {}; // sub-steps materialize as work begins
+  }
+  lp.total = items.length;
+  lp.completed = lp.completed || 0;
+  if (lp.status !== "running") lp.status = lp.status || "pending";
+  const noteFlag = flag(args, ["--note"]);
+  const note =
+    typeof noteFlag === "string"
+      ? noteFlag
+      : `${items.length} scoped: ${items.join(", ")}. All pending.`;
+  (lp.heartbeat = lp.heartbeat || []).push({ at: now(), note });
+  save(sp, s);
+  return ok(`${loopId} scoped — ${items.length} iterations frontloaded`);
+}
+
 // conductor-board loop <loopId> <item> <subId> <status>
 export async function runLoop(args) {
   const sp = statusPathOf(args);

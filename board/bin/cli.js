@@ -45,6 +45,7 @@ const HELP = `
     heartbeat <id> "note"    Append a heartbeat (--iteration, --insight-type,
                              --insight-seed, --final, --to <step>)
     suggest "title"          Add a post-run suggestion (--type, --step, --rationale)
+    loop-scope <loop> <item...>   Frontload every iteration as pending (scope beat)
     loop <loop> <item> <sub> <state>   Update a loop sub-step
     complete <step>[::iter::sub] [--attest-soft]   Run hard gates, then advance
 
@@ -111,13 +112,14 @@ if (command === "clean") {
 }
 
 // status-writer commands (for agents — keep the board live as you work)
-if (["step", "gate", "heartbeat", "loop", "status-init", "suggest"].includes(command)) {
+if (["step", "gate", "heartbeat", "loop", "loop-scope", "status-init", "suggest"].includes(command)) {
   const w = await import("../cli/writer.js");
   const fn = {
     step: w.runStep,
     gate: w.runGate,
     heartbeat: w.runHeartbeat,
     loop: w.runLoop,
+    "loop-scope": w.runLoopScope,
     "status-init": w.runStatusInit,
     suggest: w.runSuggest,
   }[command];
