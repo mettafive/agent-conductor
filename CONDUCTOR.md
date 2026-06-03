@@ -103,6 +103,18 @@ view) + `insights.json`, and tracks which the user applies or dismisses. So:
 
 See the **[Heartbeat Guide](./spec/heartbeat-guide.md)** for how to write good ones.
 
+## Loops & human approval
+
+- **Loops** (`type: loop` over a list) run one gated sub-sequence per item. Update
+  each item's sub-steps in the status `iterations` map as you go — the board opens
+  the loop into a **child board** where each item is a card that moves through the
+  columns, so keep them current. End each iteration with a finalBeat.
+- **Approval** (`type: approval`) pauses for a human. Mark the step
+  `awaiting_approval` (gate `pending_human`) with an `approval` object, then wait —
+  the board shows an Approve/Reject card and writes the human's decisions back into
+  `status.json`. Read them and route to `actions.approve` / `actions.reject`. See
+  spec §4.4.
+
 ## Gate commands & CommonJS
 
 If the project uses CommonJS (the Node.js default), inline `node -e` / `tsx -e`

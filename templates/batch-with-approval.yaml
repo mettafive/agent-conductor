@@ -1,0 +1,61 @@
+conductor: 2.0.0
+name: batch-with-approval
+description: >
+  Template: process a batch of items in a gated loop, then hold them at a human
+  approval gate before the final action. Replace the instructions and gates with
+  your own; keep the shape.
+
+inputs:
+  - batch   # how many items to claim this run
+
+steps:
+  # 1 — claim the work and produce the loop input
+  - id: claim
+    instruction: Claim the next {batch} items and output the list as item_list.
+    gate:
+      - check: "npx conductor-board check claim"   # board-sync first gate (§8.1)
+      - "item_list is the next items in order"
+    output: item_list
+
+  # 2 — process each item through a gated sub-sequence
+  - id: process
+    type: loop
+    over: item_list
+    as: item
+    requires: [claim]
+    steps:
+      - id: do-work
+        instruction: Do the work for {item}.
+        gate:
+          - check: "npx conductor-board check process"
+          - "The work for this item meets the bar"
+      - id: verify
+        instruction: Verify {item} mechanically (links, schema, whatever applies).
+        gate:
+          - "Verification passes for this item"
+
+  # 3 — a human approves the batch before the final action
+  - id: approve
+    type: approval
+    instruction: Review the processed items before the final action.
+    requires: [process]
+    approval:
+      prompt: "Proceed with these items?"
+      items:
+        - "{item} — ready"
+      actions:
+        approve: finalize
+        reject: rework
+
+  # 4a — approved → finalize
+  - id: finalize
+    instruction: Take the final action on the approved items.
+    requires: [approve]
+    gate:
+      - "The final action completed for every approved item"
+
+  # 4b — rejected → rework
+  - id: rework
+    instruction: Address the rejected items.
+    gate:
+      - "Every rejected item has been addressed"

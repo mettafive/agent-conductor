@@ -149,6 +149,12 @@ gate can't be satisfied).
 | [`treatment-page.yaml`](./examples/treatment-page.yaml) | Branching | `condition`, `if_true`/`if_false`, `then` rejoin |
 | [`code-review.yaml`](./examples/code-review.yaml) | Gates-heavy | Multiple conditions, mixed soft + hard gates |
 | [`batch-review.yaml`](./examples/batch-review.yaml) | Loop | `type: loop` over a list, per-iteration gated sub-steps |
+| [`daily-price.yaml`](./examples/daily-price.yaml) | Loop (real-world) | A clinic-by-clinic scrape loop with the board-sync first gate |
+| [`content-pipeline.yaml`](./examples/content-pipeline.yaml) | Loop + approval | A polish loop held at a `type: approval` human gate before shipping |
+
+On the board, a loop's iterations open into their own **child board** — each item
+is a card moving through the columns — and a `type: approval` step renders an
+interactive Approve/Reject card.
 
 ## The spec
 
@@ -185,6 +191,11 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
   persistent **insights ledger** (`.conductor/insights.md`) that accumulates
   learnings across runs so they stop evaporating — commit it and the workflow's
   memory travels with the repo.
+- **Phase 6 — spec 2.0.0.** ✅ **Loop child boards** (each iteration is a card that
+  moves through the columns), **weighted progress** (a loop counts as its
+  iterations, not one step), **human approval** (`type: approval`), and a
+  **board-sync pre-gate check** (`conductor-board check <step>`) that makes
+  board-discipline structural — an agent that freeballs fails its own gate.
 
 ## Design principles
 

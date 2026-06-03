@@ -10,6 +10,7 @@ conductor — fill in the `inputs` at the top and run it.
 | [`content-page.yaml`](./content-page.yaml) | Research → structure → write → validate → SEO | Linear flow with an HTML validation gate |
 | [`data-pipeline.yaml`](./data-pipeline.yaml) | Extract → validate → transform each table → load → verify | A loop over tables |
 | [`price-scraper.yaml`](./price-scraper.yaml) | Select targets → scrape each → flag outliers → update DB | A loop over targets |
+| [`batch-with-approval.yaml`](./batch-with-approval.yaml) | Claim → process each → **human approves** → finalize / rework | A loop feeding a `type: approval` human gate |
 
 ## Using a template
 
