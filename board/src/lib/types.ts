@@ -42,7 +42,9 @@ export interface BoardStep extends ConductorStep {
 export interface BoardModel {
   workflow: string;
   description?: string;
+  runId?: string;
   startedAt?: string;
+  endedAt?: string;
   overallStatus: string; // running | done | failed | idle
   currentStep?: string;
   steps: BoardStep[];
@@ -50,6 +52,21 @@ export interface BoardModel {
   total: number;
   hasConductor: boolean;
   error?: string;
+}
+
+export interface HistoryRun {
+  run_id: string;
+  workflow: string;
+  status: string; // done | failed
+  started_at?: string | null;
+  completed_at?: string | null;
+  archived_at?: string;
+  done: number;
+  total: number;
+}
+
+export interface RunRecord extends HistoryRun {
+  snapshot: Snapshot;
 }
 
 export interface Snapshot {

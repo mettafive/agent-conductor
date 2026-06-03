@@ -99,7 +99,9 @@ export function buildModel(snap: Snapshot): BoardModel {
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
     description: parsed?.description ?? (status.description as string | undefined),
+    runId: status.run_id as string | undefined,
     startedAt: status.started_at as string | undefined,
+    endedAt: status.completed_at as string | undefined,
     overallStatus: (status.status as string) ?? (total ? "idle" : "idle"),
     currentStep: status.current_step as string | undefined,
     steps,

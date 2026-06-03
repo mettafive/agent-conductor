@@ -130,6 +130,9 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
 - **Phase 2 — Local Kanban board.** ✅ [`board/`](./board) — `npx agent-conductor`
   serves a live board that watches `.conductor/status.json` over Server-Sent
   Events. Zero runtime dependencies.
+- **Phase 2.5 — Run history.** ✅ Completed and failed runs are archived to
+  `.conductor/history/`; the board's sidebar browses past runs and freezes any
+  one to its final state.
 - **Phase 3 — npm package.** `init` scaffolds a conductor, `validate` checks one
   against the spec; publish the board to npm.
 

@@ -249,6 +249,7 @@ board watches.
 {
   "conductor": "1.0.0",
   "workflow": "workflow-name",
+  "run_id": "run-2026-06-03T09-00-00",
   "started_at": "2026-06-03T09:00:00Z",
   "status": "running",
   "current_step": "write-draft",
@@ -274,8 +275,10 @@ board watches.
 
 | Field          | Values                                  | Notes                                          |
 | -------------- | --------------------------------------- | ---------------------------------------------- |
+| `run_id`       | string                                  | Unique id for this run (recommended: timestamp). Lets the board archive and group past runs. |
 | `status` (top) | `running` `done` `failed`               | Overall workflow state.                        |
 | `current_step` | step id                                 | The step in flight.                            |
+| `completed_at` (top) | ISO-8601                          | Set when the workflow reaches `done` or `failed`. |
 | `status`       | `pending` `running` `done` `failed`     | Per-step lifecycle.                            |
 | `gate`         | `pending` `checking` `passed` `failed`  | Gate result. `checking` is transient — set while the gate is being evaluated (drives the board's Gate Check column). |
 | `attempt`      | integer ≥ 1                             | Increments on every retry.                     |
@@ -298,6 +301,14 @@ required.
   "attempt": 2
 }
 ```
+
+### 6.4 History
+
+When a run reaches `done` or `failed`, the board archives a self-contained copy
+of it (the final status plus the conductor that produced it) to
+`.conductor/history/<run_id>.json`. Past runs stay browsable in the board's
+history panel, grouped by workflow. Give every run a distinct `run_id` so they
+archive cleanly instead of overwriting each other.
 
 ---
 

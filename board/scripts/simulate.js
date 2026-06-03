@@ -18,6 +18,7 @@ const conductorArg = args.find((a) => !a.startsWith("-") && /\.ya?ml$/.test(a));
 const dir = path.resolve(process.cwd(), flag("--dir", ".conductor"));
 const loop = args.includes("--loop");
 const failStep = flag("--fail", null);
+const fatalStep = flag("--fatal", null);
 const SPEED = Number(flag("--speed", 1)) || 1;
 
 const conductorPath =
@@ -54,9 +55,11 @@ function gateDetail(step, passed) {
 }
 
 async function run() {
+  const runId = "run-" + nowIso().replace(/[:.]/g, "-");
   const state = {
     conductor: "1.0.0",
     workflow: doc.name || "workflow",
+    run_id: runId,
     started_at: nowIso(),
     status: "running",
     current_step: null,
@@ -106,6 +109,20 @@ async function run() {
       await sleep(1300);
     }
 
+    // terminal failure — workflow ends failed (for demoing failed history)
+    if (fatalStep === step.id) {
+      entry.status = "failed";
+      entry.gate = "failed";
+      entry.gate_detail = gateDetail(step, false);
+      entry.completed_at = nowIso();
+      state.status = "failed";
+      state.completed_at = nowIso();
+      state.current_step = step.id;
+      write({ ...state });
+      console.log(`✗ workflow failed at ${step.id}`);
+      return;
+    }
+
     const shouldFail = failStep === step.id && entry.attempt === 1;
     if (shouldFail) {
       entry.gate = "failed";
@@ -140,6 +157,7 @@ async function run() {
 
   state.status = "done";
   state.current_step = null;
+  state.completed_at = nowIso();
   write({ ...state });
   console.log("✓ workflow complete");
 }

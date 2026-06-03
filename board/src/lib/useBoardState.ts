@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { buildModel } from "./merge";
-import type { BoardModel, Snapshot } from "./types";
+import type { BoardModel, HistoryRun, Snapshot } from "./types";
 
 type Conn = "connecting" | "live" | "lost";
 
@@ -11,11 +11,18 @@ const EMPTY: Snapshot = {
   conductorPath: null,
 };
 
-/** Subscribes to the server's SSE stream and rebuilds the board model on each push. */
-export function useBoardState(): { model: BoardModel; snap: Snapshot; conn: Conn } {
+interface BoardState {
+  model: BoardModel;
+  snap: Snapshot;
+  conn: Conn;
+  history: HistoryRun[];
+}
+
+/** Subscribes to the server's SSE stream: live status + archived history. */
+export function useBoardState(): BoardState {
   const [snap, setSnap] = useState<Snapshot>(EMPTY);
+  const [history, setHistory] = useState<HistoryRun[]>([]);
   const [conn, setConn] = useState<Conn>("connecting");
-  const modelRef = useRef<BoardModel>(buildModel(EMPTY));
 
   useEffect(() => {
     let es: EventSource | null = null;
@@ -30,6 +37,13 @@ export function useBoardState(): { model: BoardModel; snap: Snapshot; conn: Conn
           setConn("live");
         } catch {
           /* ignore malformed frame */
+        }
+      });
+      es.addEventListener("history", (e) => {
+        try {
+          setHistory(JSON.parse((e as MessageEvent).data) as HistoryRun[]);
+        } catch {
+          /* ignore */
         }
       });
       es.addEventListener("error", () => {
@@ -47,7 +61,5 @@ export function useBoardState(): { model: BoardModel; snap: Snapshot; conn: Conn
     };
   }, []);
 
-  const model = buildModel(snap);
-  modelRef.current = model;
-  return { model, snap, conn };
+  return { model: buildModel(snap), snap, conn, history };
 }
