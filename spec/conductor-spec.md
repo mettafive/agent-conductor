@@ -547,6 +547,31 @@ compatibility — new workflows should prefer the subdirectory convention.
 - **Hard checks earn trust.** Anything verifiable should be a `check`.
 - **One file, zero deps.** A conductor is portable by construction.
 
+### 8.1 Board-sync pre-check — structural freeball prevention
+
+Agent Conductor has no automatic runner: "using the board" means the agent keeps
+`status.json` current as it works. To make that structural rather than honor-system,
+ship a board-sync pre-check as the **first gate criterion of every step**:
+
+```yaml
+gate:
+  - check: "npx conductor-board check polish-page"   # board-sync, runs first
+  - "Every sentence meets the bar"
+  - check: "test -f out/polish-page.md"
+```
+
+`conductor-board check <step-id>` passes only when, for that step:
+
+1. `status.json`'s `current_step` matches the step (it's marked running);
+2. the step has at least one heartbeat;
+3. its **most recent heartbeat is within the last 5 minutes** (not stale).
+
+An agent that does real work without updating the board — marking the step running,
+beating as it goes — will have a stale or missing record and **fails its own gate**.
+The remedy is not to back-fill: re-sync `status.json` to reality and restart the step.
+(The freshness check is on the latest heartbeat, not `started_at`, so a legitimately
+long step that keeps beating passes; only silence trips it.)
+
 ---
 
 ## 9. Insights & optimization

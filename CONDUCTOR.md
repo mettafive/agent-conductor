@@ -46,6 +46,10 @@ there is no automatic runner — "using the board" means **you** keep
 - The board raises a red **"Freeballing?"** banner after ~3 minutes with no
   heartbeat. If it shows — or the user calls it out — that's a hard stop: re-sync
   and resume the discipline.
+- **Make it structural:** add `check: "npx conductor-board check <step-id>"` as the
+  **first gate criterion of every step**. It fails when the board is stale for that
+  step (wrong `current_step`, no heartbeat, or last beat >5 min old), so you
+  literally cannot pass a gate on work the board doesn't reflect. See spec §8.1.
 
 The setup conductor will:
 

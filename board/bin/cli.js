@@ -31,6 +31,8 @@ const HELP = `
     init                     Scaffold a new .conductor/conductor.yaml
     validate [path]          Check a conductor against the spec
     setup                    Write setup.conductor.yaml (the bootstrap conductor)
+    check <step-id>          Board-sync pre-gate check — fails if the board is
+                             stale for this step (use as a step's first gate)
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
@@ -72,6 +74,11 @@ if (command === "validate") {
 if (command === "setup") {
   const { runSetup } = await import("../cli/setup.js");
   process.exit((await runSetup(rest)) ? 0 : 1);
+}
+
+if (command === "check") {
+  const { runCheck } = await import("../cli/check.js");
+  process.exit((await runCheck(rest)) ? 0 : 1);
 }
 
 if (command && command !== "board") {
