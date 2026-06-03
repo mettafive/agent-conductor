@@ -186,6 +186,21 @@ export function buildModel(snap: Snapshot): BoardModel {
 
   const total = steps.length;
   const done = steps.filter((s) => s.column === "done").length;
+
+  // Weighted progress: a loop contributes one unit per iteration, so a 5-page
+  // loop reads as 5 units of work instead of a single step stuck at "1/6".
+  let unitsTotal = 0;
+  let unitsDone = 0;
+  for (const s of steps) {
+    if (s.isLoop && s.loop) {
+      const iters = s.loop.iterations;
+      unitsTotal += s.loop.total || iters.length || 1;
+      unitsDone += iters.filter((it) => it.done).length;
+    } else {
+      unitsTotal += 1;
+      if (s.column === "done") unitsDone += 1;
+    }
+  }
   const lastBeatAt = steps
     .flatMap((s) => s.heartbeat.map((h) => h.at))
     .sort()
@@ -214,6 +229,8 @@ export function buildModel(snap: Snapshot): BoardModel {
     steps,
     done,
     total,
+    unitsDone,
+    unitsTotal,
     hasConductor,
     error: status._error as string | undefined,
   };

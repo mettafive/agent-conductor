@@ -81,7 +81,9 @@ export function StatusBar({
   const duration = useDuration(model.startedAt, model.endedAt, running);
   const now = useNow(1000);
   const lastBeat = running && model.lastBeatAt ? relativeTime(model.lastBeatAt, now) : null;
-  const pct = model.total ? Math.round((model.done / model.total) * 100) : 0;
+  // Weighted by work units so a loop's iterations count, not a single step.
+  const pct = model.unitsTotal ? Math.round((model.unitsDone / model.unitsTotal) * 100) : 0;
+  const hasLoop = model.unitsTotal !== model.total;
 
   // Freeball detection: running, but nothing has touched the board for a while.
   // Time from the last beat, or — if it never beat — from when the run started.
@@ -187,8 +189,15 @@ export function StatusBar({
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <span className="font-mono text-xs text-mist-2">
-              {model.done}/{model.total}
+            <span
+              className="font-mono text-xs text-mist-2"
+              title={
+                hasLoop
+                  ? `${model.unitsDone}/${model.unitsTotal} work units (steps + loop iterations) · ${model.done}/${model.total} top-level steps`
+                  : `${model.done}/${model.total} steps`
+              }
+            >
+              {model.unitsDone}/{model.unitsTotal}
             </span>
           </div>
 

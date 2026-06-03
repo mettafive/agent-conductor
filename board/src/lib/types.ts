@@ -145,6 +145,9 @@ export interface BoardModel {
   steps: BoardStep[];
   done: number;
   total: number;
+  /** Weighted work units: a loop counts as its iteration count, not 1 step. */
+  unitsDone: number;
+  unitsTotal: number;
   hasConductor: boolean;
   error?: string;
 }
