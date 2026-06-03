@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { HistoryRun, Snapshot } from "./types";
+import type { HistoryRun, InsightLedger, Snapshot } from "./types";
 
 type Conn = "connecting" | "live" | "lost";
 
@@ -13,6 +13,7 @@ const EMPTY: Snapshot = {
 export interface WorkflowEntry {
   snap: Snapshot;
   history: HistoryRun[];
+  ledger?: InsightLedger;
 }
 
 interface BoardState {
@@ -67,7 +68,30 @@ export function useBoardState(): BoardState {
           remember(name);
           setWorkflows((prev) => ({
             ...prev,
-            [name]: { snap: prev[name]?.snap ?? EMPTY, history: runs },
+            [name]: {
+              snap: prev[name]?.snap ?? EMPTY,
+              history: runs,
+              ledger: prev[name]?.ledger,
+            },
+          }));
+        } catch {
+          /* ignore */
+        }
+      });
+
+      es.addEventListener("insights", (e) => {
+        try {
+          const d = JSON.parse((e as MessageEvent).data);
+          const name = d.workflow as string;
+          const ledger = d.ledger as InsightLedger;
+          remember(name);
+          setWorkflows((prev) => ({
+            ...prev,
+            [name]: {
+              snap: prev[name]?.snap ?? EMPTY,
+              history: prev[name]?.history ?? [],
+              ledger,
+            },
           }));
         } catch {
           /* ignore */

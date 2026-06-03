@@ -91,6 +91,29 @@ export interface Suggestion {
   impact?: string;
   confidence?: string;
   source?: string; // "user" for user-authored
+  provenance?: string; // e.g. "run 2026-06-03T18-34" — set by the ledger
+}
+
+/** One entry in a workflow's persistent insights ledger (.conductor/insights). */
+export interface InsightItem {
+  key: string;
+  type: string;
+  step?: string;
+  title: string;
+  rationale?: string;
+  current?: string;
+  proposed?: string;
+  confidence?: string;
+  source_heartbeat?: string;
+  status: "open" | "applied" | "dismissed";
+  provenance?: string;
+  first_seen_at?: string;
+  decided_at?: string;
+}
+
+export interface InsightLedger {
+  workflow: string;
+  items: InsightItem[];
 }
 
 export interface BoardStep extends ConductorStep {

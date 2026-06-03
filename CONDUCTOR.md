@@ -87,6 +87,16 @@ and timing into 3–5 `suggestions` in `status.json` (see
 [spec §9](./spec/conductor-spec.md#9-insights--optimization)). The board lets the
 user apply them back to the conductor.
 
+**Insights are remembered across runs.** When a run finishes, the board merges its
+suggestions into a persistent, deduped ledger at `.conductor/insights.md` (human
+view) + `insights.json`, and tracks which the user applies or dismisses. So:
+
+- **At the start of every run, read `.conductor/insights.md`** to carry forward what
+  past runs learned. Don't re-surface insights already recorded there; prefer
+  acting on the ones still marked **Open**.
+- Writing zero suggestions when the run clearly surfaced improvements wastes the
+  whole loop — capture them so the next run is better than this one.
+
 See the **[Heartbeat Guide](./spec/heartbeat-guide.md)** for how to write good ones.
 
 ## Gate commands & CommonJS

@@ -45,6 +45,14 @@ export function App() {
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
 
+  // The active workflow's persistent insights ledger — accumulated across runs.
+  // The review panel acts on the still-open items (cross-run memory), not just
+  // the suggestions of one run, so insights stop evaporating between runs.
+  const activeLedger = activeWf ? workflows[activeWf]?.ledger : undefined;
+  const openInsights = (activeLedger?.items ?? [])
+    .filter((i) => i.status === "open")
+    .map((i) => ({ ...i, id: i.key }) as Suggestion & { key: string });
+
   // completion chimes — fire on any workflow's status transition (never on load)
   const prevStatuses = useRef<Record<string, string>>({});
   useEffect(() => {
@@ -107,7 +115,7 @@ export function App() {
     if (
       selectedRun === null &&
       liveModel.overallStatus === "done" &&
-      liveModel.suggestions.length > 0 &&
+      openInsights.length > 0 &&
       liveRunId &&
       !dismissedRuns.current.has(`${activeWf}:${liveRunId}`)
     ) {
@@ -116,7 +124,7 @@ export function App() {
     }
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveModel.overallStatus, liveModel.suggestions.length, liveRunId, activeWf, selectedRun]);
+  }, [liveModel.overallStatus, openInsights.length, liveRunId, activeWf, selectedRun]);
 
   // Send the full suggestion objects so applying works for a past run too —
   // the server no longer has to find them in the (possibly reset) live status.
@@ -152,11 +160,21 @@ export function App() {
   );
   const showBoard = viewing ? !!record : liveStarted;
 
-  // suggestions for whatever run is on screen — live, or a frozen past run
-  const shownSuggestions = model?.suggestions ?? [];
   const closePanel = () => {
     if (!viewing && liveRunId) dismissedRuns.current.add(`${activeWf}:${liveRunId}`);
     setPanelOpen(false);
+  };
+  const dismissInsights = async (keys: string[]) => {
+    if (!activeWf || keys.length === 0) return;
+    try {
+      await fetch(`/api/workflow/${encodeURIComponent(activeWf)}/insights/decide`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ keys, status: "dismissed" }),
+      });
+    } catch {
+      /* the SSE refresh will reconcile */
+    }
   };
 
   return (
@@ -190,7 +208,7 @@ export function App() {
             }}
             onBackToLive={() => setSelectedRun(null)}
             onToggleSidebar={() => setSidebarOpen((o) => !o)}
-            optimizeCount={shownSuggestions.length}
+            optimizeCount={openInsights.length}
             optimizeOpen={panelOpen}
             onToggleOptimize={() => setPanelOpen((o) => !o)}
           />
@@ -225,12 +243,12 @@ export function App() {
             )}
 
             <AnimatePresence>
-              {panelOpen && shownSuggestions.length > 0 && activeWf && (
+              {panelOpen && openInsights.length > 0 && activeWf && (
                 <OptimizationPanel
                   workflow={activeWf}
-                  suggestions={shownSuggestions}
-                  viewing={viewing}
+                  suggestions={openInsights}
                   onApply={applySuggestions}
+                  onDismiss={dismissInsights}
                   onClose={closePanel}
                 />
               )}

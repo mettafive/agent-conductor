@@ -240,6 +240,113 @@ function archiveIfDone(historyDir, snapshot, archived) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Insights ledger — a persistent, accumulating memory per workflow.
+//
+// insights.json is the source of truth (structured, with apply/dismiss state);
+// insights.md is a human- and agent-readable view regenerated on every change.
+// Suggestions from each completed run are merged in (deduped) as `open`; the
+// board lets the user apply or dismiss them, which updates both files.
+// ---------------------------------------------------------------------------
+
+const insightsPaths = (wf) => ({
+  json: path.join(wf.dir, "insights.json"),
+  md: path.join(wf.dir, "insights.md"),
+});
+
+const insightKey = (s) =>
+  `${s.type || "note"}::${s.step || ""}::${String(s.title || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")}`;
+
+function loadInsights(wf) {
+  try {
+    const l = JSON.parse(fs.readFileSync(insightsPaths(wf).json, "utf8"));
+    if (l && Array.isArray(l.items)) return l;
+  } catch {
+    /* fresh ledger */
+  }
+  return { workflow: wf.name, items: [] };
+}
+
+function renderInsightsMd(ledger) {
+  const of = (st) => ledger.items.filter((i) => i.status === st);
+  const line = (i) =>
+    `- [${i.type}] ${i.title}${i.confidence ? ` · ${i.confidence}` : ""}${
+      i.provenance ? ` · _${i.provenance}_` : ""
+    }`;
+  const sect = (title, items) =>
+    `## ${title}\n${items.length ? items.map(line).join("\n") : "_none yet_"}\n`;
+  return (
+    `# Conductor insights — ${ledger.workflow}\n\n` +
+    `_Accumulated across runs. The agent reads this at the start of each run to carry ` +
+    `learnings forward; the board appends new insights and tracks which you apply or dismiss._\n\n` +
+    sect("Open", of("open")) +
+    `\n` +
+    sect("Applied", of("applied")) +
+    `\n` +
+    sect("Dismissed", of("dismissed"))
+  );
+}
+
+function saveInsights(wf, ledger) {
+  const { json, md } = insightsPaths(wf);
+  try {
+    fs.mkdirSync(wf.dir, { recursive: true });
+    fs.writeFileSync(json, JSON.stringify(ledger, null, 2));
+    fs.writeFileSync(md, renderInsightsMd(ledger));
+  } catch (e) {
+    console.warn(`[conductor-board] could not write insights: ${e.message}`);
+  }
+}
+
+/** Merge a run's suggestions into the ledger as `open`, deduped by key. */
+function mergeInsights(wf, suggestions, runId, at) {
+  if (!Array.isArray(suggestions) || suggestions.length === 0) return false;
+  const ledger = loadInsights(wf);
+  const have = new Set(ledger.items.map(insightKey));
+  let added = 0;
+  for (const s of suggestions) {
+    if (!s || !s.title) continue;
+    const key = insightKey(s);
+    if (have.has(key)) continue;
+    have.add(key);
+    ledger.items.push({
+      key,
+      type: s.type || "note",
+      step: s.step,
+      title: s.title,
+      rationale: s.rationale,
+      current: s.current,
+      proposed: s.proposed,
+      confidence: s.confidence,
+      source_heartbeat: s.source_heartbeat,
+      status: "open",
+      provenance: `run ${runId || "?"}`,
+      first_seen_at: at || new Date().toISOString(),
+    });
+    added += 1;
+  }
+  if (added) saveInsights(wf, ledger);
+  return added > 0;
+}
+
+/** Mark ledger items applied/dismissed/open by key. */
+function decideInsights(wf, keys, status) {
+  const ledger = loadInsights(wf);
+  let changed = 0;
+  for (const it of ledger.items) {
+    if (keys.includes(it.key) && it.status !== status) {
+      it.status = status;
+      it.decided_at = new Date().toISOString();
+      changed += 1;
+    }
+  }
+  if (changed) saveInsights(wf, ledger);
+  return changed;
+}
+
 function serveStatic(req, res) {
   let urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
   if (urlPath === "/") urlPath = "/index.html";
@@ -363,7 +470,11 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     for (const wf of discoverWorkflows(conductorDir, absStatus, explicitConductor)) {
       const snap = snapshotFor(wf);
       sendAll("update", snap);
-      if (archiveIfDone(wf.historyDir, snap, archivedSetFor(wf))) {
+      const rec = archiveIfDone(wf.historyDir, snap, archivedSetFor(wf));
+      if (rec) {
+        if (mergeInsights(wf, rec.snapshot?.status?.suggestions, rec.run_id, rec.completed_at)) {
+          sendAll("insights", { workflow: wf.name, ledger: loadInsights(wf) });
+        }
         sendAll("history", { workflow: wf.name, runs: listHistory(wf.historyDir) });
       }
     }
@@ -393,6 +504,12 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
         `event: history\ndata: ${JSON.stringify({
           workflow: wf.name,
           runs: listHistory(wf.historyDir),
+        })}\n\n`,
+      );
+      res.write(
+        `event: insights\ndata: ${JSON.stringify({
+          workflow: wf.name,
+          ledger: loadInsights(wf),
         })}\n\n`,
       );
     }
@@ -507,6 +624,9 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
           }
           return json(res, 500, { error: `write failed, rolled back: ${e.message}` });
         }
+        // record the decision in the persistent ledger and push it to clients
+        decideInsights(wf, chosen.map(insightKey), "applied");
+        sendAll("insights", { workflow: wf.name, ledger: loadInsights(wf) });
         return json(res, 200, {
           ok: true,
           applied: chosen.map((s) => s.id),
@@ -519,6 +639,29 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     if ((m = url.match(/^\/api\/workflow\/([^/]+)\/state$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       return wf ? json(res, 200, snapshotFor(wf)) : json(res, 404, { error: "not found" });
+    }
+    if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/insights$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      return wf ? json(res, 200, loadInsights(wf)) : json(res, 404, { error: "not found" });
+    }
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/insights\/decide$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "not found" });
+      readBody(req).then((bodyStr) => {
+        let body;
+        try {
+          body = JSON.parse(bodyStr || "{}");
+        } catch {
+          return json(res, 400, { error: "invalid request body" });
+        }
+        const keys = Array.isArray(body.keys) ? body.keys : [];
+        if (!["open", "applied", "dismissed"].includes(body.status))
+          return json(res, 400, { error: "status must be open | applied | dismissed" });
+        const changed = decideInsights(wf, keys, body.status);
+        sendAll("insights", { workflow: wf.name, ledger: loadInsights(wf) });
+        return json(res, 200, { ok: true, changed });
+      });
+      return;
     }
     if ((m = url.match(/^\/api\/workflow\/([^/]+)\/history$/))) {
       const wf = findWf(decodeURIComponent(m[1]));

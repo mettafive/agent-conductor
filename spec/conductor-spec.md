@@ -620,6 +620,21 @@ re-validation). The next run starts from the improved workflow. Over many runs, 
 workflow is refined by its own execution history — suggestions become rare, gates
 pass first try, the skill is polished by having been run.
 
+### 9.4 The insights ledger — memory across runs
+
+Suggestions don't evaporate when the run ends. The board merges each completed
+run's suggestions into a persistent, deduped **ledger**:
+
+- **`.conductor/insights.md`** — a human- and agent-readable view, grouped into
+  **Open / Applied / Dismissed**, with provenance (which run first surfaced each).
+- **`.conductor/insights.json`** — the structured source of truth the board reads
+  and writes.
+
+The agent **reads `insights.md` at the start of every run** to carry learnings
+forward (and to avoid re-surfacing what's already recorded). Applying an insight in
+the board marks it `applied`; dismissing it marks it `dismissed`; both persist. The
+ledger is plain text — commit it, and the workflow's memory travels with the repo.
+
 ---
 
 ## 10. Minimal valid conductor

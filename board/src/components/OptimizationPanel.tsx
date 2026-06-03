@@ -68,6 +68,7 @@ function Card({
         {s.step && <span>step: {s.step}</span>}
         <span className="rounded border border-line-2 px-1">{s.type}</span>
         {s.impact && <span className="text-mint/80">{s.impact}</span>}
+        {s.provenance && <span className="text-line-2">{s.provenance}</span>}
       </div>
 
       {s.rationale && (
@@ -110,12 +111,12 @@ function Card({
 interface Props {
   workflow: string;
   suggestions: Suggestion[];
-  viewing?: boolean;
   onApply: (items: Suggestion[]) => Promise<{ ok: boolean; error?: string }>;
+  onDismiss?: (ids: string[]) => void;
   onClose: () => void;
 }
 
-export function OptimizationPanel({ workflow, suggestions, viewing, onApply, onClose }: Props) {
+export function OptimizationPanel({ workflow, suggestions, onApply, onDismiss, onClose }: Props) {
   const [states, setStates] = useState<Record<string, "pending" | "applied" | "skipped">>({});
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -140,7 +141,10 @@ export function OptimizationPanel({ workflow, suggestions, viewing, onApply, onC
     }
   };
 
-  const skip = (id: string) => setStates((prev) => ({ ...prev, [id]: "skipped" }));
+  const skip = (id: string) => {
+    setStates((prev) => ({ ...prev, [id]: "skipped" }));
+    onDismiss?.([id]); // persist the decision to the ledger
+  };
 
   return (
     <motion.div
@@ -152,18 +156,16 @@ export function OptimizationPanel({ workflow, suggestions, viewing, onApply, onC
     >
       <div className="flex items-center gap-2 border-b border-line px-4 py-3.5">
         <span className="text-base">✨</span>
-        <span className="font-medium text-chalk">Optimization Review</span>
+        <span className="font-medium text-chalk">Insights</span>
         <span className="grid h-5 min-w-5 place-items-center rounded-md bg-iris/15 px-1 font-mono text-[11px] text-iris">
           {suggestions.length}
         </span>
-        {viewing && (
-          <span
-            title="From a past run — applying still updates the current conductor"
-            className="rounded border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] text-amber"
-          >
-            past run
-          </span>
-        )}
+        <span
+          title="Accumulated across runs and kept in .conductor/insights.md"
+          className="font-mono text-[10px] text-mist"
+        >
+          open
+        </span>
         <button onClick={onClose} className="ml-auto text-mist hover:text-chalk" title="Close">
           ✕
         </button>
@@ -211,10 +213,13 @@ export function OptimizationPanel({ workflow, suggestions, viewing, onApply, onC
           {busy ? "Applying…" : `Apply ${pendingIds.length} selected`}
         </button>
         <button
-          onClick={onClose}
+          onClick={() => {
+            if (pendingIds.length) onDismiss?.(pendingIds);
+            onClose();
+          }}
           className="rounded-lg border border-line px-3 py-2 text-sm text-mist transition-colors hover:text-chalk"
         >
-          Skip all
+          Dismiss all
         </button>
       </div>
 
