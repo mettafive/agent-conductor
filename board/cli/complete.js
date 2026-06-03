@@ -63,10 +63,29 @@ export async function runComplete(args) {
     console.error(red(`✗ could not parse conductor: ${e.message}`));
     return false;
   }
-  const step = (doc.steps || []).find((s) => s && s.id === stepId);
-  if (!step) {
-    console.error(red(`✗ conductor has no step "${stepId}"`));
-    return false;
+  // resolve the step — either a top-level id, or a loop sub-step "loop::iter::sub"
+  const parts = stepId.split("::");
+  let step;
+  let loopPath = null;
+  if (parts.length === 3) {
+    const [loopId, iter, subId] = parts;
+    const loopStep = (doc.steps || []).find((s) => s && s.id === loopId && s.type === "loop");
+    if (!loopStep) {
+      console.error(red(`✗ conductor has no loop "${loopId}"`));
+      return false;
+    }
+    step = (loopStep.steps || []).find((s) => s && s.id === subId);
+    if (!step) {
+      console.error(red(`✗ loop "${loopId}" has no sub-step "${subId}"`));
+      return false;
+    }
+    loopPath = { loopId, iter, subId };
+  } else {
+    step = (doc.steps || []).find((s) => s && s.id === stepId);
+    if (!step) {
+      console.error(red(`✗ conductor has no step "${stepId}"`));
+      return false;
+    }
   }
 
   const soft = [];
@@ -117,7 +136,18 @@ export async function runComplete(args) {
   if (ok) {
     try {
       const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
-      const st = (status.steps[stepId] = status.steps[stepId] || { attempt: 1 });
+      let st;
+      if (loopPath) {
+        const lp = (status.steps[loopPath.loopId] = status.steps[loopPath.loopId] || {
+          type: "loop",
+          iterations: {},
+        });
+        lp.iterations = lp.iterations || {};
+        const it = (lp.iterations[loopPath.iter] = lp.iterations[loopPath.iter] || {});
+        st = it[loopPath.subId] = it[loopPath.subId] || { attempt: 1 };
+      } else {
+        st = status.steps[stepId] = status.steps[stepId] || { attempt: 1 };
+      }
       st.status = "done";
       st.gate = "passed";
       st.gate_detail = detail;

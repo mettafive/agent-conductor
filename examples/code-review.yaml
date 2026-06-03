@@ -1,4 +1,4 @@
-conductor: 1.0.0
+conductor: 2.0.0
 name: code-review
 description: >
   A gates-heavy PR review. Reads a diff, branches on security exposure, then runs

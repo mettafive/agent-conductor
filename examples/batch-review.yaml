@@ -1,4 +1,4 @@
-conductor: 1.1.0
+conductor: 2.0.0
 name: batch-review
 description: >
   A loop workflow. Discovers a list of changed files, then reviews each one

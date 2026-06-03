@@ -78,6 +78,21 @@ function buildHeartbeat(st: RawStepStatus) {
     : [];
 }
 
+/** Collect heartbeats written on a loop's sub-steps (iterations[item][sub]). */
+function collectSubBeats(st: RawStepStatus) {
+  const out: ReturnType<typeof buildHeartbeat> = [];
+  const iters = st.iterations ?? {};
+  for (const item of Object.keys(iters)) {
+    const sub = iters[item] ?? {};
+    for (const subId of Object.keys(sub)) {
+      for (const h of buildHeartbeat(sub[subId])) {
+        out.push({ ...h, iteration: h.iteration ?? item });
+      }
+    }
+  }
+  return out;
+}
+
 function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefined {
   if (!step.isLoop) return undefined;
   const subDefs = step.subSteps ?? [];
@@ -206,7 +221,10 @@ export function buildModel(snap: Snapshot): BoardModel {
       criteria: buildCriteria(s, st.gate_detail),
       loop: buildLoop(s, st),
       approvalState: buildApproval(s, st),
-      heartbeat: buildHeartbeat(st),
+      // include loop sub-step beats so the stall/freeball check + cards see them
+      heartbeat: [...buildHeartbeat(st), ...collectSubBeats(st)].sort((a, b) =>
+        a.at < b.at ? -1 : a.at > b.at ? 1 : 0,
+      ),
       learnings: Array.isArray(st.learnings)
         ? st.learnings.filter((x): x is string => typeof x === "string")
         : [],

@@ -7,7 +7,7 @@ export interface Example {
   yaml: string;
 }
 
-export const BASIC_REPORT = `conductor: 1.0.0
+export const BASIC_REPORT = `conductor: 2.0.0
 name: basic-report
 description: Research, outline, write, review.
 
@@ -49,7 +49,7 @@ steps:
       - "Reads naturally end to end for {audience}"
 `;
 
-export const TREATMENT_PAGE = `conductor: 1.0.0
+export const TREATMENT_PAGE = `conductor: 2.0.0
 name: treatment-page
 description: Branching SEO page builder with an insurance detour.
 
@@ -97,7 +97,7 @@ steps:
         check: "npx html-validate treatment-page.html"
 `;
 
-export const CODE_REVIEW = `conductor: 1.0.0
+export const CODE_REVIEW = `conductor: 2.0.0
 name: code-review
 description: Gates-heavy PR review with a security branch.
 

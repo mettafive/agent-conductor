@@ -126,13 +126,6 @@ function lastBeatOf(status: LiveStatus | null): string | undefined {
   return last;
 }
 
-function counts(status: LiveStatus | null) {
-  const steps = status?.steps ?? {};
-  const total = Object.keys(steps).length;
-  const done = Object.values(steps).filter((s) => s?.status === "done").length;
-  return { total, done };
-}
-
 interface Props {
   workflows: Record<string, WorkflowEntry>;
   order: string[];
@@ -229,7 +222,10 @@ export function WorkflowSidebar({
             <div className="space-y-1.5">
               {running.map((name) => {
                 const status = statusOf(name);
-                const { done, total } = counts(status);
+                // weighted units (steps + loop sub-steps) — consistent with the header
+                const wm = buildModel(workflows[name].snap);
+                const done = wm.unitsDone;
+                const total = wm.unitsTotal;
                 const active = activeWf === name && selectedRun === null;
                 return (
                   <div key={name}>

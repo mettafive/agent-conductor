@@ -155,6 +155,33 @@ export async function runLoop(args) {
   return ok(`${loopId}/${item}/${subId} → ${status}`);
 }
 
+// conductor-board suggest "title" --type T --step S --confidence C --rationale R [--current X --proposed Y]
+export async function runSuggest(args) {
+  const sp = statusPathOf(args);
+  const [title] = positionals(args);
+  if (!title) return fail('usage: conductor-board suggest "title" --type instruction --step <id>');
+  const s = load(sp);
+  if (!s) return fail("no status.json — run status-init first");
+  const str = (names, def) => {
+    const v = flag(args, names);
+    return typeof v === "string" ? v : def;
+  };
+  s.suggestions = Array.isArray(s.suggestions) ? s.suggestions : [];
+  s.suggestions.push({
+    id: `sg-${s.suggestions.length + 1}`,
+    title,
+    type: str(["--type"], "instruction"),
+    step: str(["--step"], undefined),
+    confidence: str(["--confidence"], "medium"),
+    rationale: str(["--rationale"], undefined),
+    current: str(["--current"], undefined),
+    proposed: str(["--proposed"], undefined),
+    source_heartbeat: now(),
+  });
+  save(sp, s);
+  return ok(`suggestion #${s.suggestions.length}: ${title.length > 50 ? title.slice(0, 50) + "…" : title}`);
+}
+
 // conductor-board status-init <conductor.yaml> [--run-id ID]
 export async function runStatusInit(args) {
   const [conductorPath] = positionals(args);

@@ -44,15 +44,16 @@ const HELP = `
     gate <id> <state>        checking | passed | failed
     heartbeat <id> "note"    Append a heartbeat (--iteration, --insight-type,
                              --insight-seed, --final, --to <step>)
+    suggest "title"          Add a post-run suggestion (--type, --step, --rationale)
     loop <loop> <item> <sub> <state>   Update a loop sub-step
-    complete <id> [--attest-soft]      Run hard gates independently, then advance
+    complete <step>[::iter::sub] [--attest-soft]   Run hard gates, then advance
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
     --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
     --port <n>               Port to serve on        (default: 3042)
-    --no-open                Don't open the browser  (CI / headless only;
-                             the board opens your browser by default)
+                             (the board always opens your browser — set
+                             CONDUCTOR_NO_OPEN=1 to suppress in CI/headless)
 
   init options
     --name, -n <name>        Workflow name (skips the prompts)
@@ -110,9 +111,16 @@ if (command === "clean") {
 }
 
 // status-writer commands (for agents — keep the board live as you work)
-if (["step", "gate", "heartbeat", "loop", "status-init"].includes(command)) {
+if (["step", "gate", "heartbeat", "loop", "status-init", "suggest"].includes(command)) {
   const w = await import("../cli/writer.js");
-  const fn = { step: w.runStep, gate: w.runGate, heartbeat: w.runHeartbeat, loop: w.runLoop, "status-init": w.runStatusInit }[command];
+  const fn = {
+    step: w.runStep,
+    gate: w.runGate,
+    heartbeat: w.runHeartbeat,
+    loop: w.runLoop,
+    "status-init": w.runStatusInit,
+    suggest: w.runSuggest,
+  }[command];
   process.exit((await fn(rest)) ? 0 : 1);
 }
 
@@ -131,7 +139,9 @@ const statusPath = String(flag(["--path", "-p"], ".conductor/status.json"));
 const conductorArg = flag(["--conductor", "-c"], null);
 const conductorPath = conductorArg ? path.resolve(process.cwd(), String(conductorArg)) : null;
 const wantedPort = Number(flag(["--port"], 3042)) || 3042;
-const noOpen = flag(["--no-open"], false) === true;
+// The board always opens the browser — it's meant to be seen. CI/headless can
+// suppress at the OS level via the CONDUCTOR_NO_OPEN env var (no --no-open flag).
+const noOpen = process.env.CONDUCTOR_NO_OPEN === "1";
 
 function openBrowser(url) {
   const cmd =
