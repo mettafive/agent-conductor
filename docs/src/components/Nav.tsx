@@ -17,7 +17,7 @@ export function Nav() {
             agent-conductor
           </span>
           <span className="rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-mist">
-            v1.0.0
+            v1.3.0
           </span>
         </a>
 
@@ -31,6 +31,12 @@ export function Nav() {
               {l.label}
             </a>
           ))}
+          <a
+            href={`${import.meta.env.BASE_URL}kanban.html`}
+            className="rounded-lg px-3 py-2 text-sm text-iris transition-colors hover:text-chalk"
+          >
+            Board guide
+          </a>
           <a
             href="https://github.com/mettafive/agent-conductor"
             target="_blank"

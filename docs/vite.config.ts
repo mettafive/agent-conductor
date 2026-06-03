@@ -8,6 +8,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     rollupOptions: {
+      // Multi-page: the landing site + a standalone Board guide page.
+      input: {
+        main: "index.html",
+        kanban: "kanban.html",
+      },
       output: {
         manualChunks: {
           flow: ["@xyflow/react"],
