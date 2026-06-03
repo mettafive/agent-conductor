@@ -1,86 +1,116 @@
 import { useEffect, useRef, useState } from "react";
-import { useBoardState } from "./lib/useBoardState";
+import { EMPTY, useBoardState } from "./lib/useBoardState";
+import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
 import { isMuted, playFailure, playSuccess, setMuted } from "./lib/sounds";
 import { StatusBar } from "./components/StatusBar";
 import { Board } from "./components/Board";
-import { HistorySidebar } from "./components/HistorySidebar";
-import type { BoardModel, RunRecord } from "./lib/types";
+import { WorkflowSidebar } from "./components/WorkflowSidebar";
+import type { BoardModel, RunRecord, Snapshot } from "./lib/types";
+
+const params = new URLSearchParams(window.location.search);
 
 export function App() {
-  const { model: liveModel, snap, conn, history } = useBoardState();
-  const [selected, setSelected] = useState<string | null>(
-    () => new URLSearchParams(window.location.search).get("run"),
-  );
+  const { workflows, order, conn } = useBoardState();
+  const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
+  const [selectedRun, setSelectedRun] = useState<string | null>(params.get("run"));
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(248);
   const [muted, setMutedState] = useState(isMuted());
+  const [pinned, setPinned] = useState<string[]>([]);
 
-  // completion chime — only on a real status transition, never on load/reconnect
-  const prevStatus = useRef<string | null>(null);
+  // resolve the active workflow: explicit pick, else first running, else first
+  const activeWf =
+    (selectedWf && workflows[selectedWf] ? selectedWf : null) ??
+    order.find((n) => statusOf(workflows[n]) === "running") ??
+    order[0] ??
+    null;
+
+  const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
+  const liveModel = buildModel(liveSnap);
+
+  // completion chimes — fire on any workflow's status transition (never on load)
+  const prevStatuses = useRef<Record<string, string>>({});
   useEffect(() => {
-    const s = liveModel.overallStatus;
-    const prev = prevStatus.current;
-    if (prev !== null && prev !== s) {
-      if (s === "done") playSuccess();
-      else if (s === "failed") playFailure();
+    for (const name of order) {
+      const cur = statusOf(workflows[name]);
+      if (!cur) continue;
+      const prev = prevStatuses.current[name];
+      if (prev !== undefined && prev !== cur) {
+        if (cur === "done") playSuccess();
+        else if (cur === "failed") playFailure();
+      }
+      prevStatuses.current[name] = cur;
     }
-    prevStatus.current = s;
-  }, [liveModel.overallStatus]);
+  }, [workflows, order]);
 
-  // keep the URL in sync so a run is shareable / reloadable
+  // keep the URL shareable
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (selected) url.searchParams.set("run", selected);
-    else url.searchParams.delete("run");
+    activeWf ? url.searchParams.set("wf", activeWf) : url.searchParams.delete("wf");
+    selectedRun ? url.searchParams.set("run", selectedRun) : url.searchParams.delete("run");
     window.history.replaceState(null, "", url);
-  }, [selected]);
+  }, [activeWf, selectedRun]);
 
-  // fetch the frozen run when one is selected
+  // fetch a frozen past run for the active workflow
   useEffect(() => {
-    if (selected === null) {
+    if (selectedRun === null || !activeWf) {
       setRecord(null);
       return;
     }
     let alive = true;
     setRecord(null);
-    fetch(`/history/${encodeURIComponent(selected)}`)
+    fetch(`/api/workflow/${encodeURIComponent(activeWf)}/history/${encodeURIComponent(selectedRun)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((rec: RunRecord | null) => alive && setRecord(rec))
-      .catch(() => alive && setSelected(null));
+      .catch(() => alive && setSelectedRun(null));
     return () => {
       alive = false;
     };
-  }, [selected]);
+  }, [selectedRun, activeWf]);
 
-  // if the selected run vanished from history, drop back to live
-  useEffect(() => {
-    if (selected && history.length && !history.some((r) => r.run_id === selected)) {
-      setSelected(null);
-    }
-  }, [history, selected]);
+  const pickWorkflow = (name: string) => {
+    setSelectedWf(name);
+    setSelectedRun(null);
+  };
+  const pickRun = (wf: string, runId: string) => {
+    setSelectedWf(wf);
+    setSelectedRun(runId);
+  };
+  const togglePin = (name: string) =>
+    setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
 
-  const viewing = selected !== null;
+  const viewing = selectedRun !== null;
   const model: BoardModel | null = viewing
     ? record
       ? buildModel(record.snapshot)
       : null
     : liveModel;
 
-  // "started" = the agent has actually written a status file with steps
   const liveStarted = !!(
-    snap.status &&
-    typeof snap.status === "object" &&
-    Object.keys((snap.status as { steps?: object }).steps ?? {}).length > 0
+    liveSnap.status &&
+    typeof liveSnap.status === "object" &&
+    Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0
   );
   const showBoard = viewing ? !!record : liveStarted;
 
   return (
     <>
       <div className="aurora" />
-      <div className="flex min-h-screen">
+      <div className="flex h-screen overflow-hidden">
         {sidebarOpen && (
-          <HistorySidebar runs={history} selected={selected} onSelect={setSelected} />
+          <WorkflowSidebar
+            workflows={workflows}
+            order={order}
+            activeWf={activeWf}
+            selectedRun={selectedRun}
+            onPickWorkflow={pickWorkflow}
+            onPickRun={pickRun}
+            onPin={togglePin}
+            width={sidebarWidth}
+            onResize={setSidebarWidth}
+          />
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -94,9 +124,19 @@ export function App() {
               setMuted(next);
               setMutedState(next);
             }}
-            onBackToLive={() => setSelected(null)}
+            onBackToLive={() => setSelectedRun(null)}
             onToggleSidebar={() => setSidebarOpen((o) => !o)}
           />
+
+          {pinned.length > 0 && (
+            <TabBar
+              pinned={pinned}
+              workflows={workflows}
+              activeWf={activeWf}
+              onPick={pickWorkflow}
+              onUnpin={togglePin}
+            />
+          )}
 
           {model?.error && (
             <div className="px-5 pt-4">
@@ -106,33 +146,96 @@ export function App() {
             </div>
           )}
 
-          {viewing && !record ? (
-            <div className="grid flex-1 place-items-center py-28">
-              <span className="font-mono text-xs text-mist">loading run…</span>
-            </div>
-          ) : showBoard && model ? (
-            <Board model={model} />
-          ) : (
-            <WaitingState model={liveModel} statusPath={snap.statusPath} />
-          )}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {viewing && !record ? (
+              <div className="grid h-full place-items-center">
+                <span className="font-mono text-xs text-mist">loading run…</span>
+              </div>
+            ) : showBoard && model ? (
+              <Board model={model} />
+            ) : (
+              <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
+            )}
+          </div>
         </div>
       </div>
     </>
   );
 }
 
+function statusOf(entry: WorkflowEntry | undefined): string | undefined {
+  return (entry?.snap.status as { status?: string } | null)?.status;
+}
+
+const DOT: Record<string, string> = {
+  running: "bg-cyan animate-pulse",
+  done: "bg-mint",
+  failed: "bg-rose",
+};
+
+function TabBar({
+  pinned,
+  workflows,
+  activeWf,
+  onPick,
+  onUnpin,
+}: {
+  pinned: string[];
+  workflows: Record<string, WorkflowEntry>;
+  activeWf: string | null;
+  onPick: (n: string) => void;
+  onUnpin: (n: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 overflow-x-auto border-b border-line bg-ink/60 px-3 py-1.5">
+      {pinned.map((name) => {
+        const status = workflows[name]?.snap.status as
+          | { status?: string; steps?: Record<string, { status?: string }> }
+          | null;
+        const steps = status?.steps ?? {};
+        const total = Object.keys(steps).length;
+        const done = Object.values(steps).filter((s) => s?.status === "done").length;
+        const active = activeWf === name;
+        return (
+          <div
+            key={name}
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 ${
+              active ? "border-iris/40 bg-iris/10" : "border-line bg-panel/40"
+            }`}
+          >
+            <button onClick={() => onPick(name)} className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full ${DOT[status?.status ?? ""] ?? "bg-line-2"}`} />
+              <span className="font-mono text-xs text-chalk">{name}</span>
+              {total > 0 && (
+                <span className="font-mono text-[10px] text-mist">
+                  {done}/{total}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => onUnpin(name)}
+              title="Unpin"
+              className="text-mist hover:text-chalk"
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
   return (
-    <div className="grid flex-1 place-items-center px-5 py-28">
+    <div className="grid h-full place-items-center px-5">
       <div className="max-w-md text-center">
         <img src="./conductor.svg" alt="" className="mx-auto h-12 w-12 opacity-80" />
 
         {model.hasConductor ? (
           <>
             <div className="mt-5 flex items-center justify-center gap-2">
-              <span className="font-mono text-sm font-medium text-chalk">
-                {model.workflow}
-              </span>
+              <span className="font-mono text-sm font-medium text-chalk">{model.workflow}</span>
               <span className="rounded-md border border-line bg-panel px-2 py-0.5 font-mono text-[11px] text-mist">
                 {model.total} step{model.total === 1 ? "" : "s"}
               </span>
@@ -154,8 +257,8 @@ function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: st
               Watching <span className="font-mono text-cyan">.conductor/</span> for changes
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-mist">
-              The board will light up when your agent writes a conductor and a status
-              file. Start your agent and point it at this project.
+              The board will light up when your agent writes a conductor and a status file.
+              Start your agent and point it at this project.
             </p>
           </>
         )}

@@ -207,89 +207,214 @@ function serveStatic(req, res) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+/** Best-effort workflow name without parsing YAML (keeps the server dep-free). */
+function workflowName(statusPath, conductorPath, dir) {
+  try {
+    if (fs.existsSync(statusPath)) {
+      const s = JSON.parse(fs.readFileSync(statusPath, "utf8"));
+      if (s && typeof s.workflow === "string") return s.workflow;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (conductorPath && fs.existsSync(conductorPath)) {
+      const m = fs.readFileSync(conductorPath, "utf8").match(/^name:\s*(.+)$/m);
+      if (m) return m[1].trim();
+    }
+  } catch {
+    /* ignore */
+  }
+  return path.basename(dir);
+}
+
+/**
+ * Discover workflows under the .conductor root. Supports both the flat layout
+ * (.conductor/status.json — a single workflow, for v1 backwards compatibility)
+ * and the subdirectory layout (.conductor/<name>/status.json — many workflows).
+ */
+function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
+  const found = [];
+  const seen = new Set();
+  const add = (name, dir, statusPath, conductorPath) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    found.push({
+      name,
+      dir,
+      statusPath,
+      conductorPath,
+      historyDir: path.join(dir, "history"),
+    });
+  };
+
+  // flat / explicit --path
+  const flatStatus = explicitStatus || path.join(conductorDir, "status.json");
+  const flatConductor = discoverConductor(flatStatus, explicitConductor);
+  if (fs.existsSync(flatStatus) || (flatConductor && fs.existsSync(flatConductor))) {
+    add(workflowName(flatStatus, flatConductor, conductorDir), conductorDir, flatStatus, flatConductor);
+  }
+
+  // subdirectories
+  if (fs.existsSync(conductorDir)) {
+    for (const entry of fs.readdirSync(conductorDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "history") continue;
+      const dir = path.join(conductorDir, entry.name);
+      const sp = path.join(dir, "status.json");
+      const cp = fs.existsSync(path.join(dir, "conductor.yaml"))
+        ? path.join(dir, "conductor.yaml")
+        : discoverConductor(sp, null);
+      if (fs.existsSync(sp) || (cp && fs.existsSync(cp))) {
+        add(workflowName(sp, cp, dir), dir, sp, cp);
+      }
+    }
+  }
+  return found;
+}
+
 export function startServer({ statusPath, conductorPath: explicitConductor, port }) {
   const absStatus = path.resolve(process.cwd(), statusPath);
-  let conductorPath = discoverConductor(absStatus, explicitConductor);
-
-  const watchDir = path.dirname(absStatus);
-  const historyDir = path.join(watchDir, "history");
+  const conductorDir = path.dirname(absStatus);
 
   /** @type {Set<http.ServerResponse>} */
   const clients = new Set();
+  /** @type {Map<string, Set<string>>} per-workflow archived run ids */
+  const archivedByWf = new Map();
 
-  // Seed the archived set from disk so a restart doesn't re-archive past runs.
-  const archivedRunIds = new Set();
-  for (const r of listHistory(historyDir)) if (r.run_id) archivedRunIds.add(r.run_id);
+  const archivedSetFor = (wf) => {
+    let set = archivedByWf.get(wf.name);
+    if (!set) {
+      set = new Set();
+      for (const r of listHistory(wf.historyDir)) if (r.run_id) set.add(r.run_id);
+      archivedByWf.set(wf.name, set);
+    }
+    return set;
+  };
 
-  const broadcastHistory = () => {
-    const list = JSON.stringify(listHistory(historyDir));
-    for (const res of clients) res.write(`event: history\ndata: ${list}\n\n`);
+  const snapshotFor = (wf) => {
+    const snap = readSnapshot(wf.statusPath, wf.conductorPath);
+    snap.workflow = wf.name;
+    return snap;
+  };
+
+  const findWf = (name) =>
+    discoverWorkflows(conductorDir, absStatus, explicitConductor).find((w) => w.name === name);
+
+  const sendAll = (event, data) => {
+    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const res of clients) res.write(payload);
   };
 
   const broadcast = () => {
-    // conductor may appear after the server starts — re-discover if missing
-    if (!conductorPath) conductorPath = discoverConductor(absStatus, explicitConductor);
-    const snapshot = readSnapshot(absStatus, conductorPath);
-    const payload = JSON.stringify(snapshot);
-    for (const res of clients) {
-      res.write(`event: update\ndata: ${payload}\n\n`);
+    for (const wf of discoverWorkflows(conductorDir, absStatus, explicitConductor)) {
+      const snap = snapshotFor(wf);
+      sendAll("update", snap);
+      if (archiveIfDone(wf.historyDir, snap, archivedSetFor(wf))) {
+        sendAll("history", { workflow: wf.name, runs: listHistory(wf.historyDir) });
+      }
     }
-    if (archiveIfDone(historyDir, snapshot, archivedRunIds)) broadcastHistory();
   };
 
-  // Watch the directory that holds the status file (more reliable than
-  // watching a single file that gets atomically replaced). Debounced.
+  // Recursively watch the .conductor root so subdirectory status files are seen.
   let timer = null;
   const schedule = () => {
     clearTimeout(timer);
     timer = setTimeout(broadcast, 80);
   };
   try {
-    fs.mkdirSync(watchDir, { recursive: true });
-    fs.watch(watchDir, schedule);
+    fs.mkdirSync(conductorDir, { recursive: true });
+    try {
+      fs.watch(conductorDir, { recursive: true }, schedule);
+    } catch {
+      fs.watch(conductorDir, schedule); // platforms without recursive watch
+    }
   } catch (e) {
-    console.warn(`[agent-conductor] watch failed: ${e.message}`);
+    console.warn(`[conductor-board] watch failed: ${e.message}`);
   }
+
+  const sendSnapshotsTo = (res) => {
+    for (const wf of discoverWorkflows(conductorDir, absStatus, explicitConductor)) {
+      res.write(`event: update\ndata: ${JSON.stringify(snapshotFor(wf))}\n\n`);
+      res.write(
+        `event: history\ndata: ${JSON.stringify({
+          workflow: wf.name,
+          runs: listHistory(wf.historyDir),
+        })}\n\n`,
+      );
+    }
+  };
+
+  const json = (res, code, body) => {
+    res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(body));
+  };
 
   const server = http.createServer((req, res) => {
     const url = (req.url || "/").split("?")[0];
+    const wfs = () => discoverWorkflows(conductorDir, absStatus, explicitConductor);
 
     if (url === "/health") {
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(
-        JSON.stringify({
-          status: "ok",
-          version: VERSION,
-          watching: path.relative(process.cwd(), absStatus) || absStatus,
-          port: server.address()?.port ?? null,
+      return json(res, 200, {
+        status: "ok",
+        version: VERSION,
+        watching: path.relative(process.cwd(), conductorDir) || conductorDir,
+        port: server.address()?.port ?? null,
+        workflows: wfs().map((w) => w.name),
+      });
+    }
+
+    // ---- multi-workflow API ----
+    if (url === "/api/workflows") {
+      return json(
+        res,
+        200,
+        wfs().map((wf) => {
+          const snap = snapshotFor(wf);
+          const st = snap.status?.status;
+          return {
+            name: wf.name,
+            status: st ?? "idle",
+            active: st === "running",
+            done: snap.status?.steps
+              ? Object.values(snap.status.steps).filter((s) => s && s.status === "done").length
+              : 0,
+            total: snap.status?.steps ? Object.keys(snap.status.steps).length : 0,
+            started_at: snap.status?.started_at ?? null,
+            runs: listHistory(wf.historyDir).length,
+            hasConductor: !!snap.conductorYaml,
+          };
         }),
       );
-      return;
     }
 
+    let m;
+    if ((m = url.match(/^\/api\/workflow\/([^/]+)\/state$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      return wf ? json(res, 200, snapshotFor(wf)) : json(res, 404, { error: "not found" });
+    }
+    if ((m = url.match(/^\/api\/workflow\/([^/]+)\/history$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      return wf ? json(res, 200, listHistory(wf.historyDir)) : json(res, 404, { error: "not found" });
+    }
+    if ((m = url.match(/^\/api\/workflow\/([^/]+)\/history\/(.+)$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "not found" });
+      const rec = getHistory(wf.historyDir, decodeURIComponent(m[2]));
+      return rec ? json(res, 200, rec) : json(res, 404, { error: "not found" });
+    }
+
+    // ---- backwards-compatible single-workflow API (primary = first found) ----
+    const primary = wfs()[0];
     if (url === "/api/state") {
-      if (!conductorPath) conductorPath = discoverConductor(absStatus, explicitConductor);
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify(readSnapshot(absStatus, conductorPath)));
-      return;
+      return json(res, 200, primary ? snapshotFor(primary) : { status: null, conductorYaml: null });
     }
-
     if (url === "/history") {
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify(listHistory(historyDir)));
-      return;
+      return json(res, 200, primary ? listHistory(primary.historyDir) : []);
     }
-
     if (url.startsWith("/history/")) {
       const id = decodeURIComponent(url.slice("/history/".length));
-      const rec = getHistory(historyDir, id);
-      if (!rec) {
-        res.writeHead(404, { "content-type": "application/json" }).end('{"error":"not found"}');
-        return;
-      }
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify(rec));
-      return;
+      const rec = primary ? getHistory(primary.historyDir, id) : null;
+      return rec ? json(res, 200, rec) : json(res, 404, { error: "not found" });
     }
 
     if (url === "/events") {
@@ -299,17 +424,11 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
         connection: "keep-alive",
       });
       res.write("retry: 2000\n\n");
-      // send an immediate snapshot + history so the board paints on connect
-      res.write(
-        `event: update\ndata: ${JSON.stringify(
-          readSnapshot(absStatus, conductorPath),
-        )}\n\n`,
-      );
-      res.write(`event: history\ndata: ${JSON.stringify(listHistory(historyDir))}\n\n`);
+      sendSnapshotsTo(res);
       clients.add(res);
-      const heartbeat = setInterval(() => res.write(": ping\n\n"), 25000);
+      const hb = setInterval(() => res.write(": ping\n\n"), 25000);
       req.on("close", () => {
-        clearInterval(heartbeat);
+        clearInterval(hb);
         clients.delete(res);
       });
       return;
@@ -318,9 +437,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     serveStatic(req, res);
   });
 
-  // .conductor/server.json — the source of truth for which port we landed on,
-  // so a setup conductor's health check never has to hardcode a port.
-  const serverJsonPath = path.join(watchDir, "server.json");
+  const serverJsonPath = path.join(conductorDir, "server.json");
 
   return new Promise((resolve, reject) => {
     // Reject on listen errors (e.g. EADDRINUSE) so the CLI can walk to the next
@@ -333,8 +450,9 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     server.listen(port, () => {
       server.off("error", onError);
       const actualPort = server.address().port;
+      const discovered = discoverWorkflows(conductorDir, absStatus, explicitConductor);
       try {
-        fs.mkdirSync(watchDir, { recursive: true });
+        fs.mkdirSync(conductorDir, { recursive: true });
         fs.writeFileSync(
           serverJsonPath,
           JSON.stringify(
@@ -343,6 +461,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
               url: `http://localhost:${actualPort}`,
               pid: process.pid,
               started_at: new Date().toISOString(),
+              workflows: discovered.map((w) => w.name),
             },
             null,
             2,
@@ -351,7 +470,13 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       } catch (e) {
         console.warn(`[conductor-board] could not write server.json: ${e.message}`);
       }
-      resolve({ server, conductorPath, absStatus, serverJsonPath });
+      resolve({
+        server,
+        serverJsonPath,
+        absStatus,
+        conductorPath: discovered[0]?.conductorPath ?? null,
+        workflows: discovered.map((w) => w.name),
+      });
     });
   });
 }

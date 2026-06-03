@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { buildModel } from "./merge";
-import type { BoardModel, HistoryRun, Snapshot } from "./types";
+import type { HistoryRun, Snapshot } from "./types";
 
 type Conn = "connecting" | "live" | "lost";
 
@@ -11,41 +10,70 @@ const EMPTY: Snapshot = {
   conductorPath: null,
 };
 
-interface BoardState {
-  model: BoardModel;
+export interface WorkflowEntry {
   snap: Snapshot;
-  conn: Conn;
   history: HistoryRun[];
 }
 
-/** Subscribes to the server's SSE stream: live status + archived history. */
+interface BoardState {
+  workflows: Record<string, WorkflowEntry>;
+  order: string[];
+  conn: Conn;
+}
+
+/**
+ * Subscribes to the server's SSE stream. Events are tagged with a `workflow`
+ * name, so state is kept as a map of workflow → { live snapshot, history }.
+ */
 export function useBoardState(): BoardState {
-  const [snap, setSnap] = useState<Snapshot>(EMPTY);
-  const [history, setHistory] = useState<HistoryRun[]>([]);
+  const [workflows, setWorkflows] = useState<Record<string, WorkflowEntry>>({});
+  const [order, setOrder] = useState<string[]>([]);
   const [conn, setConn] = useState<Conn>("connecting");
 
   useEffect(() => {
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout>;
 
+    const remember = (name: string) =>
+      setOrder((prev) => (prev.includes(name) ? prev : [...prev, name]));
+
     const connect = () => {
       es = new EventSource("/events");
       es.addEventListener("open", () => setConn("live"));
+
       es.addEventListener("update", (e) => {
         try {
-          setSnap(JSON.parse((e as MessageEvent).data) as Snapshot);
+          const snap = JSON.parse((e as MessageEvent).data) as Snapshot & {
+            workflow?: string;
+          };
+          const name = snap.workflow ?? "workflow";
+          remember(name);
+          setWorkflows((prev) => ({
+            ...prev,
+            [name]: { snap, history: prev[name]?.history ?? [] },
+          }));
           setConn("live");
-        } catch {
-          /* ignore malformed frame */
-        }
-      });
-      es.addEventListener("history", (e) => {
-        try {
-          setHistory(JSON.parse((e as MessageEvent).data) as HistoryRun[]);
         } catch {
           /* ignore */
         }
       });
+
+      es.addEventListener("history", (e) => {
+        try {
+          const d = JSON.parse((e as MessageEvent).data);
+          if (Array.isArray(d)) return; // legacy untagged format — ignore
+          const name = d.workflow as string;
+          const runs = (d.runs ?? []) as HistoryRun[];
+          remember(name);
+          setWorkflows((prev) => ({
+            ...prev,
+            [name]: { snap: prev[name]?.snap ?? EMPTY, history: runs },
+          }));
+        } catch {
+          /* ignore */
+        }
+      });
+
       es.addEventListener("error", () => {
         setConn("lost");
         es?.close();
@@ -61,5 +89,7 @@ export function useBoardState(): BoardState {
     };
   }, []);
 
-  return { model: buildModel(snap), snap, conn, history };
+  return { workflows, order, conn };
 }
+
+export { EMPTY };
