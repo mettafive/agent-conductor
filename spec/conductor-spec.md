@@ -1,9 +1,11 @@
 # The Conductor Spec
 
-**Version `2.0.0`** · adds human approval (`type: approval`, §4.4), the board-sync
-pre-check (§8.1), the finalBeat handoff convention (§6.5), and a persistent
-insights ledger (§9.4). Backwards-compatible with 1.x conductors — the new
-features are additive. (1.1.0 added [loops](#43-loops).)
+**Version `2.1.0`** · adds the insight `scope` dimension and the `knowledge:`
+section (§9.5), `parallel: auto` and the loop scope beat (§4.3). Builds on 2.0.0
+(human approval `type: approval` §4.4, the board-sync pre-check §8.1, the
+finalBeat handoff §6.5, the persistent insights ledger §9.4).
+Backwards-compatible with 1.x/2.0 conductors — every addition is optional.
+(1.1.0 added [loops](#43-loops).)
 
 A conductor is a single YAML file that turns a loose pile of instructions into a
 **gated workflow**. Each step must pass its gate before the next one unlocks. The
@@ -73,7 +75,9 @@ paragraph 2 → that's one "write the page" card).
 
 **The test:** *can this card's gate **genuinely fail**, and does that failure change
 what happens next?* If yes, it's a card. Aim for visibility and structure, not
-granularity — a workflow with hundreds of micro-cards helps no one.
+granularity — a workflow with hundreds of micro-cards helps no one. There are **no
+count limits and no time limits**: a good card is defined by the gate-can-fail
+test, not by how long it takes or how many there are.
 
 ### 2.1 A standard gated step
 
@@ -103,9 +107,14 @@ step — it does **not** skip ahead.
 | `then`        | step id         | Rejoin point after a branch step completes. See §4.              |
 | `over`        | variable name   | The list a `loop` iterates over (inputs or output). See §4.3.    |
 | `as`          | string          | The loop variable name, templated into sub-steps. See §4.3.      |
+| `parallel`    | `true` `false` `auto` | Whether loop iterations run simultaneously. See §4.3.      |
 | `steps`       | list            | Sub-steps run on each loop iteration. See §4.3.                  |
 | `requires`    | list of step ids| Explicit dependencies that must be `done` first.                 |
 | `output`      | string          | Names a variable downstream steps can template in.              |
+
+A conductor also takes an optional top-level **`knowledge:`** list — durable,
+version-controlled learnings the agent reads at the start of every run. Proven
+insights auto-promote into it (§9.5).
 
 ---
 
@@ -289,16 +298,37 @@ them simultaneously:
             - "Price page found via at least one method"
 
 All iterations start together; each iteration's sub-steps still run sequentially
-within it. The board shows multiple swim lanes with cards in Running at once.
+within it. On the board the loop opens into an overview of every iteration, each
+drillable into its own full kanban.
+
+A third option, **`parallel: auto`**, lets the agent decide at runtime: it
+evaluates whether the iterations are independent and, if so, runs the smart
+default — **scout the first iteration sequentially to learn from it, then
+parallelize the rest** with those learnings. It records the choice in a beat:
+
+    { "at": "…", "note": "Evaluated 5 iterations — all independent. Running the
+             first sequentially for learnings, then parallelizing the remaining 4." }
+
+#### Scope beat — frontload the whole plan
+
+The moment the iteration list is determined, write **every** iteration into
+`status.json` as `pending` (use `conductor-board loop-scope <loop> <item…>`) and
+append a required **scope beat** naming them — *before* starting work on any one.
+The user opens the board and sees the full plan before a single card moves:
+
+    { "at": "…", "note": "5 pages scoped: akutvård katt, marsvin, reptil,
+             allergitestning, hund. All pending." }
 
 #### Loop execution rules
 
 1. Each iteration runs the full sub-step sequence with gates.
 2. A failed gate retries **that iteration only** — the others are untouched.
 3. The loop is `done` when **all** iterations complete.
-4. `parallel: true` runs iterations simultaneously; otherwise one at a time.
+4. `parallel: true` runs iterations simultaneously; `auto` lets the agent decide
+   (scout-then-parallelize); otherwise one at a time.
 5. `over` must reference a list (from `inputs` or a prior step's `output`).
 6. Loop variables use the same `{name}` template syntax as inputs.
+7. Frontload all iterations as `pending` with a scope beat the moment scope is known.
 
 #### Breathing beats — loops that improve themselves
 
@@ -727,7 +757,8 @@ missing instruction — it tags that heartbeat with an `insight` object:
 | `insight.type` | string | `drift`, `shortcut`, `gate_issue`, `missing_instruction`, `timing`, `error_pattern` |
 | `insight.seed` | string | One-line description of the potential improvement |
 | `insight.step` | string | Which step the insight applies to |
-| `insight.confidence` | string | `high`, `medium`, `low` |
+| `insight.scope` | string | Where it applies — see §9.5. `this-conductor` (default), `upstream`, `template`, `tooling`, `corpus` |
+| `insight.confidence` | string | `low`, `medium`, `high`, `proven` |
 
 ### 9.2 Post-run suggestions
 
@@ -753,10 +784,17 @@ array:
 ]
 ```
 
-Each suggestion has: `id`, `type`, `step`, `title`, `rationale`, `source_heartbeat`,
-`current` (when modifying existing text), `proposed`, `impact`, `confidence`.
-Suggestion types: `instruction`, `gate`, `new_gate`, `new_step`, `remove_step`,
-`reorder`.
+Each suggestion has: `id`, `type`, `scope`, `step`, `title`, `rationale`,
+`source_heartbeat`, `current` (when modifying existing text), `proposed`, `impact`,
+`confidence`. Suggestion types: `instruction`, `gate`, `new_gate`, `new_step`,
+`remove_step`, `reorder`.
+
+Write the suggestions with `conductor-board suggest "title" --type … --scope …
+--impact …`. Enforce two forcing functions on the final step so insights don't
+leak: a **hard** gate that fails on an empty `suggestions` array, and a **soft**
+gate that fishes for the cross-cutting ones — *"What did I learn that does NOT fit
+a step of this workflow?"* The highest-leverage insights are usually the
+cross-cutting ones (§9.5), and without a slot they vanish into chat prose.
 
 ### 9.3 The improvement cycle
 
@@ -781,6 +819,48 @@ forward (and to avoid re-surfacing what's already recorded). Applying an insight
 the board marks it `applied`; dismissing it marks it `dismissed`; both persist. The
 ledger is plain text — commit it, and the workflow's memory travels with the repo.
 
+A repeat sighting of an existing insight is **not dropped** — it adds an
+observation and **escalates confidence**: `low` (1×) → `medium` (2–3×) → `high`
+(4×) → `proven` (applied with measured impact, or observed 5×+).
+
+### 9.5 Scope & the knowledge section
+
+The schema's shape used to do the selecting: a suggestion needed a `step`, so
+insights about *other* systems had nowhere to go and leaked into chat. Every
+insight now carries a **`scope`** that says where it applies:
+
+| Scope | Meaning | Example |
+| --- | --- | --- |
+| `this-conductor` | A step in this workflow (default; auto-appliable) | "Try sitemap before navigation" |
+| `upstream` | A system feeding this workflow | "Fix price data in enrichment" |
+| `template` | The generation template | "Pipe-table defects come from the template" |
+| `tooling` | agent-conductor itself | "`complete ::` doesn't expand placeholders" |
+| `corpus` | The data broadly | "Price understatement is systemic" |
+
+`this-conductor` insights attach to a step and can be auto-applied. Other scopes
+are logged, surfaced on the board's ✨ Insights page, and routed — but they need
+human action outside the conductor.
+
+**The `knowledge:` section** is the conductor's own, version-controlled memory:
+
+```yaml
+conductor: 2.1.0
+name: daily-price
+
+knowledge:
+  - "Sitemap-first is 3x faster for Swedish vet sites [proven, 15 runs]"
+  - "20% of sites have a WAF — Googlebot UA bypasses all encountered [proven, 8 runs]"
+  - "tsx -e fails with top-level await in CommonJS — use async main() [immediate, run 3]"
+```
+
+Two kinds populate it. **Immediate** knowledge is discovered mid-run and written
+at once, so the next iteration in the *same* run benefits. **Pattern** knowledge
+accumulates across runs and **auto-promotes** once an insight reaches `proven`.
+The agent reads `knowledge:` at the start of every run and applies it; proven
+`this-conductor` insights also auto-apply to the steps directly, with no human
+gatekeeping. The conductor file *is* the knowledge base — it travels with the repo
+and is never lost.
+
 ---
 
 ## 10. Minimal valid conductor
@@ -803,6 +883,20 @@ That's the whole spec. Hand the file to an agent and watch the board light up.
 ---
 
 ## 11. Changelog
+
+**2.1.0**
+
+- **Insight `scope`** (§9.5) — every insight is tagged `this-conductor` | `upstream`
+  | `template` | `tooling` | `corpus`, so cross-cutting learnings stop leaking.
+- **`knowledge:` section** (§9.5) — the conductor's own version-controlled memory;
+  proven insights auto-promote into it and `this-conductor` ones auto-apply.
+- **Confidence escalation** (§9.4) — repeat sightings accumulate observations and
+  climb low → medium → high → proven.
+- **`parallel: auto`** (§4.3) — the agent decides at runtime (scout-then-parallelize).
+- **Loop scope beat** (§4.3) — frontload every iteration as `pending` the moment
+  scope is known, so the whole plan is visible before any card moves.
+
+Additive over 2.0.0 — every field is optional.
 
 **2.0.0**
 
