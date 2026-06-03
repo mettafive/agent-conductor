@@ -52,8 +52,8 @@ const HELP = `
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
     --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
     --port <n>               Port to serve on        (default: 3042)
-                             (the board always opens your browser — set
-                             CONDUCTOR_NO_OPEN=1 to suppress in CI/headless)
+    --headless               Don't open a browser (CI / cloud / no display).
+                             Same as CONDUCTOR_HEADLESS=1. Default: opens.
 
   init options
     --name, -n <name>        Workflow name (skips the prompts)
@@ -139,9 +139,10 @@ const statusPath = String(flag(["--path", "-p"], ".conductor/status.json"));
 const conductorArg = flag(["--conductor", "-c"], null);
 const conductorPath = conductorArg ? path.resolve(process.cwd(), String(conductorArg)) : null;
 const wantedPort = Number(flag(["--port"], 3042)) || 3042;
-// The board always opens the browser — it's meant to be seen. CI/headless can
-// suppress at the OS level via the CONDUCTOR_NO_OPEN env var (no --no-open flag).
-const noOpen = process.env.CONDUCTOR_NO_OPEN === "1";
+// The board always opens the browser — it's meant to be seen. --headless (or
+// CONDUCTOR_HEADLESS=1) suppresses it for CI / cloud / no-display environments.
+// The name signals "I have no display", not "I don't want to look".
+const headless = argv.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
 
 function openBrowser(url) {
   const cmd =
@@ -210,6 +211,23 @@ function pidAlive(pid) {
   }
 }
 
+// Probe a recorded board's /health endpoint — distinguishes a live, serving
+// board (reuse it) from a wedged pid that holds the port but isn't responding.
+async function boardHealthy(url) {
+  if (!url) return false;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1200);
+    const r = await fetch(`${url}/health`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return false;
+    const body = await r.json().catch(() => null);
+    return !!body && body.status === "ok";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Before binding a port, look for a board already serving this project.
  *
@@ -246,12 +264,22 @@ async function preflightStaleBoard(serverJsonPath) {
     return null;
   }
 
-  const reuse = {
-    reuse: true,
-    pid,
-    url: info.url || `http://localhost:${info.port ?? "?"}`,
-    when: info.started_at ? ago(info.started_at) : "",
-  };
+  const url = info.url || `http://localhost:${info.port ?? "?"}`;
+  const reuse = { reuse: true, pid, url, when: info.started_at ? ago(info.started_at) : "" };
+
+  // Alive but unhealthy (wedged — holds the port but /health doesn't answer):
+  // kill it and start fresh, so a hung board can't block a clean restart (§4.6).
+  if (!(await boardHealthy(url))) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* may have just exited */
+    }
+    await new Promise((r) => setTimeout(r, 600));
+    clear();
+    console.log(amber(`\n  ⚠ board pid ${pid} was unresponsive — stopped it and starting fresh.`));
+    return null;
+  }
 
   // Non-interactive (an agent, a script): never duplicate — reuse silently.
   if (!process.stdin.isTTY) return reuse;
@@ -310,7 +338,24 @@ if (resolvedConductor) {
 console.log(`  ${dim("press ctrl+c to stop")}`);
 console.log("");
 
-if (!noOpen) openBrowser(url);
+if (!headless) openBrowser(url);
+
+// Subdirectory convention (§4.7): warn if a flat .conductor/status.json is in
+// use. One workflow per .conductor/<name>/ keeps history and insights separate.
+try {
+  const flat = path.resolve(process.cwd(), ".conductor", "status.json");
+  if (path.resolve(absStatus) === flat && fs.existsSync(flat)) {
+    console.log(
+      amber("  ⚠ flat .conductor/status.json detected") +
+        dim(" — the convention is .conductor/<workflow-name>/. It still works,") +
+        "\n" +
+        dim("    but subdirectories keep each workflow's history + insights separate."),
+    );
+    console.log("");
+  }
+} catch {
+  /* advisory only */
+}
 
 function shutdown() {
   try {
@@ -324,3 +369,4 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+process.on("SIGQUIT", shutdown);

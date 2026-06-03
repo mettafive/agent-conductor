@@ -41,13 +41,24 @@ function discoverConductor(statusPath, explicit) {
  * with gate_detail tagging each criterion 🔒 verified (CLI ran it) or ✋ attested.
  */
 export async function runComplete(args) {
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(
+      "usage: conductor-board complete <step-id> [--attest-soft]\n" +
+        "       conductor-board complete <loop-id>::<iteration>::<sub-step> [--attest-soft]\n\n" +
+        "  Runs the step's HARD gates independently (you can't fake them — the board\n" +
+        "  shows 🔒 verified vs ✋ attested) and only advances when they pass.\n" +
+        "  The :: form resolves a loop sub-step inside the conductor's loop definition.\n" +
+        "  --attest-soft: mark the soft gates as attested once you've verified them.",
+    );
+    return true;
+  }
   const p = flag(args, ["--path", "-p"]);
   const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
   const stepId = args.find((a) => !a.startsWith("-"));
   const attestSoft = args.includes("--attest-soft");
 
   if (!stepId) {
-    console.error(red("usage: conductor-board complete <step-id> [--attest-soft]"));
+    console.error(red("usage: conductor-board complete <step-id>[::iter::sub] [--attest-soft]"));
     return false;
   }
 

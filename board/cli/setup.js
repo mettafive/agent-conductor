@@ -28,8 +28,8 @@ steps:
   - id: start-board
     instruction: |
       Start the board server ONCE in the background and leave it running for the
-      whole run. It opens the browser automatically — do NOT pass --no-open here,
-      that defeats the live view.
+      whole run. It opens the browser automatically — do NOT pass --headless here,
+      that defeats the live view (--headless is only for CI / no-display runs).
         npx conductor-board >/tmp/conductor-board.log 2>&1 &
       Wait ~3 seconds for it to initialize. It auto-detects a free port if 3042
       is taken and records the chosen port in .conductor/server.json. Do NOT run
@@ -98,9 +98,12 @@ steps:
       At the START of the run, read .conductor/insights.md (if it exists) to carry
       forward what past runs learned — don't repeat insights already recorded there.
       Tag heartbeats with an "insight" object when you spot a way to improve the
-      workflow. Before setting status to "done", review your insight-tagged
-      heartbeats and write 3-5 optimization "suggestions" to status.json — the board
-      merges them into the persistent .conductor/insights.md ledger for next time.
+      workflow — and give each insight a "scope": this-conductor | upstream |
+      template | tooling | corpus, so cross-cutting learnings aren't lost. Before
+      setting status to "done", review your insight-tagged heartbeats and write
+      3-5 "suggestions" to status.json (use conductor-board suggest "..." --scope ...)
+      — the board merges them into the persistent .conductor/insights.md ledger,
+      escalates the ones it keeps seeing, and auto-applies proven patterns.
       Set the top-level status to "done" when the last step completes.
     requires: [convert-to-conductor]
     gate:
@@ -110,6 +113,7 @@ steps:
         check: "node -p \\"JSON.parse(require('fs').readFileSync('.conductor/status.json','utf8')).status\\" | grep done"
       - name: "At least 3 suggestions written"
         check: "node -e \\"process.exit((JSON.parse(require('fs').readFileSync('.conductor/status.json','utf8')).suggestions||[]).length>=3?0:1)\\""
+      - "Answered: what did I learn that does NOT fit a step of this workflow? (upstream, template, tooling, or corpus insights logged with scope tags)"
 `;
 
 export async function runSetup(args) {

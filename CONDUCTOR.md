@@ -24,7 +24,9 @@ excuse to re-launch repeatedly (that's how you end up with a pile of tabs). Tips
   re-resolving `@latest` each time hits the network and can leave hung processes.
 - **Validation doesn't open anything** — `npx conductor-board validate <file>` is a
   CLI command that prints and exits. Use it freely.
-- **`--no-open`** is only for CI/headless. Don't add it to the first start.
+- **`--headless`** (or `CONDUCTOR_HEADLESS=1`) is only for CI / cloud / no-display
+  runs. It suppresses the browser; don't add it to a normal start — the board is
+  meant to be seen.
 
 Then read `setup.conductor.yaml` and execute it.
 
@@ -91,19 +93,29 @@ and timing into 3–5 `suggestions` in `status.json` (see
 [spec §9](./spec/conductor-spec.md#9-insights--optimization)). The board lets the
 user apply them back to the conductor.
 
-**Insights are remembered across runs.** When a run finishes, the board merges its
-suggestions into a persistent, deduped ledger at `.conductor/insights.md` (human
-view) + `insights.json`, and tracks which the user applies or dismisses. So:
+**Insights are remembered — and they get smarter — across runs.** When a run
+finishes, the board merges its suggestions into a persistent ledger at
+`.conductor/insights.md` (human view) + `insights.json`. A repeat sighting isn't
+dropped: it adds an observation and **escalates confidence** (low → medium → high
+→ proven). **Proven** patterns auto-apply and promote into the conductor's
+`knowledge:` section — no human gatekeeping. Browse it all on the board's ✨
+**Insights** page. So:
 
-- **At the start of every run, read `.conductor/insights.md`** to carry forward what
-  past runs learned. Don't re-surface insights already recorded there; prefer
-  acting on the ones still marked **Open**.
+- **At the start of every run, read the conductor's `knowledge:` section and
+  `.conductor/insights.md`** to carry forward what past runs learned. Proven
+  patterns are already applied; act on the ones still marked **Open**, and don't
+  re-surface what's recorded.
+- **Tag every insight with a `scope`** — `this-conductor` (default, auto-appliable)
+  | `upstream` | `template` | `tooling` | `corpus`. The highest-leverage learnings
+  are usually cross-cutting; without a scope they leak into chat and vanish.
 - Writing zero suggestions when the run clearly surfaced improvements wastes the
-  whole loop — capture them so the next run is better than this one. Make it
-  enforceable: give your **final step** a hard gate that fails on an empty
-  suggestions array, e.g.
-  `check: "node -e \"process.exit((require('./.conductor/status.json').suggestions||[]).length>=3?0:1)\""`.
-- Use `conductor-board suggest "title" --type … --step …` rather than hand-editing.
+  whole loop. Make it enforceable: give your **final step** a hard gate that fails
+  on an empty suggestions array, e.g.
+  `check: "node -e \"process.exit((require('./.conductor/status.json').suggestions||[]).length>=3?0:1)\""`,
+  plus a soft gate that fishes for cross-cutting insights: *"What did I learn that
+  does NOT fit a step of this workflow?"*
+- Use `conductor-board suggest "title" --type … --scope … --impact …` rather than
+  hand-editing.
 
 **One workflow, one subdirectory.** Keep each workflow in
 `.conductor/<workflow-name>/` (`conductor.yaml`, `status.json`, `insights.md`,
@@ -120,10 +132,13 @@ well-formed and current — which the board-sync gate requires):
 ```bash
 npx conductor-board status-init conductor.yaml     # all steps pending
 npx conductor-board step polish running             # running | done | failed
-npx conductor-board heartbeat polish "fixed dead link" --insight-type gate_issue --insight-seed "verify link liveness"
+npx conductor-board heartbeat polish "fixed dead link" --insight-type gate_issue --insight-seed "verify link liveness" --insight-scope this-conductor
+npx conductor-board heartbeat polish-and-ship "scraping links…" --iteration akupunktur --sub check-links   # a loop sub-step beat (bubbles to the parent)
 npx conductor-board heartbeat polish "done" --final --to gate-page
 npx conductor-board loop polish akupunktur polish-page done   # a loop sub-step
+npx conductor-board suggest "Sitemap-first is faster" --type instruction --scope this-conductor --confidence high --impact "4min → 1.5min"
 npx conductor-board complete polish --attest-soft   # run hard gates, then advance
+npx conductor-board complete polish-and-ship::akupunktur::check-links --attest-soft   # a loop sub-step
 ```
 
 `complete` runs the step's **hard** gates itself (you can't fake them — the board
@@ -134,10 +149,14 @@ them, `clean --keep 20 --prune-heartbeats` trims history and archives old beats.
 
 ## Loops & human approval
 
-- **Loops** (`type: loop` over a list) run one gated sub-sequence per item. Update
-  each item's sub-steps in the status `iterations` map as you go — the board opens
-  the loop into a **child board** where each item is a card that moves through the
-  columns, so keep them current. End each iteration with a finalBeat.
+- **Loops** (`type: loop` over a list) run one gated sub-sequence per item. The
+  board shows a loop as its own view: an **overview of every iteration**, each
+  drillable into a **full kanban** of that iteration's sub-steps. **Frontload the
+  whole iteration list as `pending` the moment you scope it** (write a "scope beat"
+  naming all items) so the plan is visible before any card moves. Then update each
+  item's sub-steps in the status `iterations` map as you go, and end each iteration
+  with a finalBeat. `parallel: true` runs items at once; `parallel: auto` lets you
+  decide at runtime (scout the first iteration, then parallelize the rest).
 - **Approval** (`type: approval`) pauses for a human. Mark the step
   `awaiting_approval` (gate `pending_human`) with an `approval` object, then wait —
   the board shows an Approve/Reject card and writes the human's decisions back into
