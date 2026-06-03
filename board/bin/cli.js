@@ -38,6 +38,15 @@ const HELP = `
     clean [--keep N]         Trim history to the last N runs; add
           [--prune-heartbeats] to archive old beats (keeps finalBeats + insights)
 
+  Status-writer (for agents — keep status.json live as you work)
+    status-init <file>       Generate .conductor/status.json from a conductor
+    step <id> <state>        running | done | failed  (state)
+    gate <id> <state>        checking | passed | failed
+    heartbeat <id> "note"    Append a heartbeat (--iteration, --insight-type,
+                             --insight-seed, --final, --to <step>)
+    loop <loop> <item> <sub> <state>   Update a loop sub-step
+    complete <id> [--attest-soft]      Run hard gates independently, then advance
+
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
     --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
@@ -98,6 +107,18 @@ if (command === "stop") {
 if (command === "clean") {
   const { runClean } = await import("../cli/clean.js");
   process.exit((await runClean(rest)) ? 0 : 1);
+}
+
+// status-writer commands (for agents — keep the board live as you work)
+if (["step", "gate", "heartbeat", "loop", "status-init"].includes(command)) {
+  const w = await import("../cli/writer.js");
+  const fn = { step: w.runStep, gate: w.runGate, heartbeat: w.runHeartbeat, loop: w.runLoop, "status-init": w.runStatusInit }[command];
+  process.exit((await fn(rest)) ? 0 : 1);
+}
+
+if (command === "complete") {
+  const { runComplete } = await import("../cli/complete.js");
+  process.exit((await runComplete(rest)) ? 0 : 1);
 }
 
 if (command && command !== "board") {
