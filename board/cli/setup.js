@@ -116,8 +116,8 @@ steps:
         check: "test -f .conductor/status.json"
       - name: "Workflow completed successfully"
         check: "node -p \\"JSON.parse(require('fs').readFileSync('.conductor/status.json','utf8')).status\\" | grep done"
-      - name: "Captured at least 3 knowledge entries"
-        check: "npx conductor-board knowledge --min 3"
+      - name: "Captured cross-cutting learnings (≥1 insight, ≥2 scopes)"
+        check: "npx conductor-board knowledge --min 1 --min-scopes 2"
       - "Answered: what did I learn that does NOT fit a step of this workflow? (upstream, template, tooling, or corpus insights logged with scope tags)"
 `;
 

@@ -187,6 +187,7 @@ export function App() {
             onResize={setSidebarWidth}
             activeStep={selectedStep ?? activeStepId}
             onSelectStep={setSelectedStep}
+            viewingSnap={viewing ? record?.snapshot : null}
           />
         )}
 

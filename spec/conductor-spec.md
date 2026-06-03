@@ -790,11 +790,13 @@ Each suggestion has: `id`, `type`, `scope`, `step`, `title`, `rationale`,
 `confidence`. Suggestion types: `instruction`, `gate`, `new_gate`, `new_step`,
 `remove_step`, `reorder`.
 
-Write the suggestions with `conductor-board suggest "title" --type … --scope …
---impact …`. Enforce two forcing functions on the final step so insights don't
-leak: a **hard** gate that fails on an empty `suggestions` array, and a **soft**
-gate that fishes for the cross-cutting ones — *"What did I learn that does NOT fit
-a step of this workflow?"* The highest-leverage insights are usually the
+Write insights with `conductor-board suggest "title" --scope … [--step --current
+--proposed]` — they land in the conductor's `knowledge:` section (§9.5/§9.6), not a
+status array. Enforce two forcing functions on the final step so insights don't
+leak: a **quality gate** `check: "conductor-board knowledge --min 1 --min-scopes 2"`
+(at least one insight, spanning at least two scopes — by value, not count), and a
+**soft** gate that fishes for the cross-cutting ones — *"What did I learn that does
+NOT fit a step of this workflow?"* The highest-leverage insights are usually the
 cross-cutting ones (§9.5), and without a slot they vanish into chat prose.
 
 ### 9.3 The improvement cycle

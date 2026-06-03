@@ -38,23 +38,35 @@ export function ImprovementCard({
 }) {
   const im = step.improve;
   const isValidate = im?.kind === "validate";
+  const isRead = im?.kind === "read-knowledge";
   const structural = im?.structural === true;
   const decided = step.approvalState?.decided || step.column === "done";
 
+  const defaults = isRead
+    ? ["knowledge read and categorized"]
+    : isValidate
+      ? ["conductor-board validate passes"]
+      : defaultGates(structural);
   const gates =
     step.criteria.length > 0
       ? step.criteria.map((c) => ({ text: c.kind === "hard" && c.name ? c.name : c.text, passed: c.passed }))
-      : defaultGates(structural).map((t) => ({ text: t, passed: null as boolean | null }));
+      : defaults.map((t) => ({ text: t, passed: null as boolean | null }));
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
       <div className={`rounded-2xl border bg-panel/50 p-5 ${structural ? "border-amber/30" : "border-iris/25"}`}>
         <div className="flex items-center gap-3">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-iris/15 text-sm">
-            {isValidate ? "✓" : structural ? "⚑" : "⚡"}
+            {isRead ? "📋" : isValidate ? "✓" : structural ? "⚑" : "⚡"}
           </span>
           <span className="flex-1 font-mono text-base font-medium text-chalk">
-            {isValidate ? "Validate conductor" : structural ? `Structural: ${im?.title}` : im?.title}
+            {isRead
+              ? "Read knowledge"
+              : isValidate
+                ? "Validate conductor"
+                : structural
+                  ? `Structural: ${im?.title}`
+                  : im?.title}
           </span>
           <span
             className={`rounded-md border px-2 py-0.5 font-mono text-[11px] ${COL_TINT[step.column] ?? COL_TINT.pending}`}
@@ -63,7 +75,7 @@ export function ImprovementCard({
           </span>
         </div>
 
-        {!isValidate && (
+        {!isValidate && !isRead && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             {im?.step && (
               <span className="rounded-md border border-iris/30 bg-iris/10 px-2 py-0.5 font-mono text-[10px] text-iris">

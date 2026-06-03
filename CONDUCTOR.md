@@ -122,10 +122,12 @@ conductor's `knowledge:` section with `conductor-board suggest`:
 - A repeat sighting bumps `observed` and escalates `emerging` → **proven** (3×).
   The conductor file is version-controlled — commit it and the learning travels
   with the repo. Browse it any time on the board's ✨ **Insights** page.
-- Enforce it: give your **final step** a gate that fails on too little learning,
-  `check: "npx conductor-board knowledge --min 3"`, plus a soft gate that fishes
-  for the cross-cutting ones: *"What did I learn that does NOT fit a step of this
-  workflow?"*
+- Enforce it by **value, not count**: give your **final step** a quality gate,
+  `check: "npx conductor-board knowledge --min 1 --min-scopes 2"` — at least one
+  insight, spanning at least two scopes — plus a soft gate that fishes for the
+  cross-cutting ones: *"What did I learn that does NOT fit a step of this
+  workflow?"* A run that produces only `this-conductor` insights has likely missed
+  its most valuable findings.
 
 **One workflow, one subdirectory.** Keep each workflow in
 `.conductor/<workflow-name>/` (`conductor.yaml`, `status.json`, `insights.md`,
@@ -147,7 +149,7 @@ npx conductor-board heartbeat polish-and-ship "scraping links…" --iteration ak
 npx conductor-board heartbeat polish "done" --final --to gate-page
 npx conductor-board loop polish akupunktur polish-page done   # a loop sub-step
 npx conductor-board suggest "Sitemap-first is faster" --scope this-conductor --step discover-prices --current "Nav first." --proposed "Sitemap first, nav fallback."   # → conductor knowledge:
-npx conductor-board knowledge --min 3               # gate: did this run capture learnings?
+npx conductor-board knowledge --min 1 --min-scopes 2   # quality gate: ≥1 insight, ≥2 scopes
 npx conductor-board complete polish --attest-soft   # run hard gates, then advance
 npx conductor-board complete polish-and-ship::akupunktur::check-links --attest-soft   # a loop sub-step
 ```

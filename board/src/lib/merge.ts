@@ -222,9 +222,17 @@ function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): Conduc
   }));
 }
 
-/** Is this a Phase 0 self-improvement step id? (_improve::… or _validate) */
+/** Is this a Phase 0 self-improvement step id? (_improve::… or legacy _validate) */
 function isImproveId(id: string): boolean {
   return id.startsWith("_improve::") || id === "_validate" || id === "_improve";
+}
+
+/** A short, human label for a Phase 0 card kind. */
+function improveTitleFor(id: string, kind: string | undefined, fallback?: string): string {
+  if (fallback) return fallback;
+  if (kind === "validate" || id.endsWith("::validate")) return "Validate conductor";
+  if (kind === "read-knowledge" || id.endsWith("::read-knowledge")) return "Read knowledge";
+  return id.replace("_improve::", "");
 }
 
 /** Build BoardSteps for the auto-injected Phase 0 improvement cards. */
@@ -233,8 +241,8 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
   return ids.map((id, index) => {
     const st = statusSteps[id] ?? {};
     const im = st.improve ?? {};
-    const isValidate = id === "_validate";
-    const title = im.title ?? (isValidate ? "Validate conductor" : id.replace("_improve::", ""));
+    const isValidate = id === "_validate" || id === "_improve::validate" || im.kind === "validate";
+    const title = improveTitleFor(id, im.kind, im.title);
     const rawStatus = st.status ?? "pending";
     const gateState = st.gate ?? "pending";
     const improve: ImproveMeta = {

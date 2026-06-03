@@ -170,6 +170,8 @@ interface Props {
   onResize: (w: number) => void;
   activeStep?: string | null;
   onSelectStep?: (id: string | null) => void;
+  /** snapshot of the currently-viewed past run, so its tree is navigable too */
+  viewingSnap?: WorkflowEntry["snap"] | null;
 }
 
 export function WorkflowSidebar({
@@ -184,6 +186,7 @@ export function WorkflowSidebar({
   onResize,
   activeStep,
   onSelectStep,
+  viewingSnap,
 }: Props) {
   const now = useNow(1000);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -348,21 +351,30 @@ export function WorkflowSidebar({
                           const active = activeWf === name && selectedRun === r.run_id;
                           const failed = r.status === "failed";
                           return (
-                            <button
-                              key={r.run_id}
-                              onClick={() => onPickRun(name, r.run_id)}
-                              className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors ${
-                                active ? "bg-iris/15" : "hover:bg-panel"
-                              }`}
-                            >
-                              <span className="shrink-0 text-[10px]">{failed ? "❌" : "✅"}</span>
-                              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-mist-2">
-                                {fmtTime(r.completed_at || r.archived_at || r.started_at)}
-                              </span>
-                              <span className="shrink-0 font-mono text-[9px] text-line-2">
-                                {fmtDur(r.started_at, r.completed_at)}
-                              </span>
-                            </button>
+                            <div key={r.run_id}>
+                              <button
+                                onClick={() => onPickRun(name, r.run_id)}
+                                className={`flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors ${
+                                  active ? "bg-iris/15" : "hover:bg-panel"
+                                }`}
+                              >
+                                <span className="shrink-0 text-[10px]">{failed ? "❌" : "✅"}</span>
+                                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-mist-2">
+                                  {fmtTime(r.completed_at || r.archived_at || r.started_at)}
+                                </span>
+                                <span className="shrink-0 font-mono text-[9px] text-line-2">
+                                  {fmtDur(r.started_at, r.completed_at)}
+                                </span>
+                              </button>
+                              {/* selected past run → its step/iteration tree, fully navigable */}
+                              {active && viewingSnap && (
+                                <StepTree
+                                  snap={viewingSnap}
+                                  activeStep={activeStep}
+                                  onSelectStep={onSelectStep}
+                                />
+                              )}
+                            </div>
                           );
                         })}
                       </div>

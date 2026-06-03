@@ -295,11 +295,27 @@ export async function runKnowledge(args) {
       (!scope || (k.scope || "this-conductor") === scope) &&
       (!st || (k.status || "emerging") === st),
   );
+  // Quality gate (§3.5): enforce captured learnings by VALUE, not count.
+  //   --min N         at least N knowledge entries
+  //   --min-scopes M  entries span at least M distinct scopes (forces the
+  //                   cross-cutting reflection — the highest-leverage insights)
   const min = str(["--min"]);
-  if (min !== undefined) {
-    const n = Number(min) || 0;
-    if (filtered.length >= n) return ok(`knowledge: ${filtered.length} entr${filtered.length === 1 ? "y" : "ies"} (≥ ${n})`);
-    return fail(`knowledge: ${filtered.length} entr${filtered.length === 1 ? "y" : "ies"} (need ≥ ${n}) — capture what you learned with: conductor-board suggest "…" --scope …`);
+  const minScopes = str(["--min-scopes"]);
+  if (min !== undefined || minScopes !== undefined) {
+    const n = min !== undefined ? Number(min) || 0 : 0;
+    const distinctScopes = new Set(filtered.map((k) => k.scope || "this-conductor")).size;
+    const m = minScopes !== undefined ? Number(minScopes) || 0 : 0;
+    const countOk = filtered.length >= n;
+    const scopesOk = distinctScopes >= m;
+    if (countOk && scopesOk)
+      return ok(`knowledge: ${filtered.length} entr${filtered.length === 1 ? "y" : "ies"}, ${distinctScopes} scope${distinctScopes === 1 ? "" : "s"} (ok)`);
+    const why = [];
+    if (!countOk) why.push(`need ≥ ${n} entries (have ${filtered.length})`);
+    if (!scopesOk) why.push(`need ≥ ${m} scopes (have ${distinctScopes})`);
+    return fail(
+      `knowledge gate: ${why.join(", ")} — capture what you learned, including cross-cutting:\n` +
+        '    conductor-board suggest "…" --scope upstream|template|tooling|corpus',
+    );
   }
   if (filtered.length === 0) console.log(dim("  (no knowledge yet)"));
   for (const k of filtered) {
@@ -334,6 +350,25 @@ export async function runStatusInit(args) {
   );
   const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const seen = new Set();
+
+  // _improve::read-knowledge leads the phase: read + categorize the knowledge.
+  if (knowledge.length > 0) {
+    const cat = (s) => knowledge.filter((k) => (k.status || "emerging") === s).length;
+    const cross = knowledge.filter((k) => (k.scope || "this-conductor") !== "this-conductor").length;
+    steps["_improve::read-knowledge"] = {
+      status: "pending",
+      gate: "pending",
+      attempt: 1,
+      improve: {
+        title: "Read knowledge",
+        kind: "read-knowledge",
+        note:
+          `${cat("proven")} proven · ${cat("emerging")} emerging · ${cat("applied")} applied · ` +
+          `${cross} cross-cutting`,
+      },
+    };
+  }
+
   let improvements = 0;
   for (const k of knowledge) {
     if ((k.status || "emerging") !== "proven") continue;
@@ -363,7 +398,7 @@ export async function runStatusInit(args) {
     improvements += 1;
   }
   if (improvements > 0) {
-    steps["_validate"] = {
+    steps["_improve::validate"] = {
       status: "pending",
       gate: "pending",
       attempt: 1,
