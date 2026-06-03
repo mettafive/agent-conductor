@@ -16,3 +16,6 @@ npm-debug.log*
 
 # conductor runtime state
 .conductor/status.json
+
+# typescript incremental build info
+*.tsbuildinfo
