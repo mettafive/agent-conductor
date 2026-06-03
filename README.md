@@ -152,9 +152,9 @@ gate can't be satisfied).
 | [`daily-price.yaml`](./examples/daily-price.yaml) | Loop (real-world) | A clinic-by-clinic scrape loop with the board-sync first gate |
 | [`content-pipeline.yaml`](./examples/content-pipeline.yaml) | Loop + approval | A polish loop held at a `type: approval` human gate before shipping |
 
-On the board, a loop's iterations open into their own **child board** — each item
-is a card moving through the columns — and a `type: approval` step renders an
-interactive Approve/Reject card.
+On the board, a loop opens into its own **view** — an overview of every iteration,
+each drillable into a **full per-iteration kanban** — and a `type: approval` step
+renders an interactive Approve/Reject card.
 
 ## The spec
 
@@ -191,11 +191,19 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
   persistent **insights ledger** (`.conductor/insights.md`) that accumulates
   learnings across runs so they stop evaporating — commit it and the workflow's
   memory travels with the repo.
-- **Phase 6 — spec 2.0.0.** ✅ **Loop child boards** (each iteration is a card that
+- **Phase 6 — spec 2.0.0.** ✅ Loop swim lanes (each iteration is a card that
   moves through the columns), **weighted progress** (a loop counts as its
   iterations, not one step), **human approval** (`type: approval`), and a
   **board-sync pre-gate check** (`conductor-board check <step>`) that makes
   board-discipline structural — an agent that freeballs fails its own gate.
+- **Phase 7 — three-zone board + insights that learn (spec 2.1.0).** ✅ The board
+  is **three zones**: a sidebar navigator, a main area that shows exactly one view
+  at a time (loop **overview** → per-iteration **kanban** → step **detail** →
+  summary), and the heartbeat monitor. Insights gained a **`scope`**
+  (this-conductor/upstream/template/tooling/corpus), **observation history** with
+  confidence that escalates to **proven**, **auto-apply** + a `knowledge:` section
+  that travels with the repo, and a browsable **✨ Insights** dashboard. Loops do
+  `parallel: auto` and **frontload** every iteration with a scope beat.
 
 ## Design principles
 

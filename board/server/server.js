@@ -377,10 +377,10 @@ function mergeInsights(wf, suggestions, runId, at) {
     const existing = byKey.get(key);
     if (existing) {
       existing.observations = Array.isArray(existing.observations) ? existing.observations : [];
-      // don't double-count the same run
+      // don't double-count the same run; times_observed tracks the sighting count
       if (!existing.observations.some((o) => o.run === obs.run)) {
         existing.observations.push(obs);
-        existing.times_observed = (existing.times_observed || existing.observations.length || 1);
+        existing.times_observed = existing.observations.length;
       }
       // freshen mutable fields if the new sighting carries more detail
       if (s.scope) existing.scope = s.scope;
