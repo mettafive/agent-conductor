@@ -103,6 +103,26 @@ view) + `insights.json`, and tracks which the user applies or dismisses. So:
 
 See the **[Heartbeat Guide](./spec/heartbeat-guide.md)** for how to write good ones.
 
+## Status-writer commands
+
+Instead of hand-editing `status.json`, drive the board with these (they keep it
+well-formed and current — which the board-sync gate requires):
+
+```bash
+npx conductor-board status-init conductor.yaml     # all steps pending
+npx conductor-board step polish running             # running | done | failed
+npx conductor-board heartbeat polish "fixed dead link" --insight-type gate_issue --insight-seed "verify link liveness"
+npx conductor-board heartbeat polish "done" --final --to gate-page
+npx conductor-board loop polish akupunktur polish-page done   # a loop sub-step
+npx conductor-board complete polish --attest-soft   # run hard gates, then advance
+```
+
+`complete` runs the step's **hard** gates itself (you can't fake them — the board
+shows 🔒 verified vs ✋ attested) and only advances when they pass.
+
+Housekeeping: `npx conductor-board ps` lists running boards, `stop [--all]` stops
+them, `clean --keep 20 --prune-heartbeats` trims history and archives old beats.
+
 ## Loops & human approval
 
 - **Loops** (`type: loop` over a list) run one gated sub-sequence per item. Update

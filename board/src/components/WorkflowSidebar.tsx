@@ -2,7 +2,57 @@ import { useState } from "react";
 import type { HistoryRun } from "../lib/types";
 import type { WorkflowEntry } from "../lib/useBoardState";
 import { useNow } from "../lib/useNow";
+import { buildModel } from "../lib/merge";
+import { iterationColumn } from "../lib/loop";
 import { AnimatedHeart } from "./AnimatedHeart";
+
+const TREE_GLYPH: Record<string, string> = {
+  done: "✅",
+  failed: "❌",
+  gate: "⏳",
+  running: "🔄",
+  pending: "·",
+};
+
+/** Compact step + loop-iteration tree for the active running workflow. */
+function StepTree({ snap }: { snap: WorkflowEntry["snap"] }) {
+  const model = buildModel(snap);
+  if (!model.steps.length) return null;
+  return (
+    <div className="ml-2 mt-1 space-y-0.5 border-l border-line/60 pl-2">
+      {model.steps.map((s) => (
+        <div key={s.id}>
+          <div className="flex items-center gap-1.5 py-0.5 font-mono text-[10px]">
+            <span className="w-3 shrink-0 text-center">{TREE_GLYPH[s.column] ?? "·"}</span>
+            <span className={`min-w-0 flex-1 truncate ${s.column === "running" ? "text-cyan" : "text-mist-2"}`}>
+              {s.id}
+            </span>
+            {s.isLoop && s.loop && (
+              <span className="shrink-0 text-line-2">
+                {s.loop.completed}/{s.loop.total}
+              </span>
+            )}
+          </div>
+          {s.isLoop && s.loop && s.loop.iterations.length > 0 && (
+            <div className="ml-3 space-y-0.5 border-l border-line/40 pl-2">
+              {s.loop.iterations.map((it) => {
+                const c = iterationColumn(it);
+                return (
+                  <div key={it.item} className="flex items-center gap-1.5 py-px font-mono text-[9.5px]">
+                    <span className="w-3 shrink-0 text-center">{TREE_GLYPH[c] ?? "·"}</span>
+                    <span className={`min-w-0 flex-1 truncate ${c === "running" ? "text-cyan" : "text-mist"}`}>
+                      {it.item}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface LiveStatus {
   status?: string;
@@ -156,8 +206,8 @@ export function WorkflowSidebar({
                 const { done, total } = counts(status);
                 const active = activeWf === name && selectedRun === null;
                 return (
+                  <div key={name}>
                   <button
-                    key={name}
                     onClick={() => onPickWorkflow(name)}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -190,6 +240,8 @@ export function WorkflowSidebar({
                       )}
                     </div>
                   </button>
+                  {active && workflows[name]?.snap && <StepTree snap={workflows[name].snap} />}
+                  </div>
                 );
               })}
             </div>
