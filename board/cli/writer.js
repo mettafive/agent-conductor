@@ -96,7 +96,13 @@ export async function runGate(args) {
   return ok(`${id} gate → ${gate}`);
 }
 
-// conductor-board heartbeat <id> "note" [--iteration X --insight-type T --insight-seed S --final --to STEP]
+// conductor-board heartbeat <id> "note" [--iteration X --sub Y --insight-type T
+//   --insight-seed S --insight-scope SC --final --to STEP]
+//
+// For a loop sub-step (--iteration AND --sub), the beat is written to the
+// sub-step cell AND bubbled up to the loop parent's heartbeat array (tagged with
+// iteration + sub) so the monitor and freeball banner — which read top-level
+// arrays — see every level of activity without the agent beating twice.
 export async function runHeartbeat(args) {
   const sp = statusPathOf(args);
   const [id, note] = positionals(args);
@@ -104,15 +110,19 @@ export async function runHeartbeat(args) {
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   const step = (s.steps[id] = s.steps[id] || { attempt: 1 });
+
   const entry = { at: now(), note };
   const it = flag(args, ["--iteration"]);
   if (typeof it === "string") entry.iteration = it;
+  const sub = flag(args, ["--sub"]);
+  if (typeof sub === "string") entry.sub = sub;
   const itype = flag(args, ["--insight-type"]);
   if (typeof itype === "string") {
     entry.insight = {
       type: itype,
       seed: typeof flag(args, ["--insight-seed"]) === "string" ? flag(args, ["--insight-seed"]) : note,
       step: id,
+      scope: typeof flag(args, ["--insight-scope"]) === "string" ? flag(args, ["--insight-scope"]) : "this-conductor",
       confidence: typeof flag(args, ["--insight-confidence"]) === "string" ? flag(args, ["--insight-confidence"]) : "medium",
     };
   }
@@ -121,9 +131,23 @@ export async function runHeartbeat(args) {
     const to = flag(args, ["--to"]);
     if (typeof to === "string") entry.handoff = { to };
   }
-  (step.heartbeat = step.heartbeat || []).push(entry);
+
+  if (typeof it === "string" && typeof sub === "string") {
+    // Sub-step beat bubbled to the loop parent's array (tagged iteration + sub).
+    // The board reads top-level arrays for the monitor and the freeball banner,
+    // and the iteration cards filter this array by iteration/sub — so one write
+    // lights up every level. (We write to the parent only, never also the cell,
+    // to avoid double-counting since the readers aggregate the whole tree.)
+    step.type = "loop";
+    step.iterations = step.iterations || {};
+    const iter = (step.iterations[it] = step.iterations[it] || {});
+    iter[sub] = iter[sub] || { attempt: 1 };
+    (step.heartbeat = step.heartbeat || []).push(entry);
+  } else {
+    (step.heartbeat = step.heartbeat || []).push(entry);
+  }
   save(sp, s);
-  return ok(`${id} ♥ ${note.length > 50 ? note.slice(0, 50) + "…" : note}`);
+  return ok(`${id}${typeof sub === "string" ? `/${it}/${sub}` : ""} ♥ ${note.length > 50 ? note.slice(0, 50) + "…" : note}`);
 }
 
 // conductor-board loop <loopId> <item> <subId> <status>

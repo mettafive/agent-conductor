@@ -127,8 +127,11 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
     };
   });
 
+  // Prefer a declared positive total (frontloaded scope), else the number of
+  // iterations actually materialized — never report 0/N when items exist.
+  const declaredTotal = typeof st.total === "number" && st.total > 0 ? st.total : 0;
   return {
-    total: typeof st.total === "number" ? st.total : items.length,
+    total: Math.max(declaredTotal, items.length),
     completed:
       typeof st.completed === "number"
         ? st.completed
