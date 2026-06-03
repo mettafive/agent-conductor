@@ -18,8 +18,9 @@ steps:
 
   - id: start-board
     instruction: |
-      Start the board server in the background:
-        npx conductor-board &
+      Start the board server in the background. It opens the browser
+      automatically — do NOT pass --no-open here, that defeats the live view.
+        npx conductor-board >/tmp/conductor-board.log 2>&1 &
       Wait ~3 seconds for it to initialize. It auto-detects a free port if 3042
       is taken and records the chosen port in .conductor/server.json.
     requires: [preflight]

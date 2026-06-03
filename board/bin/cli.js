@@ -35,7 +35,8 @@ const HELP = `
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
     --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
     --port <n>               Port to serve on        (default: 3042)
-    --no-open                Don't open the browser
+    --no-open                Don't open the browser  (CI / headless only;
+                             the board opens your browser by default)
 
   init options
     --name, -n <name>        Workflow name (skips the prompts)

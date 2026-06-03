@@ -6,11 +6,22 @@
 2. Execute it as a conductor workflow.
 3. Everything else is handled by its steps and gates.
 
+## Quick Setup
+
+Start the board in the background first — it **opens your browser automatically**:
+
+```bash
+npx conductor-board &
+```
+
+Don't add `--no-open` here; that's only for CI/headless. Then read
+`setup.conductor.yaml` and execute it.
+
 The setup conductor will:
 
 - **Verify your environment** (Node 18+, npx).
-- **Start the live board** — `npx conductor-board` (auto-detects a free port and
-  writes it to `.conductor/server.json`).
+- **Start the live board** — `npx conductor-board &` (auto-opens the browser,
+  auto-detects a free port, and writes it to `.conductor/server.json`).
 - **Convert the user's skill** into a gated conductor workflow.
 - **Validate** the generated workflow (`npx conductor-board validate`).
 - **Execute** it, updating `.conductor/status.json` so the board moves in real time.

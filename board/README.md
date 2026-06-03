@@ -42,7 +42,7 @@ npx conductor-board --help                  # all commands + options
 | `--path`, `-p` | `.conductor/status.json` | Path to the status file |
 | `--conductor`, `-c` | auto-discovered | Path to the conductor `.yaml` |
 | `--port` | `3042` | Port to serve on (walks forward if taken) |
-| `--no-open` | — | Don't open the browser |
+| `--no-open` | — | Don't open the browser — CI / headless only (it opens by default) |
 | `--help`, `-h` | — | Show help |
 
 ```bash
