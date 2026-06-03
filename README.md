@@ -126,11 +126,12 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
 
 ## Roadmap
 
-- **Phase 1 — Spec + docs site.** ✅ This repo.
-- **Phase 2 — Local Kanban board.** `npx agent-conductor` serves a live board
-  that watches the status file.
+- **Phase 1 — Spec + docs site.** ✅ Live at the [docs site](https://mettafive.github.io/agent-conductor).
+- **Phase 2 — Local Kanban board.** ✅ [`board/`](./board) — `npx agent-conductor`
+  serves a live board that watches `.conductor/status.json` over Server-Sent
+  Events. Zero runtime dependencies.
 - **Phase 3 — npm package.** `init` scaffolds a conductor, `validate` checks one
-  against the spec.
+  against the spec; publish the board to npm.
 
 ## Design principles
 

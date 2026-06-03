@@ -14,8 +14,9 @@ npm-debug.log*
 .idea/
 .vscode/
 
-# conductor runtime state
+# conductor runtime state (any depth)
 .conductor/status.json
+**/.conductor/status.json
 
 # typescript incremental build info
 *.tsbuildinfo

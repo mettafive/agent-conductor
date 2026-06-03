@@ -277,7 +277,7 @@ board watches.
 | `status` (top) | `running` `done` `failed`               | Overall workflow state.                        |
 | `current_step` | step id                                 | The step in flight.                            |
 | `status`       | `pending` `running` `done` `failed`     | Per-step lifecycle.                            |
-| `gate`         | `pending` `passed` `failed`             | Result of the step's gate.                     |
+| `gate`         | `pending` `checking` `passed` `failed`  | Gate result. `checking` is transient — set while the gate is being evaluated (drives the board's Gate Check column). |
 | `attempt`      | integer ≥ 1                             | Increments on every retry.                     |
 | `branch_taken` | step id                                 | Only on `condition` steps.                     |
 | `output`       | any                                     | Only when the step declared `output`.          |
