@@ -179,6 +179,12 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
   that weakens when an agent goes quiet, a live **heartbeat monitor** that streams
   every beat character by character, and per-step timelines with **finalBeat**
   handoffs that pass context cleanly from one step to the next.
+- **Phase 5.1 — discipline + memory.** ✅ The board now actively enforces the
+  contract: one board per run (re-running reuses it, no tab pile-up), a red
+  **"Freeballing?"** banner when an agent works without updating the board, and a
+  persistent **insights ledger** (`.conductor/insights.md`) that accumulates
+  learnings across runs so they stop evaporating — commit it and the workflow's
+  memory travels with the repo.
 
 ## Design principles
 
