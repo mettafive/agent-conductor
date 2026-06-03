@@ -10,11 +10,12 @@ import { StepDetail } from "./components/StepDetail";
 import { SummaryView } from "./components/SummaryView";
 import { LoopOverview } from "./components/LoopOverview";
 import { IterationKanban } from "./components/IterationKanban";
+import { ImprovementCard } from "./components/ImprovementCard";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { InsightsDashboard } from "./components/InsightsDashboard";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
-import type { BoardModel, RunRecord, Snapshot, Suggestion } from "./lib/types";
+import type { BoardModel, RunRecord, Snapshot } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -49,13 +50,10 @@ export function App() {
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
 
-  // The active workflow's persistent insights ledger — accumulated across runs.
-  // The review panel acts on the still-open items (cross-run memory), not just
-  // the suggestions of one run, so insights stop evaporating between runs.
-  const activeLedger = activeWf ? workflows[activeWf]?.ledger : undefined;
-  const openInsights = (activeLedger?.items ?? [])
-    .filter((i) => i.status === "open")
-    .map((i) => ({ ...i, id: i.key }) as Suggestion & { key: string });
+  // Insights now live in the conductor's knowledge section (the conductor IS the
+  // knowledge base). The ✨ badge counts the entries still in motion — anything
+  // not yet `applied` — so the dashboard surfaces what's learning, not noise.
+  const knowledgeInMotion = liveModel.knowledge.filter((k) => k.status !== "applied").length;
 
   // completion chimes — fire on any workflow's status transition (never on load)
   const prevStatuses = useRef<Record<string, string>>({});
@@ -118,26 +116,6 @@ export function App() {
   const liveRunId = (liveSnap.status as { run_id?: string } | null)?.run_id;
   void liveRunId;
 
-  // Send the full suggestion objects so applying works for a past run too —
-  // the server no longer has to find them in the (possibly reset) live status.
-  const applySuggestions = async (items: Suggestion[]) => {
-    if (!activeWf) return { ok: false, error: "no active workflow" };
-    try {
-      const r = await fetch(
-        `/api/workflow/${encodeURIComponent(activeWf)}/apply-suggestion`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ suggestions: items }),
-        },
-      );
-      const d = await r.json().catch(() => ({}));
-      return r.ok ? { ok: true } : { ok: false, error: d.error };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  };
-
   // human approval — write the decisions to status.json; the agent routes on them
   const applyApproval = async (
     stepId: string,
@@ -176,8 +154,12 @@ export function App() {
   //   • a loop's overview of all iterations (a loop is the active step),
   //   • a single non-loop step's detail.
   // The sidebar is the only navigator; the main area never stacks kanbans.
+  // "loopId::item" selects an iteration — but the Phase 0 cards are also id'd
+  // with "::" (_improve::slug), so exclude those from iteration parsing.
   const iterSel =
-    selectedStep && selectedStep.includes("::") ? selectedStep.split("::") : null;
+    selectedStep && selectedStep.includes("::") && !selectedStep.startsWith("_improve::")
+      ? selectedStep.split("::")
+      : null;
   const activeStepId = iterSel
     ? iterSel[0]
     : selectedStep && model?.steps.some((s) => s.id === selectedStep)
@@ -187,19 +169,6 @@ export function App() {
     model?.steps.find((s) => s.id === activeStepId) ?? model?.steps[0] ?? null;
   const showSummary =
     !selectedStep && !!model && (model.overallStatus === "done" || model.overallStatus === "failed");
-
-  const dismissInsights = async (keys: string[]) => {
-    if (!activeWf || keys.length === 0) return;
-    try {
-      await fetch(`/api/workflow/${encodeURIComponent(activeWf)}/insights/decide`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ keys, status: "dismissed" }),
-      });
-    } catch {
-      /* the SSE refresh will reconcile */
-    }
-  };
 
   return (
     <>
@@ -234,7 +203,7 @@ export function App() {
             }}
             onBackToLive={() => setSelectedRun(null)}
             onToggleSidebar={() => setSidebarOpen((o) => !o)}
-            optimizeCount={openInsights.length}
+            optimizeCount={knowledgeInMotion}
             optimizeOpen={showInsights}
             onToggleOptimize={() => setShowInsights((o) => !o)}
           />
@@ -268,10 +237,8 @@ export function App() {
               >
                 <InsightsDashboard
                   workflow={activeWf ?? "workflow"}
-                  ledger={activeLedger}
+                  knowledge={(model ?? liveModel).knowledge}
                   runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
-                  onApply={applySuggestions}
-                  onDismiss={dismissInsights}
                 />
               </motion.div>
             ) : viewing && !record ? (
@@ -288,6 +255,8 @@ export function App() {
               >
                 {showSummary ? (
                   <SummaryView model={model} onOpenInsights={() => setShowInsights(true)} />
+                ) : activeStep?.phase === "improve" ? (
+                  <ImprovementCard step={activeStep} onApprove={viewing ? undefined : applyApproval} />
                 ) : iterSel && activeStep?.isLoop ? (
                   <IterationKanban
                     loopStep={activeStep}

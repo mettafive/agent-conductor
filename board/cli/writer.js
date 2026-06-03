@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
+import { discoverConductor, loadConductor, mergeKnowledge, saveConductor, SCOPES } from "./knowledge.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -211,56 +212,100 @@ export async function runLoop(args) {
   return ok(`${loopId}/${item}/${subId} → ${status}`);
 }
 
-// conductor-board suggest "title" --type T --scope SC --step S --confidence C
-//   --rationale R [--current X --proposed Y --impact Z]
+// conductor-board suggest "title" --scope SC [--type T --step S --current X
+//   --proposed Y --note Z --conductor <file>]
 //
-// --scope routes the insight: this-conductor (default, auto-appliable) |
-// upstream | template | tooling | corpus. Non-this-conductor scopes are logged
-// and surfaced but require human action outside the conductor (§5.1).
-const SCOPES = ["this-conductor", "upstream", "template", "tooling", "corpus"];
-
+// Writes the learning straight into the conductor file's knowledge: section —
+// the conductor IS the knowledge base (§10.5). --scope is REQUIRED and routes
+// the insight: this-conductor (auto-appliable in Phase 0) | upstream | template |
+// tooling | corpus. A repeat sighting bumps `observed` and escalates the status
+// (emerging → proven at 3×). Structural types (new_step/remove_step/reorder)
+// need human approval, so they never auto-apply.
 export async function runSuggest(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      'usage: conductor-board suggest "title" --type <kind> --scope <scope> [--step <id>]\n' +
-        "         [--confidence low|medium|high|proven] [--rationale R] [--current X]\n" +
-        "         [--proposed Y] [--impact Z]\n" +
-        `  --scope: ${SCOPES.join(" | ")}  (default this-conductor)`,
+      'usage: conductor-board suggest "title" --scope <scope> [--type <kind>] [--step <id>]\n' +
+        "         [--current X] [--proposed Y] [--note Z] [--conductor <file>]\n" +
+        `  --scope (required): ${SCOPES.join(" | ")}\n` +
+        "  Appends to the conductor's knowledge: section. this-conductor insights with\n" +
+        "  current/proposed auto-apply once proven; structural types need approval.",
     );
     return true;
   }
   const sp = statusPathOf(args);
   const [title] = positionals(args);
-  if (!title) return fail('usage: conductor-board suggest "title" --type instruction --scope this-conductor');
-  const s = load(sp);
-  if (!s) return fail("no status.json — run status-init first");
+  if (!title) return fail('usage: conductor-board suggest "title" --scope this-conductor');
   const str = (names, def) => {
     const v = flag(args, names);
     return typeof v === "string" ? v : def;
   };
-  let scope = str(["--scope"], "this-conductor");
-  if (!SCOPES.includes(scope)) {
-    console.error(red(`✗ --scope must be one of: ${SCOPES.join(", ")}`));
-    return false;
+  const scope = str(["--scope"], undefined);
+  if (!scope) return fail("--scope is required (this-conductor | upstream | template | tooling | corpus)");
+  if (!SCOPES.includes(scope)) return fail(`--scope must be one of: ${SCOPES.join(", ")}`);
+
+  const conductorPath = discoverConductor(sp, str(["--conductor", "-c"], undefined));
+  if (!conductorPath) return fail("no conductor file found next to status.json or in cwd");
+  let doc;
+  try {
+    doc = loadConductor(conductorPath);
+  } catch (e) {
+    return fail(`could not parse conductor: ${e.message}`);
   }
-  s.suggestions = Array.isArray(s.suggestions) ? s.suggestions : [];
-  s.suggestions.push({
-    id: `sg-${s.suggestions.length + 1}`,
+  const merged = mergeKnowledge(doc, {
     title,
-    type: str(["--type"], "instruction"),
     scope,
     step: str(["--step"], undefined),
-    confidence: str(["--confidence"], undefined),
-    rationale: str(["--rationale"], undefined),
+    type: str(["--type"], undefined),
     current: str(["--current"], undefined),
     proposed: str(["--proposed"], undefined),
-    impact: str(["--impact"], undefined),
-    source_heartbeat: now(),
+    note: str(["--note"], undefined),
   });
-  save(sp, s);
+  const res = saveConductor(conductorPath, doc);
+  if (!res.ok) return fail(`knowledge not written — ${res.error}`);
   return ok(
-    `suggestion #${s.suggestions.length} [${scope}]: ${title.length > 50 ? title.slice(0, 50) + "…" : title}`,
+    `knowledge [${scope}] "${title.length > 46 ? title.slice(0, 46) + "…" : title}" — ${merged.status} (observed ${merged.observed}×)`,
   );
+}
+
+// conductor-board knowledge [list] [--min N] [--scope SC] [--status ST] [--conductor file]
+//
+// With --min, exits 0 when the conductor holds at least N knowledge entries
+// (use as the final-step "captured learnings" gate). With `list`, prints them.
+export async function runKnowledge(args) {
+  const sp = statusPathOf(args);
+  const str = (names) => {
+    const v = flag(args, names);
+    return typeof v === "string" ? v : undefined;
+  };
+  const conductorPath = discoverConductor(sp, str(["--conductor", "-c"]));
+  if (!conductorPath) return fail("no conductor file found");
+  let doc;
+  try {
+    doc = loadConductor(conductorPath);
+  } catch (e) {
+    return fail(`could not parse conductor: ${e.message}`);
+  }
+  const all = (Array.isArray(doc.knowledge) ? doc.knowledge : []).filter(
+    (k) => k && typeof k === "object" && k.title,
+  );
+  const scope = str(["--scope"]);
+  const st = str(["--status"]);
+  const filtered = all.filter(
+    (k) =>
+      (!scope || (k.scope || "this-conductor") === scope) &&
+      (!st || (k.status || "emerging") === st),
+  );
+  const min = str(["--min"]);
+  if (min !== undefined) {
+    const n = Number(min) || 0;
+    if (filtered.length >= n) return ok(`knowledge: ${filtered.length} entr${filtered.length === 1 ? "y" : "ies"} (≥ ${n})`);
+    return fail(`knowledge: ${filtered.length} entr${filtered.length === 1 ? "y" : "ies"} (need ≥ ${n}) — capture what you learned with: conductor-board suggest "…" --scope …`);
+  }
+  if (filtered.length === 0) console.log(dim("  (no knowledge yet)"));
+  for (const k of filtered) {
+    console.log(`  ${k.status || "emerging"} · ${k.scope || "this-conductor"} · ${k.observed || 1}× — ${k.title}`);
+  }
+  return true;
 }
 
 // conductor-board status-init <conductor.yaml> [--run-id ID]
@@ -278,6 +323,54 @@ export async function runStatusInit(args) {
     (typeof flag(args, ["--run-id"]) === "string" && flag(args, ["--run-id"])) ||
     now().replace(/\.\d+Z$/, "").replace(/:/g, "-");
   const steps = {};
+
+  // Phase 0 (§10.2): auto-inject improvement cards from PROVEN this-conductor
+  // knowledge BEFORE the workflow steps. Entries with current/proposed apply
+  // automatically; structural ones (new_step/remove_step/reorder) are flagged
+  // for human approval. A _validate card closes the phase.
+  const STRUCTURAL = new Set(["new_step", "remove_step", "reorder"]);
+  const knowledge = (Array.isArray(doc.knowledge) ? doc.knowledge : []).filter(
+    (k) => k && typeof k === "object" && k.title,
+  );
+  const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+  const seen = new Set();
+  let improvements = 0;
+  for (const k of knowledge) {
+    if ((k.status || "emerging") !== "proven") continue;
+    if ((k.scope || "this-conductor") !== "this-conductor") continue;
+    const structural = STRUCTURAL.has(k.type);
+    const textChange = k.current && k.proposed;
+    if (!structural && !textChange) continue; // proven but nothing actionable
+    let id = `_improve::${slug(k.title)}`;
+    while (seen.has(id)) id += "-x";
+    seen.add(id);
+    steps[id] = {
+      status: "pending",
+      gate: "pending",
+      attempt: 1,
+      improve: {
+        step: k.step,
+        title: k.title,
+        current: k.current,
+        proposed: k.proposed,
+        note: k.note,
+        observed: k.observed || 1,
+        scope: k.scope || "this-conductor",
+        structural,
+        kind: k.type || "instruction",
+      },
+    };
+    improvements += 1;
+  }
+  if (improvements > 0) {
+    steps["_validate"] = {
+      status: "pending",
+      gate: "pending",
+      attempt: 1,
+      improve: { title: "Validate conductor", kind: "validate" },
+    };
+  }
+
   for (const st of doc.steps || []) {
     if (!st || !st.id) continue;
     steps[st.id] =
@@ -295,5 +388,10 @@ export async function runStatusInit(args) {
     steps,
   };
   save(sp, status);
-  return ok(`status.json initialized at ${path.relative(process.cwd(), sp)} (${Object.keys(steps).length} steps)`);
+  const workflowCount = (doc.steps || []).filter((s) => s && s.id).length;
+  return ok(
+    `status.json initialized (${workflowCount} steps` +
+      (improvements ? `, ${improvements} Phase 0 improvement${improvements === 1 ? "" : "s"}` : "") +
+      `)`,
+  );
 }

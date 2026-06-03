@@ -93,29 +93,39 @@ and timing into 3–5 `suggestions` in `status.json` (see
 [spec §9](./spec/conductor-spec.md#9-insights--optimization)). The board lets the
 user apply them back to the conductor.
 
-**Insights are remembered — and they get smarter — across runs.** When a run
-finishes, the board merges its suggestions into a persistent ledger at
-`.conductor/insights.md` (human view) + `insights.json`. A repeat sighting isn't
-dropped: it adds an observation and **escalates confidence** (low → medium → high
-→ proven). **Proven** patterns auto-apply and promote into the conductor's
-`knowledge:` section — no human gatekeeping. Browse it all on the board's ✨
-**Insights** page. So:
+## Run lifecycle — improve, execute, learn
 
-- **At the start of every run, read the conductor's `knowledge:` section and
-  `.conductor/insights.md`** to carry forward what past runs learned. Proven
-  patterns are already applied; act on the ones still marked **Open**, and don't
-  re-surface what's recorded.
-- **Tag every insight with a `scope`** — `this-conductor` (default, auto-appliable)
-  | `upstream` | `template` | `tooling` | `corpus`. The highest-leverage learnings
-  are usually cross-cutting; without a scope they leak into chat and vanish.
-- Writing zero suggestions when the run clearly surfaced improvements wastes the
-  whole loop. Make it enforceable: give your **final step** a hard gate that fails
-  on an empty suggestions array, e.g.
-  `check: "node -e \"process.exit((require('./.conductor/status.json').suggestions||[]).length>=3?0:1)\""`,
-  plus a soft gate that fishes for cross-cutting insights: *"What did I learn that
-  does NOT fit a step of this workflow?"*
-- Use `conductor-board suggest "title" --type … --scope … --impact …` rather than
-  hand-editing.
+Every run has three phases. **The conductor file IS the knowledge base** — there
+is no separate ledger.
+
+**Phase 0 — Improve (automatic).** `conductor-board status-init` reads the
+conductor's `knowledge:` section and, for each **proven** `this-conductor` entry
+with `current`/`proposed` text, injects an `_improve::*` card (plus a `_validate`
+card) **before** step 1. The board groups these under an **IMPROVEMENT** header.
+For each, rewrite the named step's instruction/gate as specified, then mark the
+card done; run `conductor-board validate` at the end. Structural changes
+(add/remove/reorder a step) appear as cards with an **Approve** button — never
+auto-apply them. Then write a scope beat: *"Applied N improvements. Watching M
+emerging. Starting workflow."* If there's nothing proven, the phase is empty.
+
+**Phase 1+ — Execute.** Run the workflow steps as defined — gates, heartbeats,
+finalBeats, breathing beats.
+
+**Run end — Learn.** Before `status: done`, append what you learned to the
+conductor's `knowledge:` section with `conductor-board suggest`:
+
+- **`--scope` is required** — `this-conductor` (auto-appliable) | `upstream` |
+  `template` | `tooling` | `corpus`. The highest-leverage learnings are usually
+  cross-cutting; without a scope they leak into chat and vanish.
+- For `this-conductor` insights, include `--step`, `--current`, `--proposed` so a
+  future run can auto-apply them once they reach **proven**.
+- A repeat sighting bumps `observed` and escalates `emerging` → **proven** (3×).
+  The conductor file is version-controlled — commit it and the learning travels
+  with the repo. Browse it any time on the board's ✨ **Insights** page.
+- Enforce it: give your **final step** a gate that fails on too little learning,
+  `check: "npx conductor-board knowledge --min 3"`, plus a soft gate that fishes
+  for the cross-cutting ones: *"What did I learn that does NOT fit a step of this
+  workflow?"*
 
 **One workflow, one subdirectory.** Keep each workflow in
 `.conductor/<workflow-name>/` (`conductor.yaml`, `status.json`, `insights.md`,
@@ -136,7 +146,8 @@ npx conductor-board heartbeat polish "fixed dead link" --insight-type gate_issue
 npx conductor-board heartbeat polish-and-ship "scraping links…" --iteration akupunktur --sub check-links   # a loop sub-step beat (bubbles to the parent)
 npx conductor-board heartbeat polish "done" --final --to gate-page
 npx conductor-board loop polish akupunktur polish-page done   # a loop sub-step
-npx conductor-board suggest "Sitemap-first is faster" --type instruction --scope this-conductor --confidence high --impact "4min → 1.5min"
+npx conductor-board suggest "Sitemap-first is faster" --scope this-conductor --step discover-prices --current "Nav first." --proposed "Sitemap first, nav fallback."   # → conductor knowledge:
+npx conductor-board knowledge --min 3               # gate: did this run capture learnings?
 npx conductor-board complete polish --attest-soft   # run hard gates, then advance
 npx conductor-board complete polish-and-ship::akupunktur::check-links --attest-soft   # a loop sub-step
 ```

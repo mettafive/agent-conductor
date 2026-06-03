@@ -1,11 +1,12 @@
 # The Conductor Spec
 
-**Version `2.1.0`** · adds the insight `scope` dimension and the `knowledge:`
-section (§9.5), `parallel: auto` and the loop scope beat (§4.3). Builds on 2.0.0
-(human approval `type: approval` §4.4, the board-sync pre-check §8.1, the
-finalBeat handoff §6.5, the persistent insights ledger §9.4).
-Backwards-compatible with 1.x/2.0 conductors — every addition is optional.
-(1.1.0 added [loops](#43-loops).)
+**Version `2.2.0`** · the self-improvement loop (§9.6) — structured `knowledge:`
+entries in the conductor file (the conductor IS the knowledge base), an
+auto-injected **Phase 0** improvement pass, and `emerging → proven → applied`
+escalation. Builds on 2.1.0 (insight `scope` §9.5, `parallel: auto` and the loop
+scope beat §4.3) and 2.0.0 (human approval §4.4, the board-sync pre-check §8.1,
+finalBeat handoffs §6.5). Backwards-compatible with 1.x/2.x conductors — every
+addition is optional. (1.1.0 added [loops](#43-loops).)
 
 A conductor is a single YAML file that turns a loose pile of instructions into a
 **gated workflow**. Each step must pass its gate before the next one unlocks. The
@@ -841,25 +842,66 @@ insight now carries a **`scope`** that says where it applies:
 are logged, surfaced on the board's ✨ Insights page, and routed — but they need
 human action outside the conductor.
 
-**The `knowledge:` section** is the conductor's own, version-controlled memory:
+**The `knowledge:` section** is the conductor's own, version-controlled memory —
+the conductor IS the knowledge base. There is no separate ledger. Each entry:
 
 ```yaml
-conductor: 2.1.0
+conductor: 2.2.0
 name: daily-price
+description: Alphabetical clinic price-scrape pass.
 
 knowledge:
-  - "Sitemap-first is 3x faster for Swedish vet sites [proven, 15 runs]"
-  - "20% of sites have a WAF — Googlebot UA bypasses all encountered [proven, 8 runs]"
-  - "tsx -e fails with top-level await in CommonJS — use async main() [immediate, run 3]"
+  - title: "Sitemap-first discovery"
+    status: applied          # emerging | proven | applied | open
+    scope: this-conductor
+    step: discover-prices
+    observed: 5
+    run_applied: "2026-06-04T08-15"
+
+  - title: "Sitemap-first discovery — try sitemap before nav"
+    status: proven           # ready to auto-apply in Phase 0
+    scope: this-conductor
+    step: discover-prices
+    observed: 4
+    current: "Navigation first, then sitemap."
+    proposed: "Sitemap first, then navigation as fallback."
+
+  - title: "Price data understated in enrichment"
+    status: open
+    scope: upstream          # can't fix from here — flagged for a human
+    observed: 3
+    note: "Fix in the enrichment pipeline, not per-page."
 ```
 
-Two kinds populate it. **Immediate** knowledge is discovered mid-run and written
-at once, so the next iteration in the *same* run benefits. **Pattern** knowledge
-accumulates across runs and **auto-promotes** once an insight reaches `proven`.
-The agent reads `knowledge:` at the start of every run and applies it; proven
-`this-conductor` insights also auto-apply to the steps directly, with no human
-gatekeeping. The conductor file *is* the knowledge base — it travels with the repo
-and is never lost.
+Fields: `title` (required), `status` (required), `scope` (required), `observed`
+(required); plus optional `step`, `type`, `current`/`proposed` (the text change),
+`run_applied`, `note`.
+
+### 9.6 The self-improvement loop — Phase 0
+
+`conductor-board suggest "…" --scope …` writes a learning straight into
+`knowledge:` (with a backup + re-validation). A repeat sighting bumps `observed`
+and escalates confidence:
+
+- **1×** → `emerging` (watched, not acted on)
+- **3×** → `proven` (ready to auto-apply, if `this-conductor` with current/proposed)
+- applied with measured benefit → `applied`
+- cross-cutting scopes stay `open` — surfaced and routed, never auto-applied.
+
+At run start, `status-init` reads `knowledge:` and **auto-injects a Phase 0
+improvement pass before step 1**: one `_improve::*` card per proven
+`this-conductor` insight (then a `_validate` card). The board groups them under an
+**IMPROVEMENT** header; each card shows the before/after diff and a gate (file
+changed? still valid? ≤ 1 sentence?). The user watches the agent upgrade its own
+instructions, card by card, then watches it work with the upgrades in place.
+
+**Auto-apply is bounded** — a good improvement does exactly one of: make a step
+faster without losing quality, prevent a proven failure, add a missing check that
+caught a real problem, remove a gate that never fires (5+ clean runs), or fix a
+factual error. It **never** changes a step's goal, makes instructions vaguer,
+applies a 1×-observed anecdote, or compounds (one change per step per run).
+**Structural changes** — adding, removing, or reordering steps — never auto-apply:
+they render an **Approve** card and wait for a human.
 
 ---
 
@@ -883,6 +925,20 @@ That's the whole spec. Hand the file to an agent and watch the board light up.
 ---
 
 ## 11. Changelog
+
+**2.2.0**
+
+- **Self-improvement loop** (§9.6) — `knowledge:` entries are structured objects
+  living in the conductor file; there is no separate ledger.
+- **Phase 0 improvement pass** — `status-init` auto-injects `_improve::*` cards
+  for proven this-conductor insights before step 1; the board groups them under an
+  IMPROVEMENT header and shows each before/after diff.
+- **Escalation** `emerging`(1×) → `proven`(3×) → `applied`; cross-cutting scopes
+  stay `open`. Structural changes need human Approve and never auto-apply.
+- `conductor-board suggest --scope` (required) writes to `knowledge:`;
+  `conductor-board knowledge --min N` is the captured-learnings gate.
+
+Additive over 2.1.0 — `knowledge:` is optional and old string entries still parse.
 
 **2.1.0**
 

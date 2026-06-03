@@ -44,7 +44,8 @@ const HELP = `
     gate <id> <state>        checking | passed | failed
     heartbeat <id> "note"    Append a heartbeat (--iteration, --insight-type,
                              --insight-seed, --final, --to <step>)
-    suggest "title"          Add a post-run suggestion (--type, --step, --rationale)
+    suggest "title" --scope SC    Append a learning to the conductor's knowledge:
+    knowledge [--min N]      List knowledge / gate on captured-learnings count
     loop-scope <loop> <item...>   Frontload every iteration as pending (scope beat)
     loop <loop> <item> <sub> <state>   Update a loop sub-step
     complete <step>[::iter::sub] [--attest-soft]   Run hard gates, then advance
@@ -112,7 +113,7 @@ if (command === "clean") {
 }
 
 // status-writer commands (for agents — keep the board live as you work)
-if (["step", "gate", "heartbeat", "loop", "loop-scope", "status-init", "suggest"].includes(command)) {
+if (["step", "gate", "heartbeat", "loop", "loop-scope", "status-init", "suggest", "knowledge"].includes(command)) {
   const w = await import("../cli/writer.js");
   const fn = {
     step: w.runStep,
@@ -122,6 +123,7 @@ if (["step", "gate", "heartbeat", "loop", "loop-scope", "status-init", "suggest"
     "loop-scope": w.runLoopScope,
     "status-init": w.runStatusInit,
     suggest: w.runSuggest,
+    knowledge: w.runKnowledge,
   }[command];
   process.exit((await fn(rest)) ? 0 : 1);
 }

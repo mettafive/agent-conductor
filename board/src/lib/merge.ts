@@ -7,7 +7,9 @@ import type {
   Column,
   ConductorStep,
   GateCriterion,
+  ImproveMeta,
   LoopState,
+  Scope,
   Snapshot,
 } from "./types";
 
@@ -19,6 +21,18 @@ interface RawStepStatus {
   output?: unknown;
   started_at?: string;
   completed_at?: string;
+  // Phase 0 self-improvement card metadata (on _improve::* / _validate steps)
+  improve?: {
+    step?: string;
+    title?: string;
+    current?: string;
+    proposed?: string;
+    note?: string;
+    observed?: number;
+    scope?: string;
+    structural?: boolean;
+    kind?: string;
+  };
   gate_detail?: Array<{
     criterion?: string;
     kind?: string;
@@ -208,6 +222,62 @@ function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): Conduc
   }));
 }
 
+/** Is this a Phase 0 self-improvement step id? (_improve::… or _validate) */
+function isImproveId(id: string): boolean {
+  return id.startsWith("_improve::") || id === "_validate" || id === "_improve";
+}
+
+/** Build BoardSteps for the auto-injected Phase 0 improvement cards. */
+function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardStep[] {
+  const ids = Object.keys(statusSteps).filter(isImproveId);
+  return ids.map((id, index) => {
+    const st = statusSteps[id] ?? {};
+    const im = st.improve ?? {};
+    const isValidate = id === "_validate";
+    const title = im.title ?? (isValidate ? "Validate conductor" : id.replace("_improve::", ""));
+    const rawStatus = st.status ?? "pending";
+    const gateState = st.gate ?? "pending";
+    const improve: ImproveMeta = {
+      step: im.step,
+      title,
+      current: im.current,
+      proposed: im.proposed,
+      note: im.note,
+      observed: im.observed,
+      scope: im.scope as Scope | undefined,
+      structural: im.structural === true,
+      kind: im.kind ?? (isValidate ? "validate" : "instruction"),
+    };
+    return {
+      id,
+      index,
+      instruction: "",
+      firstLine: title,
+      isCondition: false,
+      requires: [],
+      soft: [],
+      hard: [],
+      isLoop: false,
+      isApproval: false,
+      column: columnFor(rawStatus, gateState),
+      rawStatus,
+      gateState,
+      attempt: st.attempt ?? 1,
+      started_at: st.started_at,
+      completed_at: st.completed_at,
+      improve,
+      phase: "improve",
+      branchTaken: undefined,
+      output_value: undefined,
+      criteria: buildCriteria({ id, soft: [], hard: [] } as unknown as ConductorStep, st.gate_detail),
+      loop: undefined,
+      approvalState: undefined,
+      heartbeat: buildHeartbeat(st),
+      learnings: [],
+    } as BoardStep;
+  });
+}
+
 export function buildModel(snap: Snapshot): BoardModel {
   const status = snap.status ?? {};
   const statusSteps = (status.steps as Record<string, RawStepStatus>) ?? {};
@@ -216,13 +286,15 @@ export function buildModel(snap: Snapshot): BoardModel {
 
   const structure: ConductorStep[] = hasConductor
     ? parsed!.steps
-    : stepsFromStatusOnly(statusSteps);
+    : stepsFromStatusOnly(statusSteps).filter((s) => !isImproveId(s.id));
 
-  const steps: BoardStep[] = structure.map((s) => {
+  const improveSteps = buildImproveSteps(statusSteps);
+
+  const workflowSteps: BoardStep[] = structure.map((s) => {
     const st = statusSteps[s.id] ?? {};
     const rawStatus = st.status ?? "pending";
     const gateState = st.gate ?? "pending";
-    return {
+    const wfStep: BoardStep = {
       ...s,
       column: columnFor(rawStatus, gateState),
       rawStatus,
@@ -230,6 +302,7 @@ export function buildModel(snap: Snapshot): BoardModel {
       attempt: st.attempt ?? 1,
       started_at: st.started_at,
       completed_at: st.completed_at,
+      phase: "workflow",
       branchTaken: st.branch_taken,
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),
@@ -243,16 +316,21 @@ export function buildModel(snap: Snapshot): BoardModel {
         ? st.learnings.filter((x): x is string => typeof x === "string")
         : [],
     };
+    return wfStep;
   });
 
-  const total = steps.length;
-  const done = steps.filter((s) => s.column === "done").length;
+  // The Phase 0 improvement cards lead, then the real workflow steps.
+  const steps: BoardStep[] = [...improveSteps, ...workflowSteps];
+
+  // Progress counts the WORKFLOW only — Phase 0 is a pre-flight, not the work.
+  const total = workflowSteps.length;
+  const done = workflowSteps.filter((s) => s.column === "done").length;
 
   // Weighted progress: a loop contributes one unit per sub-step per iteration,
   // so a 5-page × 4-sub-step loop reads as 20 units instead of one stuck step.
   let unitsTotal = 0;
   let unitsDone = 0;
-  for (const s of steps) {
+  for (const s of workflowSteps) {
     if (s.isLoop && s.loop) {
       const iters = s.loop.iterations;
       const subCount = s.subSteps?.length || iters[0]?.steps.length || 1;
@@ -282,6 +360,7 @@ export function buildModel(snap: Snapshot): BoardModel {
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
     description: parsed?.description ?? (status.description as string | undefined),
+    knowledge: parsed?.knowledge ?? [],
     goal: (status.goal as string | undefined) ?? parsed?.description,
     currentStepGoal: status.current_step_goal as string | undefined,
     lastBeatAt,

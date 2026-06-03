@@ -200,21 +200,9 @@ function archiveIfDone(historyDir, snapshot, archived) {
   const status = snapshot.status;
   if (!status || (status.status !== "done" && status.status !== "failed")) return null;
 
-  // Mandatory suggestions: a successful run must capture what it learned before
-  // it's saved to history. A done run with no suggestions doesn't archive (the
-  // loop has to feed itself) — failed runs are exempt.
-  if (status.status === "done") {
-    const sug = status.suggestions;
-    if (!Array.isArray(sug) || sug.length === 0) {
-      if (!status._noSuggestionsWarned) {
-        console.warn(
-          `[conductor-board] "${status.workflow || "workflow"}" is done but has no suggestions — not archiving until it captures 3–5. (spec §9.2)`,
-        );
-        status._noSuggestionsWarned = true;
-      }
-      return null;
-    }
-  }
+  // Capturing learnings is now enforced by the final step's knowledge gate
+  // (`conductor-board knowledge --min 3`), not the archiver — suggestions are
+  // written to the conductor's knowledge section, not status.json.
 
   const runId =
     status.run_id ||
@@ -628,13 +616,8 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       sendAll("update", snap);
       const rec = archiveIfDone(wf.historyDir, snap, archivedSetFor(wf));
       if (rec) {
-        const merged = mergeInsights(wf, rec.snapshot?.status?.suggestions, rec.run_id, rec.completed_at);
-        // promote/auto-apply proven insights, then push the refreshed ledger
-        const consolidated = consolidateProven(wf);
-        if (merged || consolidated) {
-          sendAll("insights", { workflow: wf.name, ledger: loadInsights(wf) });
-          if (consolidated) sendAll("update", snapshotFor(wf)); // conductor may have changed
-        }
+        // Insights live in the conductor's knowledge section (written by the
+        // agent via `suggest`), not a separate ledger — nothing to merge here.
         sendAll("history", { workflow: wf.name, runs: listHistory(wf.historyDir) });
       }
     }
@@ -743,14 +726,16 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
         wfs().map((wf) => {
           const snap = snapshotFor(wf);
           const st = snap.status?.status;
+          // Phase 0 (_improve::* / _validate) cards are a pre-flight, not the work.
+          const wfSteps = Object.entries(snap.status?.steps ?? {}).filter(
+            ([id]) => !id.startsWith("_improve::") && id !== "_validate" && id !== "_improve",
+          );
           return {
             name: wf.name,
             status: st ?? "idle",
             active: st === "running",
-            done: snap.status?.steps
-              ? Object.values(snap.status.steps).filter((s) => s && s.status === "done").length
-              : 0,
-            total: snap.status?.steps ? Object.keys(snap.status.steps).length : 0,
+            done: wfSteps.filter(([, s]) => s && s.status === "done").length,
+            total: wfSteps.length,
             started_at: snap.status?.started_at ?? null,
             runs: listHistory(wf.historyDir).length,
             hasConductor: !!snap.conductorYaml,

@@ -68,7 +68,12 @@ steps:
   - id: execute-workflow
     instruction: |
       Execute the generated conductor workflow.
-      Create .conductor/status.json with all steps pending and a timestamp run_id.
+      Initialize the board with: conductor-board status-init .conductor/conductor.yaml
+      This also auto-injects a Phase 0 "improvement" pass — if the conductor's
+      knowledge section holds any PROVEN this-conductor insights with current/
+      proposed text, apply each (rewrite the named step), then validate, before
+      step 1. Structural changes (add/remove/reorder a step) wait for human
+      Approve on the board. If nothing is proven, Phase 0 is empty — start the work.
       Set the top-level "goal" from the conductor's description, and refresh
       "current_step_goal" each time current_step changes.
       Walk each step in order, updating status.json after EVERY transition
@@ -88,20 +93,20 @@ steps:
       iteration finishes — don't wait until the loop ends.
       At the START of the run, read .conductor/insights.md (if it exists) to carry
       forward what past runs learned — don't repeat insights already recorded there.
-      Tag heartbeats with an "insight" object when you spot a way to improve the
-      workflow — and give each insight a "scope": this-conductor | upstream |
-      template | tooling | corpus, so cross-cutting learnings aren't lost. Before
-      setting status to "done", review your insight-tagged heartbeats and write
-      3-5 "suggestions" to status.json (use conductor-board suggest "..." --scope ...)
-      — the board merges them into the persistent .conductor/insights.md ledger,
-      escalates the ones it keeps seeing, and auto-applies proven patterns.
-      Set the top-level status to "done" when the last step completes.
+      At run end, before setting status "done", write what you learned into the
+      conductor's knowledge section — the conductor IS the knowledge base. Use:
+        conductor-board suggest "title" --scope <scope> [--step S --current X --proposed Y]
+      --scope is REQUIRED (this-conductor | upstream | template | tooling | corpus).
+      A repeat sighting escalates emerging -> proven (3x); proven this-conductor
+      insights auto-apply in the next run's Phase 0. Browse them on the board's
+      ✨ Insights page. Set the top-level status to "done" when the last step
+      completes.
     requires: [convert-to-conductor]
     gate:
       - name: "Status file exists"
         check: "test -f .conductor/status.json"
       - name: "Workflow completed successfully"
         check: "node -p \"JSON.parse(require('fs').readFileSync('.conductor/status.json','utf8')).status\" | grep done"
-      - name: "At least 3 suggestions written"
-        check: "node -e \"process.exit((JSON.parse(require('fs').readFileSync('.conductor/status.json','utf8')).suggestions||[]).length>=3?0:1)\""
+      - name: "Captured at least 3 knowledge entries"
+        check: "npx conductor-board knowledge --min 3"
       - "Answered: what did I learn that does NOT fit a step of this workflow? (upstream, template, tooling, or corpus insights logged with scope tags)"

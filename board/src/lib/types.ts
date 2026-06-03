@@ -86,6 +86,29 @@ export interface LoopState {
 /** Where an insight applies — drives whether it can be auto-applied (§5.1). */
 export type Scope = "this-conductor" | "upstream" | "template" | "tooling" | "corpus";
 
+/** Lifecycle of a knowledge entry (§10.3). */
+export type KnowledgeStatus = "emerging" | "proven" | "applied" | "open";
+
+/**
+ * One durable learning, stored in the conductor file's `knowledge:` section —
+ * the conductor IS the knowledge base. Accumulates across runs; proven
+ * this-conductor entries with current/proposed auto-apply in the Phase 0
+ * improvement pass (§10).
+ */
+export interface KnowledgeEntry {
+  title: string;
+  status: KnowledgeStatus;
+  scope: Scope;
+  observed: number;
+  step?: string;
+  /** instruction | gate | new_step | remove_step | reorder — structural ones need approval */
+  type?: string;
+  current?: string;
+  proposed?: string;
+  run_applied?: string;
+  note?: string;
+}
+
 export interface Insight {
   type: string;
   seed: string;
@@ -164,6 +187,20 @@ export interface InsightLedger {
   items: InsightItem[];
 }
 
+/** Diff metadata for an auto-injected Phase 0 improvement card (§10.2). */
+export interface ImproveMeta {
+  step?: string; // the workflow step this improvement modifies
+  title: string;
+  current?: string;
+  proposed?: string;
+  note?: string;
+  observed?: number;
+  scope?: Scope;
+  /** structural changes (add/remove/reorder step) need human approval */
+  structural?: boolean;
+  kind?: string; // instruction | gate | new_step | remove_step | reorder | validate
+}
+
 export interface BoardStep extends ConductorStep {
   column: Column;
   rawStatus: string; // pending | running | done | failed | (unknown)
@@ -171,6 +208,10 @@ export interface BoardStep extends ConductorStep {
   attempt: number;
   started_at?: string;
   completed_at?: string;
+  /** present on auto-injected _improve::* / _validate Phase 0 cards */
+  improve?: ImproveMeta;
+  /** "improve" for the Phase 0 self-improvement cards, else "workflow" */
+  phase: "improve" | "workflow";
   branchTaken?: string;
   output_value?: unknown;
   criteria: GateCriterion[];
@@ -184,6 +225,7 @@ export interface BoardModel {
   workflow: string;
   description?: string;
   goal?: string;
+  knowledge: KnowledgeEntry[];
   currentStepGoal?: string;
   lastBeatAt?: string;
   insightCount: number;

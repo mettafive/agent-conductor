@@ -26,12 +26,14 @@ function StepTree({
 }) {
   const model = buildModel(snap);
   if (!model.steps.length) return null;
-  return (
-    <div className="ml-2 mt-1 space-y-0.5 border-l border-line/60 pl-2">
-      {model.steps.map((s) => {
+  const improve = model.steps.filter((s) => s.phase === "improve");
+  const workflow = model.steps.filter((s) => s.phase !== "improve");
+
+  const renderStep = (s: (typeof model.steps)[number]) => {
         // a step is "on" when it's the selection, or when an iteration of this
         // loop is selected ("loopId::item") so the parent stays highlighted too
         const on = activeStep === s.id || (!!activeStep && activeStep.startsWith(`${s.id}::`));
+        const label = s.phase === "improve" ? s.improve?.title ?? s.id.replace("_improve::", "") : s.id;
         return (
           <div key={s.id}>
             <button
@@ -42,9 +44,10 @@ function StepTree({
             >
               <span className="w-3 shrink-0 text-center">{TREE_GLYPH[s.column] ?? "·"}</span>
               <span
+                title={label}
                 className={`min-w-0 flex-1 truncate ${s.column === "running" ? "text-cyan" : on ? "text-chalk" : "text-mist-2"}`}
               >
-                {s.id}
+                {label}
               </span>
               {s.isLoop && s.loop && (
                 <span className="shrink-0 text-line-2">
@@ -80,7 +83,27 @@ function StepTree({
             )}
           </div>
         );
-      })}
+  };
+
+  const sectionLabel = (text: string) => (
+    <div className="mt-1.5 mb-0.5 flex items-center gap-1.5 px-1">
+      <span className="font-mono text-[8.5px] font-semibold uppercase tracking-[0.16em] text-line-2">
+        {text}
+      </span>
+      <span className="h-px flex-1 bg-line/50" />
+    </div>
+  );
+
+  return (
+    <div className="ml-2 mt-1 space-y-0.5 border-l border-line/60 pl-2">
+      {improve.length > 0 && (
+        <>
+          {sectionLabel("Improvement")}
+          {improve.map(renderStep)}
+          {sectionLabel("Workflow")}
+        </>
+      )}
+      {workflow.map(renderStep)}
     </div>
   );
 }
