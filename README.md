@@ -115,6 +115,12 @@ npx conductor-board validate <file>        # check a conductor against the spec
 required keys, unique ids, well-formed gates, condition/loop shape, dangling
 references, dependency cycles, and unreachable steps.
 
+> Prefer fewer keystrokes? `npx 3042` is an alias for `npx conductor-board`.
+
+**Run several workflows at once** by giving each its own subdirectory —
+`.conductor/<name>/conductor.yaml` + `status.json`. The board shows them as
+grouped, switchable workflows (the flat `.conductor/status.json` still works).
+
 The board watches `.conductor/status.json` and updates automatically as the agent
 moves through **Pending → Running → Gate Check → Done** (and **Failed**, when a
 gate can't be satisfied).
@@ -163,6 +169,13 @@ the execution contract — lives in **[`spec/conductor-spec.md`](./spec/conducto
   `npx conductor-board` serves the board, `init` scaffolds a conductor, and
   `validate` checks one against the spec. Plus [CONDUCTOR.md](./CONDUCTOR.md), the
   self-contained file you point any agent at.
+- **Phase 4 — self-bootstrapping setup.** ✅ Point any agent at
+  [`setup.conductor.yaml`](./setup.conductor.yaml) and it sets up, converts your
+  skill, validates, and runs it. Plus a [`templates/`](./templates) library.
+- **Phase 5 — multi-workflow workspace + self-improvement.** ✅ Run many workflows
+  side by side; **heartbeats** carry **insights** that become **optimization
+  suggestions** you apply back to the conductor — the workflow is refined by its
+  own execution history.
 
 ## Design principles
 

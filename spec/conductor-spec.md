@@ -449,6 +449,26 @@ header so the human always sees the destination.
 > For detailed guidance on writing effective heartbeats, see the
 > [Heartbeat Guide](./heartbeat-guide.md).
 
+### 6.6 Multiple workflows
+
+To run several workflows side by side, give each its own subdirectory:
+
+```
+.conductor/
+├── daily-price/
+│   ├── conductor.yaml
+│   ├── status.json
+│   └── history/
+└── treatment-page/
+    ├── conductor.yaml
+    └── status.json
+```
+
+The board discovers every subdirectory containing a `conductor.yaml` and/or
+`status.json` and shows them as separate workflows. The flat path
+`.conductor/status.json` (no subdirectory) is still accepted for backwards
+compatibility — new workflows should prefer the subdirectory convention.
+
 ---
 
 ## 7. Execution model (the contract, in full)

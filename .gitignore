@@ -32,3 +32,6 @@ npm-debug.log*
 
 # dogfood run dir for the Phase 5 build
 .phase5/
+
+# conductor apply-suggestion backups
+**/conductor.yaml.bak.*

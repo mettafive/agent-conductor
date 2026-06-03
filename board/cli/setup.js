@@ -84,6 +84,9 @@ steps:
       AND the goal; use [text](url) links for any PRs or pages you produce).
       For loop steps, update "completed" and the "iterations" object as EACH
       iteration finishes — don't wait until the loop ends.
+      Tag heartbeats with an "insight" object when you spot a way to improve the
+      workflow. Before setting status to "done", review your insight-tagged
+      heartbeats and write 3-5 optimization "suggestions" to status.json.
       Set the top-level status to "done" when the last step completes.
     requires: [convert-to-conductor]
     gate:

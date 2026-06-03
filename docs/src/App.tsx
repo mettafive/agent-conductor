@@ -395,7 +395,10 @@ export function App() {
             </Reveal>
           </div>
           <p className="mt-6 text-center text-sm text-mist">
-            Every beat is append-only — the run's audit trail. See the{" "}
+            Append-only audit trail — and when a beat carries an{" "}
+            <span className="text-amber">💡 insight</span>, it becomes a post-run
+            optimization you apply back to the conductor. The workflow improves
+            itself. See the{" "}
             <a
               href="https://github.com/mettafive/agent-conductor/blob/main/spec/heartbeat-guide.md"
               target="_blank"
