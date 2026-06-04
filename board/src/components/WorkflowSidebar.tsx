@@ -263,8 +263,12 @@ export function WorkflowSidebar({
       <div className="flex-1 overflow-y-auto board-scroll px-4 py-4">
         {activeWf && liveModel ? (
           <>
-            {/* active workflow — name + status · elapsed */}
-            <button onClick={() => onPickWorkflow(activeWf)} className="block w-full px-2 text-left">
+            {/* active workflow — name + status · elapsed (clickable: jump to live) */}
+            <button
+              onClick={() => onPickWorkflow(activeWf)}
+              title="Back to the live run"
+              className="block w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-panel-2/70"
+            >
               <div className="truncate text-[15px] font-semibold text-chalk">{activeWf}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-mist">
                 <span>{STATUS_WORD[overallStatus] ?? overallStatus}</span>
@@ -327,7 +331,11 @@ export function WorkflowSidebar({
                   {runs.map((r: HistoryRun) => {
                     const active = activeWf === name && selectedRun === r.run_id;
                     const failed = r.status === "failed";
-                    const label = r.run_name || fmtDate(r.completed_at || r.archived_at || r.started_at);
+                    const label =
+                      r.run_name?.trim() ||
+                      fmtDate(r.completed_at || r.archived_at || r.started_at) ||
+                      r.run_id ||
+                      "Untitled run";
                     const dur = fmtDurCompact(r.started_at, r.completed_at);
                     return (
                       <div key={r.run_id}>

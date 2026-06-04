@@ -52,14 +52,31 @@ export function resolveActiveUnit(step: BoardStep): ActiveUnit {
   };
 }
 
-/** The step the main area auto-follows: the current step, else the running one,
- *  else (on a finished run) the last step — so the final card lingers a beat
- *  before the summary instead of snapping to "preparing". */
+/** The workflow step with the most recent heartbeat — i.e. wherever the agent last narrated. */
+function latestBeatStep(workflow: BoardStep[]): BoardStep | null {
+  let best: BoardStep | null = null;
+  let bestAt = "";
+  for (const s of workflow) {
+    const last = s.heartbeat[s.heartbeat.length - 1];
+    if (last && last.at > bestAt) {
+      bestAt = last.at;
+      best = s;
+    }
+  }
+  return best;
+}
+
+/** The step the main area auto-follows. A running step wins; otherwise we follow wherever the
+ *  agent LAST narrated (the most recent heartbeat) so any activity lights up the live view —
+ *  it never snaps to a dead "preparing…" while cards are being written, and Esc lands here.
+ *  Only with zero heartbeats anywhere (truly nothing yet) do we fall through to idle/last. */
 export function followStep(model: BoardModel): BoardStep | null {
   const workflow = model.steps.filter((s) => s.phase === "workflow");
   return (
-    workflow.find((s) => s.id === model.currentStep) ??
     workflow.find((s) => s.column === "running") ??
+    workflow.find((s) => s.id === model.currentStep && s.heartbeat.length > 0) ??
+    latestBeatStep(workflow) ??
+    workflow.find((s) => s.id === model.currentStep) ??
     (model.overallStatus === "done" || model.overallStatus === "failed"
       ? (workflow[workflow.length - 1] ?? null)
       : null)

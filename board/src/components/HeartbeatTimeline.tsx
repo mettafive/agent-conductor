@@ -88,9 +88,9 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
       )}
 
       {shown.length > 0 && (
-        <div className="max-h-72 space-y-1.5 overflow-y-auto board-scroll">
-          {/* Related beats are grouped into activities, newest first, so there's always a
-              coherent "current activity" at the top instead of a flat firehose. */}
+        <div className="max-h-96 space-y-2 overflow-y-auto board-scroll">
+          {/* Beats grouped into activity cards, newest first — the live card streams its rows,
+              closed cards collapse to their summary, so there's always a clear current activity. */}
           {[...groupBeats(shown)].reverse().map((g, gi) => (
             <GroupBlock
               key={g.id}
@@ -99,7 +99,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
               cardNotes={(notes ?? []).filter((n) => n.card === g.id && n.status !== "removed")}
               workflow={workflow}
               step={step}
-              defaultOpen={gi === 0}
+              active={gi === 0 && running && !g.hasFinal}
               running={running}
               now={now}
               showIter={filter === "all"}
@@ -111,136 +111,93 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
   );
 }
 
-/** One activity CARD: the intent (title) is the hero; the latest detail beat is the live
- *  status; earlier detail beats collapse; a comment box annotates the activity. */
+/** One activity CARD — a clean black block the flow manager reads top-to-bottom:
+ *  the card NAME, then its body (an ACTIVE card streams its heartbeat rows live; a CLOSED card
+ *  shows its SUMMARY instead — the overview replaces the stream), then COMMENTS at the bottom. */
 function GroupBlock({
   group,
   overview,
   cardNotes,
   workflow,
   step,
-  defaultOpen,
+  active,
   running,
   now,
   showIter,
 }: {
   group: BeatGroup;
-  /** parallel-agent overview for this card — when present, the card defaults to it */
+  /** parallel-agent summary for this card — replaces the stream once the card closes */
   overview?: string;
   /** the developer's notes/directives pinned to this card (a thread) */
   cardNotes?: DeveloperNote[];
   workflow?: string;
   step?: string;
-  defaultOpen: boolean;
+  /** the live card — streams its rows; closed cards show their summary */
+  active: boolean;
   running: boolean;
   now: number;
   showIter: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  // a summarized card defaults to its overview; toggle to the raw beats
-  const [view, setView] = useState<"overview" | "beats">(overview ? "overview" : "beats");
-
+  const [expanded, setExpanded] = useState(false);
   const notes = cardNotes ?? [];
   const canComment = !!workflow && !!step;
-
-  const detail = detailBeats(group);
-  const status = detail.at(-1); // the current/last thing happening within this activity
-  const earlier = detail.slice(0, -1);
+  const rows = detailBeats(group); // the heartbeats under the card name
   const iter = showIter ? group.beats[0]?.iteration : undefined;
-  const showOverview = view === "overview" && !!overview;
-  // colour carries STATE only (amber = insight, mint = handoff); everything else stays grayscale
-  const accent = group.insightCount
-    ? "border-amber/50 bg-amber/[0.04]"
-    : group.hasFinal
-      ? "border-mint/40"
-      : "border-line-2";
+  const handoff = group.beats.find((b) => b.finalBeat)?.handoff;
+
+  // closed + summarized → the summary replaces the stream; otherwise show the rows
+  // (active = full live stream; closed-but-unsummarized = last couple, expandable).
+  const asSummary = !!overview && !active;
+  const collapsible = !active && rows.length > 3;
+  const shownRows = collapsible && !expanded ? rows.slice(-2) : rows;
 
   return (
-    <div className={`rounded-md border-l-2 pl-2.5 ${accent}`}>
-      {/* card heading — the intent */}
-      <div className="flex items-start gap-2 py-1.5">
-        <span className="mt-[5px] shrink-0">
-          {group.hasFinal ? (
-            <span className="font-mono text-[10px] leading-none text-mint">→</span>
-          ) : (
-            <span
-              className={`block h-1.5 w-1.5 rounded-full ${group.insightCount ? "bg-amber" : "bg-line-2"}`}
-            />
-          )}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
-            <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk">
-              {renderNote(group.title)}
-            </span>
-          </div>
-          {showOverview ? (
-            <p className="mt-1 text-[11.5px] leading-relaxed text-mist-2">{overview}</p>
-          ) : (
-            <>
-              {status && (
-                <p className="mt-0.5 text-[11px] leading-snug text-mist">
-                  {renderNote(status.note)}
-                  {status.insight && (
-                    <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {status.insight.seed}</span>
-                  )}
-                </p>
-              )}
-              {group.hasFinal && status?.handoff?.to && (
-                <p className="mt-0.5 font-mono text-[9px] text-mint/80">→ handoff to {status.handoff.to}</p>
-              )}
-            </>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {overview && (
-            <div className="flex overflow-hidden rounded border border-line font-mono text-[8.5px] leading-none">
-              {(["overview", "beats"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`px-1.5 py-0.5 transition-colors ${
-                    view === v ? "bg-line-2 text-chalk" : "text-dim hover:text-mist"
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          )}
-          {notes.length > 0 && (
-            <span className="shrink-0 font-mono text-[9px] text-mist" title={`${notes.length} note${notes.length > 1 ? "s" : ""}`}>
-              ✎ {notes.length}
-            </span>
-          )}
-          <Stamp iso={group.endedAt} running={running} now={now} />
-          {!showOverview && earlier.length > 0 && (
-            <button onClick={() => setOpen((o) => !o)} className="font-mono text-[9px] text-dim transition-colors hover:text-mist">
-              {open ? "▾" : "▸"} {detail.length}
-            </button>
-          )}
-        </div>
+    <div className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+      {/* card NAME + state + timestamp */}
+      <div className="flex items-baseline gap-2">
+        {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
+        {group.hasFinal && <span className="shrink-0 font-mono text-[10px] leading-none text-mint">→</span>}
+        {group.insightCount > 0 && (
+          <span className="shrink-0 h-1.5 w-1.5 translate-y-px rounded-full bg-amber" title="carries an insight" />
+        )}
+        <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk">{renderNote(group.title)}</span>
+        {active && <span className="shrink-0 font-mono text-[9px] tracking-wide text-mint">● live</span>}
+        <Stamp iso={group.endedAt} running={running} now={now} />
       </div>
 
-      {/* expanded — the earlier detail beats (beats view only) */}
-      {!showOverview && open && earlier.length > 0 && (
-        <div className="space-y-1 border-l border-line pb-1.5 pl-3.5">
-          {[...earlier].reverse().map((h, i) => (
+      {/* body — the summary, or the heartbeat-row stream */}
+      {asSummary ? (
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-2">{overview}</p>
+      ) : rows.length > 0 ? (
+        <div className="mt-2 space-y-1 border-l border-line pl-2.5">
+          {shownRows.map((h, i) => (
             <div key={i} className="flex items-start gap-2">
               <Stamp iso={h.at} running={running} now={now} />
-              <span className="flex-1 text-[10.5px] leading-snug text-mist">
+              <span className="flex-1 text-[11px] leading-snug text-mist-2">
                 {renderNote(h.note)}
                 {h.insight && <span className="mt-0.5 block text-[9.5px] italic text-amber/90">↳ {h.insight.seed}</span>}
               </span>
             </div>
           ))}
+          {collapsible && (
+            <button
+              onClick={() => setExpanded((e) => !e)}
+              className="font-mono text-[9px] text-dim transition-colors hover:text-mist"
+            >
+              {expanded ? "show less" : `+ ${rows.length - shownRows.length} earlier beats`}
+            </button>
+          )}
         </div>
-      )}
+      ) : null}
 
-      {/* developer notes / directives — a managed thread, persisted server-side (flow-manager loop) */}
+      {/* handoff to the next step */}
+      {handoff?.to && <p className="mt-1.5 font-mono text-[9px] text-mint/80">→ handoff to {handoff.to}</p>}
+
+      {/* comments — prominent, at the bottom: the flow manager's tweak point */}
       {canComment && (
-        <NoteThread notes={notes} workflow={workflow!} step={step!} card={group.id} cardTitle={group.title} />
+        <div className="mt-2.5 border-t border-line pt-2">
+          <NoteThread notes={notes} workflow={workflow!} step={step!} card={group.id} cardTitle={group.title} />
+        </div>
       )}
     </div>
   );
@@ -329,8 +286,11 @@ function NoteThread({
           onCancel={reset}
         />
       ) : (
-        <button onClick={startAdd} className="font-mono text-[9px] text-dim transition-colors hover:text-mist">
-          + note
+        <button
+          onClick={startAdd}
+          className="flex w-full items-center gap-1.5 rounded border border-dashed border-line-2 px-2 py-1 text-left font-mono text-[9.5px] text-dim transition-colors hover:border-mist/40 hover:text-mist"
+        >
+          <span className="text-mist">✎</span> add a note or directive…
         </button>
       )}
     </div>
@@ -404,8 +364,18 @@ function NoteEditor({
         rows={2}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="Leave a note on this card… (steer the next run to make it a directive)"
-        className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-mist/40"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            onSave(); // Enter saves; Shift+Enter inserts a newline
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation(); // don't bubble to the board-level Esc (back-to-live)
+            onCancel();
+          }
+        }}
+        placeholder="Note… (Enter saves · Shift+Enter for a new line · steer the next run to make it a directive)"
+        className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1.5 text-[11px] leading-snug text-mist-2 outline-none focus:border-mist/40"
       />
       <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
         <label className="flex items-center gap-1 text-mist">

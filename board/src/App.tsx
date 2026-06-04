@@ -154,6 +154,9 @@ export function App() {
   const backToLive = () => {
     setSelectedRun(null);
     setSelectedStep(null);
+    // drop DOM focus too, or the previously-clicked step row keeps its focus outline (looks "still selected")
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement)
+      document.activeElement.blur();
   };
 
   // ⌘, toggles settings; Esc closes settings, then returns to the live run.
