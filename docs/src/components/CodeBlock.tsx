@@ -43,7 +43,7 @@ export function CodeBlock({ code, lang = "yaml", filename, className }: Props) {
         <button
           onClick={copy}
           aria-describedby={id}
-          className="rounded-md border border-line px-2.5 py-1 font-mono text-[11px] text-mist transition-colors hover:border-line-2 hover:text-chalk"
+          className="w-[4.75rem] shrink-0 rounded-md border border-line py-1 text-center font-mono text-[11px] text-mist transition-colors hover:border-line-2 hover:text-chalk"
         >
           {copied ? "copied ✓" : "copy"}
         </button>

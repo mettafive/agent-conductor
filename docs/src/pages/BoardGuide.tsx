@@ -502,7 +502,7 @@ export function BoardGuide() {
             </section>
 
             {/* CTA */}
-            <section className="rounded-2xl border border-line bg-gradient-to-b from-panel/50 to-ink-2 p-8 text-center">
+            <section className="rounded-2xl border border-line bg-panel/40 p-8 text-center">
               <h2 className="text-2xl font-semibold tracking-tight text-chalk">
                 Start the board.
               </h2>
@@ -521,7 +521,7 @@ export function BoardGuide() {
                   href={`${GH}/blob/main/spec/conductor-spec.md`}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-xl bg-gradient-to-b from-iris to-iris-deep px-5 py-3 text-sm font-medium text-white shadow-lg shadow-iris/20 transition-transform hover:-translate-y-0.5"
+                  className="rounded-xl bg-chalk px-5 py-3 text-sm font-medium text-ink transition-colors hover:bg-white"
                 >
                   Read the spec ↗
                 </a>

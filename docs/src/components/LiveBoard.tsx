@@ -130,7 +130,7 @@ export function LiveBoard() {
                 <span className="text-[11px] text-mist">{COL_LABEL[c]}</span>
                 <span className="ml-auto text-[11px] tabular-nums text-dim">{cards.length}</span>
               </div>
-              <div className="min-h-[3.5rem]">
+              <div className="min-h-[10.5rem]">
                 {cards.map(({ sub }) => (
                   <div
                     key={`${item}-${sub.id}-${c}`}
