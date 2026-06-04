@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import type { BoardStep } from "../lib/types";
+import { Icon } from "./Icon";
+import { Led } from "./Led";
 
 export type Decision = { label: string; decision: "approved" | "rejected" };
-
-const EASE = [0.22, 1, 0.36, 1] as const;
 
 export function ApprovalCard({
   step,
@@ -53,20 +53,16 @@ export function ApprovalCard({
     <motion.div
       layout
       layoutId={step.id}
-      initial={{ opacity: 0, scale: 0.96, y: 4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96, y: -2 }}
-      transition={{ duration: 0.24, ease: EASE }}
-      className="rounded-xl border border-amber/40 bg-amber/[0.06] px-3 py-2.5"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -2 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className="rounded-lg border border-line bg-panel px-3 py-2.5"
     >
-      <div className="flex items-center gap-2">
-        <span className="grid h-5 w-5 place-items-center rounded-md bg-amber/15 text-amber">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber" />
-        </span>
-        <span className="flex-1 truncate font-mono text-[12.5px] text-chalk">{step.id}</span>
-        <span className="rounded border border-amber/40 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] text-amber">
-          {decided ? "decided" : "human"}
-        </span>
+      <div className="flex items-center gap-2.5">
+        <Led state={decided ? "done" : "stalled"} />
+        <span className="flex-1 truncate text-[13px] text-chalk">{step.id}</span>
+        <span className="text-[11px] text-dim">{decided ? "decided" : "needs approval"}</span>
       </div>
 
       {appr?.prompt && (
@@ -86,7 +82,7 @@ export function ApprovalCard({
               >
                 {decided ? (
                   <span className={dec === "approved" ? "text-mint" : "text-rose"}>
-                    {dec === "approved" ? "✓" : "✗"}
+                    <Icon name={dec === "approved" ? "check" : "cross"} size={13} />
                   </span>
                 ) : (
                   <input

@@ -10,7 +10,7 @@ export type MonitorMode = "min" | "expanded" | "hidden";
 
 const MODE_KEY = "cb-monitor";
 const STALL_SECONDS = 90;
-const WF_COLORS = ["text-cyan", "text-mint", "text-amber", "text-rose", "text-mist-2"];
+const WF_COLORS = ["text-chalk", "text-mist-2", "text-mist", "text-mist-2", "text-mist"];
 
 function clock(iso: string): string {
   const d = new Date(iso);
@@ -118,6 +118,7 @@ export function HeartbeatMonitor({
   const wfColor = (name: string) => WF_COLORS[Math.max(0, order.indexOf(name)) % WF_COLORS.length];
   const multi = order.length > 1;
   const streamKey = arrival?.beat.key;
+  const latest = beats[beats.length - 1];
 
   useEffect(() => {
     try {
@@ -157,14 +158,14 @@ export function HeartbeatMonitor({
   }
 
   if (mode === "min") {
-    // The thin bottom bar: the heart, a stall dot, mute, and a way to expand —
-    // nothing else (Part 1.3). The heart is the only decorative element.
+    // The 36px bottom bar: the heart, the latest beat streaming in, and a way to
+    // expand. The heart is the one colour; status comes through the stall/conn dots.
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className="flex shrink-0 items-center gap-2.5 border-t border-line bg-ink-2/80 px-4 py-1.5 backdrop-blur"
+        transition={{ duration: 0.25, ease: "easeOut" }}
+        className="flex h-9 shrink-0 items-center gap-2.5 border-t border-line bg-panel px-4"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={14} />
         <StallDot lastBeatIso={lastBeatIso} />
@@ -173,9 +174,22 @@ export function HeartbeatMonitor({
           onClick={() => onMode("expanded")}
           title="Expand heartbeat monitor (Ctrl+`)"
           aria-label="Expand heartbeat monitor"
-          className="flex flex-1 items-center justify-end gap-2 text-dim transition-colors hover:text-chalk"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <span className="font-mono text-[10px]">▲</span>
+          {latest ? (
+            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-mist">
+              {latest.key === streamKey ? (
+                <TypewriterText text={plainNote(latest.note)} />
+              ) : (
+                plainNote(latest.note)
+              )}
+            </span>
+          ) : (
+            <span className="flex-1 font-mono text-[12px] text-dim">
+              waiting for the first heartbeat…
+            </span>
+          )}
+          <span className="shrink-0 font-mono text-[10px] text-dim">▲</span>
         </button>
         <MuteButton muted={muted} onToggle={onToggleMute} />
       </motion.div>
@@ -284,9 +298,9 @@ function ExpandedMonitor({
     <motion.div
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
       style={{ height }}
-      className="relative flex shrink-0 flex-col border-t border-line bg-[#08080d] font-mono"
+      className="relative flex shrink-0 flex-col border-t border-line bg-ink-2 font-mono"
     >
       <div
         onPointerDown={startResize}
@@ -351,7 +365,7 @@ function ExpandedMonitor({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="board-scroll monitor-grain relative min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[11.5px] leading-relaxed"
+        className="board-scroll relative min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[13px] leading-relaxed"
       >
         {shown.length === 0 ? (
           <div className="grid h-full place-items-center text-[11px] text-dim">
@@ -364,10 +378,10 @@ function ExpandedMonitor({
               {multi && (
                 <span className={`shrink-0 select-none ${wfColor(b.workflow)}`}>{b.workflow}</span>
               )}
-              <span className="w-32 shrink-0 select-none truncate text-cyan/80" title={b.step}>
+              <span className="w-32 shrink-0 select-none truncate text-mist" title={b.step}>
                 {b.step}
               </span>
-              <span className="min-w-0 flex-1 text-mist-2">
+              <span className="min-w-0 flex-1 text-chalk">
                 {b.key === streamKey ? (
                   <TypewriterText text={plainNote(b.note)} />
                 ) : (

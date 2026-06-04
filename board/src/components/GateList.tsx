@@ -1,10 +1,22 @@
 import type { GateCriterion } from "../lib/types";
+import { Icon } from "./Icon";
+import { Led } from "./Led";
 
-/** Pass / fail / not-yet mark — clean characters, no emoji (Part 2). */
+/** Pass / fail / not-yet mark — thin SVG icons + a pending LED. */
 function Mark({ passed }: { passed?: boolean | null }) {
-  if (passed === true) return <span className="text-mint">✓</span>;
-  if (passed === false) return <span className="text-rose">✗</span>;
-  return <span className="text-dim">○</span>;
+  if (passed === true)
+    return (
+      <span className="text-mint">
+        <Icon name="check" size={13} />
+      </span>
+    );
+  if (passed === false)
+    return (
+      <span className="text-rose">
+        <Icon name="cross" size={13} />
+      </span>
+    );
+  return <Led state="pending" />;
 }
 
 /**

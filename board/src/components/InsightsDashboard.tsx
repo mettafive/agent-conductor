@@ -2,9 +2,9 @@ import { useState } from "react";
 import type { KnowledgeEntry } from "../lib/types";
 
 const STATUS_DOT: Record<string, string> = {
-  applied: "bg-mint",
-  proven: "bg-cyan",
-  emerging: "bg-amber",
+  applied: "bg-mint", // green — settled, in the conductor
+  proven: "bg-amber", // amber — will auto-apply next run
+  emerging: "bg-mist", // grey — still watching
   open: "bg-dim",
 };
 

@@ -4,24 +4,22 @@ import { useNow } from "../lib/useNow";
 import { buildModel } from "../lib/merge";
 import { iterationColumn } from "../lib/loop";
 import { clockSince } from "../lib/view";
+import { Led } from "./Led";
+import { Icon } from "./Icon";
 
-/**
- * Status glyph for the progress tree (Part 1.1 / Part 2). No emoji — a muted
- * green check for done, a solid accent dot for active, a dim dot for pending.
- */
-function Glyph({ col }: { col: string }) {
-  if (col === "done") return <span className="text-mint/80">✓</span>;
-  if (col === "failed") return <span className="text-rose">✗</span>;
-  if (col === "gate") return <span className="text-amber">●</span>;
-  if (col === "running") return <span className="text-cyan">●</span>;
-  return <span className="text-dim">·</span>;
+const SEL = "bg-line-2/40"; // selected row — a neutral surface lift, never colour
+
+function textFor(col: string, on: boolean): string {
+  if (col === "running" || col === "gate") return "text-chalk";
+  if (on) return "text-chalk";
+  if (col === "pending") return "text-dim";
+  return "text-mist"; // done / other
 }
 
 /**
  * The clickable step + loop-iteration tree — the only navigator for the main
- * area. Checkmarks and dots, no badges, no counts, no progress fractions; the
- * icons carry the state. Iteration names are spelled out in full, never
- * truncated (Part 1.1).
+ * area. Status LEDs carry every bit of state; no badges, counts or fractions.
+ * Iteration names are spelled out in full, never truncated.
  */
 function StepTree({
   snap,
@@ -35,8 +33,8 @@ function StepTree({
   const model = buildModel(snap);
   if (!model.steps.length) return null;
 
-  // §7: improvement runs silently. Only structural changes (needing approval)
-  // appear in the tree; text/read-knowledge/validate cards are hidden.
+  // §7: improvement runs silently — only structural changes (needing approval)
+  // appear in the tree.
   const improve = model.steps.filter((s) => s.phase === "improve" && s.improve?.structural === true);
   const workflow = model.steps.filter((s) => s.phase !== "improve");
 
@@ -47,30 +45,18 @@ function StepTree({
       <div key={s.id}>
         <button
           onClick={() => onSelectStep?.(s.id)}
-          className={`flex w-full items-start gap-2 rounded px-1.5 py-1 text-left font-mono text-[12px] leading-snug transition-colors ${
-            on ? "bg-cyan/10" : "hover:bg-panel/60"
+          className={`flex w-full items-start gap-2.5 rounded px-2 py-1 text-left text-[13px] leading-snug transition-colors duration-150 ${
+            on ? SEL : "hover:bg-panel-2/60"
           }`}
         >
-          <span className="mt-px w-3 shrink-0 text-center text-[11px]">
-            <Glyph col={s.column} />
+          <span className="mt-1.5">
+            <Led state={s.column} />
           </span>
-          <span
-            className={`min-w-0 flex-1 ${
-              s.column === "running" || s.column === "gate"
-                ? "text-chalk"
-                : on
-                  ? "text-chalk"
-                  : s.column === "pending"
-                    ? "text-dim"
-                    : "text-mist-2"
-            }`}
-          >
-            {label}
-          </span>
+          <span className={`min-w-0 flex-1 ${textFor(s.column, on)}`}>{label}</span>
         </button>
 
         {s.isLoop && s.loop && s.loop.iterations.length > 0 && (
-          <div className="ml-3.5 space-y-0.5 border-l border-line/40 pl-2.5">
+          <div className="ml-5 space-y-0.5">
             {s.loop.iterations.map((it) => {
               const c = iterationColumn(it);
               const iterId = `${s.id}::${it.item}`;
@@ -79,26 +65,14 @@ function StepTree({
                 <button
                   key={it.item}
                   onClick={() => onSelectStep?.(iterId)}
-                  className={`flex w-full items-start gap-2 rounded px-1.5 py-0.5 text-left font-mono text-[11.5px] leading-snug transition-colors ${
-                    onIter ? "bg-cyan/10" : "hover:bg-panel/60"
+                  className={`flex w-full items-start gap-2.5 rounded px-2 py-0.5 text-left text-[12.5px] leading-snug transition-colors duration-150 ${
+                    onIter ? SEL : "hover:bg-panel-2/60"
                   }`}
                 >
-                  <span className="mt-px w-3 shrink-0 text-center text-[11px]">
-                    <Glyph col={c} />
+                  <span className="mt-1.5">
+                    <Led state={c} />
                   </span>
-                  <span
-                    className={`min-w-0 flex-1 ${
-                      c === "running" || c === "gate"
-                        ? "text-chalk"
-                        : onIter
-                          ? "text-chalk"
-                          : c === "pending"
-                            ? "text-dim"
-                            : "text-mist-2"
-                    }`}
-                  >
-                    {it.item}
-                  </span>
+                  <span className={`min-w-0 flex-1 ${textFor(c, onIter)}`}>{it.item}</span>
                 </button>
               );
             })}
@@ -125,10 +99,8 @@ function StepTree({
 function SectionRule({ text }: { text: string }) {
   return (
     <div className="mb-1 mt-1 flex items-center gap-2 px-1">
-      <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-dim">
-        {text}
-      </span>
-      <span className="h-px flex-1 bg-line/50" />
+      <span className="text-[12px] text-dim">{text}</span>
+      <span className="h-px flex-1 bg-line" />
     </div>
   );
 }
@@ -220,7 +192,6 @@ export function WorkflowSidebar({
   const liveModel = activeWf ? buildModel(workflows[activeWf].snap) : null;
   const others = order.filter((n) => n !== activeWf);
 
-  // every workflow with at least one past run to browse
   const historyGroups = order
     .map((name) => {
       const status = statusOf(name);
@@ -233,43 +204,21 @@ export function WorkflowSidebar({
     .filter((g) => g.runs.length > 0);
 
   const overallStatus = liveStatus?.status ?? "idle";
-  const elapsed =
-    overallStatus === "running" ? clockSince(liveStatus?.started_at, now) : null;
+  const elapsed = overallStatus === "running" ? clockSince(liveStatus?.started_at, now) : null;
 
   return (
     <aside
       style={{ width }}
-      className="relative flex h-screen shrink-0 flex-col border-r border-line bg-ink-2/60 backdrop-blur"
+      className="relative flex h-full shrink-0 flex-col border-r border-line bg-panel/60"
     >
-      {/* brand */}
-      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-        <img src="./conductor.svg" alt="" className="h-4 w-4 opacity-80" />
-        <span className="font-mono text-[11px] tracking-wide text-mist">conductor</span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto board-scroll px-3 py-3">
+      <div className="flex-1 overflow-y-auto board-scroll px-4 py-4">
         {activeWf && liveModel ? (
           <>
-            {/* active workflow — the one global piece of identity (Part 4) */}
-            <button
-              onClick={() => onPickWorkflow(activeWf)}
-              className="block w-full px-1 text-left"
-            >
-              <div className="truncate font-mono text-[13px] font-medium text-chalk">{activeWf}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-mist">
-                <span
-                  className={
-                    overallStatus === "running"
-                      ? "text-cyan"
-                      : overallStatus === "failed"
-                        ? "text-rose"
-                        : overallStatus === "done"
-                          ? "text-mint/80"
-                          : "text-mist"
-                  }
-                >
-                  {STATUS_WORD[overallStatus] ?? overallStatus}
-                </span>
+            {/* active workflow — name + status · elapsed */}
+            <button onClick={() => onPickWorkflow(activeWf)} className="block w-full px-1 text-left">
+              <div className="truncate text-[15px] font-semibold text-chalk">{activeWf}</div>
+              <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-mist">
+                <span>{STATUS_WORD[overallStatus] ?? overallStatus}</span>
                 {elapsed && (
                   <>
                     <span className="text-dim">·</span>
@@ -280,15 +229,15 @@ export function WorkflowSidebar({
             </button>
 
             {/* progress tree */}
-            <div className="mt-3">
+            <div className="mt-4">
               {selectedRun === null && (
                 <StepTree snap={workflows[activeWf].snap} activeStep={activeStep} onSelectStep={onSelectStep} />
               )}
             </div>
 
-            {/* other workflows — a compact switcher, only when there's more than one */}
+            {/* other workflows — compact switcher, only when there's more than one */}
             {others.length > 0 && (
-              <div className="mt-4">
+              <div className="mt-5">
                 <SectionRule text="Workflows" />
                 <div className="space-y-0.5">
                   {others.map((name) => {
@@ -297,12 +246,10 @@ export function WorkflowSidebar({
                       <button
                         key={name}
                         onClick={() => onPickWorkflow(name)}
-                        className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono text-[12px] transition-colors hover:bg-panel/60"
+                        className="flex w-full items-center gap-2.5 rounded px-2 py-1 text-left text-[13px] transition-colors duration-150 hover:bg-panel-2/60"
                       >
-                        <span className="w-3 shrink-0 text-center text-[11px]">
-                          <Glyph col={st === "running" ? "running" : st} />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-mist-2">{name}</span>
+                        <Led state={st} />
+                        <span className="min-w-0 flex-1 truncate text-mist">{name}</span>
                       </button>
                     );
                   })}
@@ -311,20 +258,20 @@ export function WorkflowSidebar({
             )}
           </>
         ) : (
-          <p className="px-1 font-mono text-[11px] text-dim">No active workflow.</p>
+          <p className="px-1 text-[13px] text-dim">No active workflow.</p>
         )}
 
         {/* history */}
-        <div className="mt-5">
+        <div className="mt-6">
           <SectionRule text="History" />
           {historyGroups.length === 0 ? (
-            <p className="px-1 pt-0.5 font-mono text-[11px] text-dim">No past runs yet.</p>
+            <p className="px-1 pt-0.5 text-[12px] text-dim">No past runs yet.</p>
           ) : (
             <div className="space-y-0.5 pt-0.5">
               {historyGroups.map(({ name, runs }) => (
                 <div key={name}>
                   {historyGroups.length > 1 && (
-                    <div className="px-1 pb-0.5 pt-1 font-mono text-[10px] text-mist">{name}</div>
+                    <div className="px-1 pb-0.5 pt-1 text-[11px] text-dim">{name}</div>
                   )}
                   {runs.map((r: HistoryRun) => {
                     const active = activeWf === name && selectedRun === r.run_id;
@@ -335,24 +282,18 @@ export function WorkflowSidebar({
                       <div key={r.run_id}>
                         <button
                           onClick={() => onPickRun(name, r.run_id)}
-                          className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left transition-colors ${
-                            active ? "bg-cyan/10" : "hover:bg-panel/60"
+                          className={`flex w-full items-center gap-2.5 rounded px-2 py-1 text-left transition-colors duration-150 ${
+                            active ? SEL : "hover:bg-panel-2/60"
                           }`}
                         >
-                          <span className="w-3 shrink-0 text-center text-[11px]">
-                            <Glyph col={failed ? "failed" : "done"} />
+                          <span className={failed ? "text-rose" : "text-mist"}>
+                            <Icon name={failed ? "cross" : "check"} size={13} />
                           </span>
-                          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-mist-2">
-                            {label}
-                          </span>
-                          {dur && (
-                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-dim">
-                              {dur}
-                            </span>
-                          )}
+                          <span className="min-w-0 flex-1 truncate text-[12.5px] text-mist">{label}</span>
+                          {dur && <span className="shrink-0 text-[11px] tabular-nums text-dim">{dur}</span>}
                         </button>
                         {active && viewingSnap && (
-                          <div className="ml-2.5 mt-0.5 border-l border-line/50 pl-2">
+                          <div className="ml-3 mt-0.5 pl-2">
                             <StepTree snap={viewingSnap} activeStep={activeStep} onSelectStep={onSelectStep} />
                           </div>
                         )}
@@ -366,22 +307,21 @@ export function WorkflowSidebar({
         </div>
       </div>
 
-      {/* footer — knowledge is a link here, not a persistent counter (Part 1) */}
+      {/* footer — knowledge is a link here, not a persistent counter */}
       {onOpenInsights && (
         <button
           onClick={onOpenInsights}
-          className={`flex items-center gap-2 border-t border-line px-4 py-2.5 text-left font-mono text-[11px] transition-colors ${
-            insightsOpen ? "text-cyan" : "text-mist hover:text-chalk"
+          className={`flex items-center gap-2 border-t border-line px-4 py-2.5 text-left text-[13px] transition-colors ${
+            insightsOpen ? "text-chalk" : "text-mist hover:text-chalk"
           }`}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2Zm0 0a2 2 0 0 1 2-2h12" />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19V5a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2Zm0 0a2 2 0 0 1 2-2h12" />
           </svg>
           Knowledge
         </button>
       )}
 
-      {/* drag-to-resize handle */}
       <div
         onPointerDown={startDrag}
         className="absolute inset-y-0 -right-1 w-2 cursor-col-resize"

@@ -1,24 +1,20 @@
 import type { BoardModel } from "../lib/types";
-
-const DOT: Record<string, string> = {
-  done: "bg-mint",
-  failed: "bg-rose",
-  gate: "bg-amber",
-  running: "bg-cyan",
-  pending: "bg-dim",
-};
+import { Icon } from "./Icon";
+import { Led } from "./Led";
 
 /** Shown when a run is complete — every step with its result, at a glance. */
 export function SummaryView({ model }: { model: BoardModel }) {
   const failed = model.overallStatus === "failed";
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
-      <div className="text-center">
-        <div className={`text-2xl ${failed ? "text-rose" : "text-mint"}`}>{failed ? "✗" : "✓"}</div>
-        <h2 className={`mt-1 text-xl font-semibold ${failed ? "text-rose" : "text-mint"}`}>
+      <div className="flex flex-col items-center text-center">
+        <span className={failed ? "text-rose" : "text-mint"}>
+          <Icon name={failed ? "cross" : "check"} size={28} />
+        </span>
+        <h2 className="mt-2 text-xl font-medium text-chalk">
           {model.workflow} — {failed ? "failed" : "complete"}
         </h2>
-        <p className="mt-1 font-mono text-xs text-mist">
+        <p className="mt-1 text-[13px] text-mist">
           {model.unitsDone}/{model.unitsTotal} units
         </p>
       </div>
@@ -29,9 +25,9 @@ export function SummaryView({ model }: { model: BoardModel }) {
           .map((s) => (
             <div
               key={s.id}
-              className="flex items-center gap-2.5 rounded-lg border border-line bg-panel/40 px-3 py-2"
+              className="flex items-center gap-2.5 rounded-lg border border-line bg-panel px-3 py-2"
             >
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[s.column] ?? "bg-dim"}`} />
+              <Led state={s.column} />
               <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-chalk">{s.id}</span>
               {s.isLoop && s.loop && (
                 <span className="shrink-0 font-mono text-[10px] text-cyan">

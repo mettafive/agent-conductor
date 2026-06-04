@@ -7,6 +7,7 @@ import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sou
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
 import { clockSince, followStep, resolveActiveUnit } from "./lib/view";
+import { TopBar } from "./components/TopBar";
 import { ContextHeader } from "./components/ContextHeader";
 import { ActiveCard } from "./components/ActiveCard";
 import { StepDetail } from "./components/StepDetail";
@@ -206,9 +207,9 @@ export function App() {
       }`;
 
   return (
-    <>
-      <div className="aurora" />
-      <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden">
+      <TopBar workflow={activeWf ?? liveModel.workflow} />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {sidebarOpen && (
           <WorkflowSidebar
             workflows={workflows}
@@ -311,7 +312,7 @@ export function App() {
           />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
