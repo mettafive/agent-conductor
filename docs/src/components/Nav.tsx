@@ -17,7 +17,7 @@ export function Nav() {
             agent-conductor
           </span>
           <span className="rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-mist">
-            v2.0.0
+            v2.3.0
           </span>
         </a>
 

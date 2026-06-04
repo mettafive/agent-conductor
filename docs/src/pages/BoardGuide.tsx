@@ -158,9 +158,6 @@ export function BoardGuide() {
 
   return (
     <div className="min-h-screen">
-      <div className="aurora" />
-      <div className="grid-fade" />
-
       {/* top bar */}
       <header className="fixed inset-x-0 top-0 z-50 border-b border-line/70 bg-ink/70 backdrop-blur-xl">
         <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">

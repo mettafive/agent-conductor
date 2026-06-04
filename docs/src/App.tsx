@@ -88,8 +88,6 @@ function SectionHead({
 export function App() {
   return (
     <>
-      <div className="aurora" />
-      <div className="grid-fade" />
       <Nav />
 
       <main id="top" className="mx-auto max-w-6xl px-5 pt-16">
