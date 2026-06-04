@@ -184,6 +184,13 @@
 }
 .heart-strong { animation: heart-strong 0.42s ease-out; transform-origin: center; }
 
+/* a card eases in as it lands in a new column */
+@keyframes lb-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.liveboard-card { animation: lb-in 0.28s ease-out; }
+
 /* teletype cursor + thin scrollbar (board demo). */
 @keyframes tw-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 .tw-cursor { animation: tw-blink 0.53s steps(1) infinite; }

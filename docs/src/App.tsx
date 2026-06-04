@@ -1,7 +1,7 @@
 import { Nav } from "./components/Nav";
 import { CodeBlock } from "./components/CodeBlock";
 import { Playground } from "./components/Playground";
-import { BoardPreview } from "./components/BoardPreview";
+import { LiveBoard } from "./components/LiveBoard";
 import { Reveal } from "./components/Reveal";
 import { EXAMPLES } from "./data/examples";
 
@@ -330,11 +330,11 @@ export function App() {
               </span>
             </code>
           </div>
-          <Reveal className="mt-8">
-            <BoardPreview />
+          <Reveal className="mx-auto mt-8 max-w-3xl">
+            <LiveBoard />
           </Reveal>
           <p className="mt-6 text-center font-mono text-xs text-mist">
-            board, run history & CLI ship in the conductor-board package
+            a live demo — the real board, running. History &amp; CLI ship in the package.
           </p>
         </section>
 
