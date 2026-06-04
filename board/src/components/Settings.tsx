@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { KnowledgeEntry } from "../lib/types";
 import { InsightsDashboard } from "./InsightsDashboard";
 import { Icon } from "./Icon";
+import { HEARTBEAT_OPTIONS, stallSecondsFor } from "../lib/settings";
 
 const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ["⌘", ","], label: "Open / close settings" },
@@ -112,6 +113,8 @@ export function Settings({
   workflow,
   knowledge,
   runCount,
+  heartbeatInterval,
+  onSetHeartbeatInterval,
 }: {
   open: boolean;
   onClose: () => void;
@@ -122,6 +125,8 @@ export function Settings({
   workflow: string;
   knowledge: KnowledgeEntry[];
   runCount: number;
+  heartbeatInterval: number;
+  onSetHeartbeatInterval: (seconds: number) => void;
 }) {
   return (
     <AnimatePresence>
@@ -162,6 +167,31 @@ export function Settings({
                 on={chimesOn}
                 onToggle={onToggleChimes}
               />
+
+              {/* Cadence */}
+              <div className="px-5 pb-1 pt-4 text-[11px] uppercase tracking-wide text-dim">Cadence</div>
+              <div className="flex items-center gap-3 px-5 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] text-chalk">Heartbeat interval</div>
+                  <div className="mt-0.5 text-[12px] leading-snug text-dim">
+                    How often the agent checks in. Stall is flagged after ~3 missed beats
+                    (now {stallSecondsFor(heartbeatInterval)}s).
+                  </div>
+                </div>
+                <div className="flex shrink-0 overflow-hidden rounded-md border border-line">
+                  {HEARTBEAT_OPTIONS.map((o) => (
+                    <button
+                      key={o.seconds}
+                      onClick={() => onSetHeartbeatInterval(o.seconds)}
+                      className={`px-2 py-1 font-mono text-[11px] transition-colors ${
+                        heartbeatInterval === o.seconds ? "bg-line-2 text-chalk" : "text-dim hover:text-mist"
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Shortcuts */}
               <Shortcuts />

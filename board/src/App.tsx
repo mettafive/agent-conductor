@@ -28,6 +28,7 @@ import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { Settings } from "./components/Settings";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
+import { loadHeartbeatInterval, saveHeartbeatInterval, stallSecondsFor } from "./lib/settings";
 import type { BoardModel, BoardStep, RunRecord, Snapshot } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
@@ -59,6 +60,7 @@ export function App() {
   const [ticksOn, setTicksOn] = useState(!isTicksMuted());
   const [chimesOn, setChimesOn] = useState(!isChimesMuted());
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
+  const [heartbeatInterval, setHeartbeatInterval] = useState(loadHeartbeatInterval);
   const [selectedStep, setSelectedStep] = useState<string | null>(null); // null = auto-follow live
   const [showSettings, setShowSettings] = useState(false);
   const now = useNow(1000);
@@ -71,6 +73,9 @@ export function App() {
       /* ignore */
     }
   }, [sidebarOpen]);
+  useEffect(() => {
+    saveHeartbeatInterval(heartbeatInterval);
+  }, [heartbeatInterval]);
   useEffect(() => {
     try {
       localStorage.setItem("cb-sidebar-w", String(sidebarWidth));
@@ -398,6 +403,7 @@ export function App() {
             onMode={setMonitorMode}
             lastBeatIso={globalLastBeat}
             conn={conn}
+            stallSeconds={stallSecondsFor(heartbeatInterval)}
           />
         </div>
       </div>
@@ -420,6 +426,8 @@ export function App() {
         workflow={activeWf ?? liveModel.workflow}
         knowledge={(model ?? liveModel).knowledge}
         runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
+        heartbeatInterval={heartbeatInterval}
+        onSetHeartbeatInterval={setHeartbeatInterval}
       />
     </div>
   );

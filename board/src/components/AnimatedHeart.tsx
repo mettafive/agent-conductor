@@ -11,6 +11,8 @@ interface Props {
   size?: number;
   /** Title/tooltip text. */
   title?: string;
+  /** quiet-threshold in seconds (derived from the configured heartbeat interval) */
+  stallSeconds?: number;
 }
 
 /**
@@ -19,9 +21,9 @@ interface Props {
  * slower, dimmer, amber-glowed — once beats go quiet for 90s. The one element
  * on the board that's deliberately human, not "developer tool".
  */
-export function AnimatedHeart({ lastBeatIso, size = 14, title }: Props) {
+export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = STALL_SECONDS }: Props) {
   const now = useNow(1000);
-  const overdue = !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > STALL_SECONDS;
+  const overdue = !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > stallSeconds;
 
   const [pulsing, setPulsing] = useState(false);
   const prev = useRef<string | undefined>(undefined);

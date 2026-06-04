@@ -39,10 +39,11 @@ export function loadMonitorMode(): MonitorMode {
   return "min";
 }
 
-/** A small amber dot that breathes when beats have gone quiet (§5.1). */
-function StallDot({ lastBeatIso }: { lastBeatIso?: string }) {
+/** A small amber dot that breathes when beats have gone quiet (§5.1). The quiet threshold
+ *  scales with the configured heartbeat interval (Settings). */
+function StallDot({ lastBeatIso, stallSeconds = STALL_SECONDS }: { lastBeatIso?: string; stallSeconds?: number }) {
   const now = useNow(1000);
-  const overdue = !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > STALL_SECONDS;
+  const overdue = !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > stallSeconds;
   if (!overdue) return null;
   return (
     <span
@@ -73,6 +74,8 @@ interface Props {
   onMode: (m: MonitorMode) => void;
   lastBeatIso?: string;
   conn?: Conn;
+  /** quiet-threshold in seconds (derived from the configured heartbeat interval) */
+  stallSeconds?: number;
 }
 
 export function HeartbeatMonitor({
@@ -83,6 +86,7 @@ export function HeartbeatMonitor({
   onMode,
   lastBeatIso,
   conn,
+  stallSeconds,
 }: Props) {
   const wfColor = (name: string) => WF_COLORS[Math.max(0, order.indexOf(name)) % WF_COLORS.length];
   const multi = order.length > 1;
@@ -119,8 +123,8 @@ export function HeartbeatMonitor({
         title="Show heartbeat monitor"
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-ink-2/90 px-3 py-2 shadow-lg backdrop-blur transition-colors hover:border-line-2"
       >
-        <AnimatedHeart lastBeatIso={lastBeatIso} size={15} />
-        <StallDot lastBeatIso={lastBeatIso} />
+        <AnimatedHeart lastBeatIso={lastBeatIso} size={15} stallSeconds={stallSeconds} />
+        <StallDot lastBeatIso={lastBeatIso} stallSeconds={stallSeconds} />
         <ConnDot conn={conn} />
       </motion.button>
     );
@@ -136,8 +140,8 @@ export function HeartbeatMonitor({
         transition={{ duration: 0.25, ease: "easeOut" }}
         className="flex h-9 shrink-0 items-center gap-2.5 border-t border-line bg-panel px-4"
       >
-        <AnimatedHeart lastBeatIso={lastBeatIso} size={14} />
-        <StallDot lastBeatIso={lastBeatIso} />
+        <AnimatedHeart lastBeatIso={lastBeatIso} size={14} stallSeconds={stallSeconds} />
+        <StallDot lastBeatIso={lastBeatIso} stallSeconds={stallSeconds} />
         <ConnDot conn={conn} />
         <button
           onClick={() => onMode("expanded")}
@@ -174,6 +178,7 @@ export function HeartbeatMonitor({
       multi={multi}
       lastBeatIso={lastBeatIso}
       conn={conn}
+      stallSeconds={stallSeconds}
     />
   );
 }
@@ -187,6 +192,7 @@ function ExpandedMonitor({
   multi,
   lastBeatIso,
   conn,
+  stallSeconds,
 }: {
   beats: StreamBeat[];
   order: string[];
@@ -196,6 +202,7 @@ function ExpandedMonitor({
   multi: boolean;
   lastBeatIso?: string;
   conn?: Conn;
+  stallSeconds?: number;
 }) {
   const [filter, setFilter] = useState<string>("all");
   const [height, setHeight] = useState(280);
@@ -275,8 +282,8 @@ function ExpandedMonitor({
         title="Click to minimize (Ctrl+`)"
         className="group/bar flex cursor-pointer items-center gap-2 border-b border-line/70 px-3 py-1.5 transition-colors hover:bg-panel/40"
       >
-        <AnimatedHeart lastBeatIso={lastBeatIso} size={13} />
-        <StallDot lastBeatIso={lastBeatIso} />
+        <AnimatedHeart lastBeatIso={lastBeatIso} size={13} stallSeconds={stallSeconds} />
+        <StallDot lastBeatIso={lastBeatIso} stallSeconds={stallSeconds} />
         <ConnDot conn={conn} />
         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mist-2">
           Heartbeat

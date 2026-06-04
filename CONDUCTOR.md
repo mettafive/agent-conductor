@@ -67,8 +67,9 @@ vibe through setup.
 
 ## Heartbeats
 
-While executing, pulse a heartbeat to yourself **at least once per minute** so you —
-and the human watching the board — stay oriented. Append
+While executing, pulse a heartbeat to yourself **about every 30 seconds** (the default
+cadence; the board's Settings let the watcher pick 15s–5min, and it flags a stall after ~3
+missed beats) so you — and the human watching the board — stay oriented. Append
 `{ "at": "<ISO-8601>", "note": "<1–2 sentences>" }` to the current step's
 `heartbeat` array. Read your prior beats first, and orient each one against the
 step's gate **and** the workflow's `goal`. Use `[text](url)` links for any PR or
