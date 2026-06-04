@@ -14,7 +14,7 @@ const LINKS = [
 export function FooterNav() {
   return (
     <footer className="mt-auto border-t border-line">
-      <div className="mx-auto max-w-6xl px-5 py-10">
+      <div className="mx-auto max-w-5xl px-5 py-10">
         <div className="flex flex-col items-center gap-5 sm:flex-row sm:justify-between">
           <a
             href={`${BASE}#/`}

@@ -40,7 +40,7 @@ export function BoardPage() {
           <span className="text-mist">→ Board live at http://localhost:3042</span>
         </code>
       </div>
-      <Reveal className="mx-auto mt-8 max-w-3xl">
+      <Reveal className="mx-auto mt-8 max-w-5xl">
         <LiveBoard />
       </Reveal>
       <p className="mt-6 text-center font-mono text-xs text-mist">

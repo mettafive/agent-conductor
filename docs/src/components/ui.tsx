@@ -32,5 +32,5 @@ export function SectionHead({
 
 /** Standard page wrapper — centers content and gives a consistent gutter. */
 export function Page({ children }: { children: ReactNode }) {
-  return <div className="mx-auto max-w-6xl px-5 pb-24 pt-10">{children}</div>;
+  return <div className="mx-auto max-w-5xl px-5 pb-24 pt-10">{children}</div>;
 }

@@ -2,20 +2,19 @@ import { useEffect, useState } from "react";
 
 interface Props {
   text: string;
-  /** Milliseconds per character. Constant — teletype, no easing. */
+  /** Milliseconds per character (base). The demo streams agent-fast. */
   speed?: number;
   className?: string;
-  /** Show the block cursor while typing (and hide it when done). */
   cursor?: boolean;
   onDone?: () => void;
 }
 
 /**
- * Types `text` in character by character at a constant speed, like a teletype.
- * A block cursor (█) sits at the typing position and disappears once the line
- * completes. Re-streams from the start whenever `text` changes.
+ * Streams `text` in character by character. Fast — like an agent, not a person
+ * — but with a touch of variance so it doesn't feel mechanical. No long human
+ * pauses; this is a demo and we want it to finish quickly and read clean.
  */
-export function TypewriterText({ text, speed = 30, className, cursor = true, onDone }: Props) {
+export function TypewriterText({ text, speed = 12, className, cursor = true, onDone }: Props) {
   const [n, setN] = useState(0);
 
   useEffect(() => {
@@ -24,11 +23,6 @@ export function TypewriterText({ text, speed = 30, className, cursor = true, onD
       onDone?.();
       return;
     }
-    // A touch faster than a metronome (base 25% quicker), but humanised: each
-    // letter's gap jitters slightly, and there's a barely-there breath after
-    // sentence and clause punctuation. The pauses claw back most of the speed-up
-    // (~10% faster overall) while making it feel typed, not played back.
-    const base = speed * 0.78;
     let i = 0;
     let timer: ReturnType<typeof setTimeout>;
     const step = () => {
@@ -39,26 +33,21 @@ export function TypewriterText({ text, speed = 30, className, cursor = true, onD
         return;
       }
       const last = text[i - 1];
-      // Uneven pace — some letters tumble out, others lag. Real breaths after
-      // sentence/clause punctuation, and the odd hesitation mid-thought.
-      let delay = base * (0.45 + Math.random() * 1.25); // ~0.45–1.7×
-      if (last === "." || last === "!" || last === "?") delay += 240;
-      else if (last === "," || last === ";" || last === ":") delay += 110;
-      else if (last === " ") delay += 22;
-      if (Math.random() < 0.06) delay += 120 + Math.random() * 160; // a brief pause to think
+      let delay = speed * (0.8 + Math.random() * 0.45); // tight jitter, ~0.8–1.25×
+      if (last === "." || last === "!" || last === "?") delay += 55;
+      else if (last === "," || last === ";" || last === ":") delay += 28;
       timer = setTimeout(step, delay);
     };
-    timer = setTimeout(step, base);
+    timer = setTimeout(step, speed);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, speed]);
 
   const typing = n < text.length;
-
   return (
     <span className={className}>
       {text.slice(0, n)}
-      {cursor && typing && <span className="tw-cursor text-cyan">█</span>}
+      {cursor && typing && <span className="tw-cursor text-mist">▌</span>}
     </span>
   );
 }

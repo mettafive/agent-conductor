@@ -1,194 +1,187 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
 import { Heart } from "./Heart";
 import { TypewriterText } from "./TypewriterText";
 
 /**
- * A self-contained, continuously-looping board — the real visual language
- * (status LEDs, row lines, the heart, streaming heartbeats) driven by a scripted
- * in-browser simulation. No server, no SSE: it just plays. This is the live demo.
- *
- * The scenario reads like a real PR review: a "batch-review" loop walks four
- * changed files, each through read-diff → review → verdict, and the bottom bar
- * streams a genuine-sounding heartbeat for whatever it's doing right now.
+ * The live board demo. Cards slide column → column with the same layout
+ * animation the real app uses (framer-motion `layout`), stepping strictly
+ * pending → running → gate → done so a step is never skipped. The heartbeat
+ * streams agent-fast and finishes before a card moves. Two sizes: a compact
+ * three-step version, and a five-step version when the board has room.
  */
 
 type Col = "pending" | "running" | "gate" | "done";
-
-const SUBS = [
-  { id: "read diff", gate: false },
-  { id: "review", gate: true },
-  { id: "verdict", gate: true },
-];
-
-// A little review story per file — so each iteration shows something useful.
-const FILES: { item: string; beats: [string, string, string]; verdict: string }[] = [
-  {
-    item: "src/auth.ts",
-    beats: [
-      "Reading src/auth.ts — token refresh + two new route guards.",
-      "Flagging a missing `await` on refresh() at line 42 — token can be stale.",
-      "1 blocker. Requesting changes before this can merge.",
-    ],
-    verdict: "changes requested",
-  },
-  {
-    item: "src/api/users.ts",
-    beats: [
-      "Reading src/api/users.ts — adds pagination params to the list endpoint.",
-      "Edge case: page=0 returns the whole table. Needs a floor of 1.",
-      "1 nit, non-blocking. Approving with a note.",
-    ],
-    verdict: "approved with notes",
-  },
-  {
-    item: "db/schema.sql",
-    beats: [
-      "Reading db/schema.sql — new index on users(email).",
-      "Index is non-unique; duplicate emails could still slip in.",
-      "Approving — tightening the index can be a follow-up.",
-    ],
-    verdict: "approved",
-  },
-  {
-    item: "ui/Login.tsx",
-    beats: [
-      "Reading ui/Login.tsx — inline error states on the form.",
-      "Error region is missing aria-live, so it won't be announced.",
-      "Approve once the a11y fix lands. Handing back the batch.",
-    ],
-    verdict: "approved",
-  },
-];
-
-const ITEMS = FILES.map((f) => f.item);
 const COLS: Col[] = ["pending", "running", "gate", "done"];
 const COL_LABEL: Record<Col, string> = { pending: "Pending", running: "Running", gate: "Gate", done: "Done" };
 
-interface State {
-  item: number; // current iteration index
-  cols: Col[][]; // cols[itemIdx][subIdx]
+interface Step {
+  id: string;
+  gate: boolean;
   note: string;
 }
 
-function fresh(): State {
-  return {
-    item: 0,
-    cols: ITEMS.map(() => SUBS.map(() => "pending" as Col)),
-    note: "Discovered 4 changed files in the PR. Starting the review loop.",
-  };
+// A page-building agent run — exactly the kind of workflow where an agent
+// declares victory early and skips the image or the SEO pass.
+const FULL: Step[] = [
+  { id: "research", gate: false, note: "Pulling 6 sources on the treatment — cost ranges, risks, the questions owners actually ask." },
+  { id: "write page", gate: true, note: "Drafting the page from research — answering the owner's top three questions in the first screen." },
+  { id: "generate image", gate: true, note: "Generating a hero image of the treatment for this species; checking it reads on-brand." },
+  { id: "SEO check", gate: true, note: "Auditing title, meta, headings, internal links and the target keyword." },
+  { id: "publish", gate: true, note: "Every gate green. Publishing the page and pinging the sitemap." },
+];
+const COMPACT: Step[] = [FULL[1], FULL[2], FULL[3]]; // write · image · SEO
+
+const GATE_NOTE = (id: string) => `Verifying ${id} — every criterion has to pass before the next step unlocks.`;
+const RESET_NOTE = "Run complete. Watching for the next page to build.";
+
+interface State {
+  cols: Col[];
+  note: string;
 }
 
-/** Advance one beat of the simulation. Returns the next state. */
-function advance(s: State): State {
-  const cols = s.cols.map((r) => r.slice());
-  const it = s.item;
-  const row = cols[it];
-  const file = FILES[it];
+function fresh(steps: Step[], note = "New page queued. Starting the build."): State {
+  return { cols: steps.map(() => "pending"), note };
+}
 
-  let i = row.findIndex((c) => c === "running" || c === "gate");
-  if (i === -1) i = row.findIndex((c) => c === "pending");
+/** Advance one step of the machine. Returns the next state + how long to dwell. */
+function advance(s: State, steps: Step[]): { next: State; delay: number } {
+  const cols = s.cols.slice();
+  let i = cols.findIndex((c) => c === "running" || c === "gate");
+  if (i === -1) i = cols.findIndex((c) => c === "pending");
 
-  if (i === -1) {
-    // iteration done → next item, or loop back to the start
-    if (it + 1 < ITEMS.length) {
-      return { ...s, item: it + 1, cols, note: `${ITEMS[it + 1]}: opening the diff. Carrying forward the last file's patterns.` };
-    }
-    return { ...fresh(), note: "All four files reviewed. Posting the summary, then watching for the next push." };
+  if (i === -1) return { next: fresh(steps), delay: 1300 }; // all done → reset
+
+  const step = steps[i];
+  if (cols[i] === "pending") {
+    cols[i] = "running";
+    return { next: { cols, note: step.note }, delay: 2100 }; // let the beat finish
   }
+  if (cols[i] === "running") {
+    if (step.gate) {
+      cols[i] = "gate";
+      return { next: { cols, note: GATE_NOTE(step.id) }, delay: 1300 };
+    }
+    cols[i] = "done";
+  } else {
+    cols[i] = "done"; // gate → done
+  }
+  const last = i === steps.length - 1;
+  const nextNote = last ? RESET_NOTE : steps[i + 1].note;
+  return { next: { cols, note: nextNote }, delay: last ? 1600 : 700 };
+}
 
-  const cur = row[i];
-  const sub = SUBS[i];
-  if (cur === "pending") row[i] = "running";
-  else if (cur === "running") row[i] = sub.gate ? "gate" : "done";
-  else if (cur === "gate") row[i] = "done";
-
-  // the heartbeat that matches what it's doing right now
-  let note: string;
-  if (row[i] === "done" && i === SUBS.length - 1) note = `${file.item}: ${file.verdict}.`;
-  else if (row[i] === "done") note = `${file.item}: ${sub.id} done — handing to ${SUBS[i + 1].id}.`;
-  else note = file.beats[i];
-
-  return { ...s, cols, note };
+/** Big when the board itself has room — not just the viewport. */
+function useBig(ref: React.RefObject<HTMLDivElement | null>) {
+  const [big, setBig] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setBig(e.contentRect.width >= 860));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return big;
 }
 
 export function LiveBoard() {
-  const [s, setS] = useState<State>(fresh);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const big = useBig(wrapRef);
+  const steps = big ? FULL : COMPACT;
+
+  const [s, setS] = useState<State>(() => fresh(steps));
   const [beat, setBeat] = useState(0);
   const sref = useRef(s);
   sref.current = s;
 
+  // reset the machine whenever the step set changes (size switch)
   useEffect(() => {
-    const id = setInterval(() => {
-      setS(advance(sref.current));
-      setBeat((b) => b + 1);
-    }, 2600);
-    return () => clearInterval(id);
-  }, []);
+    setS(fresh(steps));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [big]);
 
-  const item = ITEMS[s.item];
-  const row = s.cols[s.item];
-  const done = row.filter((c) => c === "done").length;
+  // self-pacing loop — each transition dwells long enough to read
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const { next, delay } = advance(sref.current, steps);
+      setS(next);
+      setBeat((b) => b + 1);
+      timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, 1400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [big]);
+
+  const done = s.cols.filter((c) => c === "done").length;
+  const colH = `${steps.length * (big ? 3 : 2.7)}rem`;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-line bg-ink-2 text-left shadow-2xl">
+    <div ref={wrapRef} className="overflow-hidden rounded-xl border border-line bg-ink-2 text-left shadow-2xl">
       {/* top bar */}
       <div className="flex h-10 items-center gap-2.5 border-b border-line bg-panel/60 px-3">
         <Icon name="loop" size={13} />
-        <span className="font-mono text-[12px] text-mist">batch-review</span>
-        <span className="text-dim">/</span>
-        <span className="truncate text-[13px] font-medium text-chalk">{item}</span>
-        <span className="rounded border border-line px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-mist">
-          file {s.item + 1}/{ITEMS.length}
-        </span>
+        <span className="font-mono text-[12px] text-mist">treatment-page</span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-mist">
           <Led state="running" /> Running
         </span>
       </div>
 
       {/* kanban */}
-      <div className="grid grid-cols-2 gap-x-5 px-4 py-4 sm:grid-cols-4">
-        {COLS.map((c) => {
-          const cards = SUBS.map((sub, i) => ({ sub, i })).filter(({ i }) => row[i] === c);
-          return (
-            <div key={c} className="min-w-0">
-              <div className="mb-1 flex items-center gap-2 border-b border-line px-1 pb-1.5">
-                <Led state={c} />
-                <span className="text-[11px] text-mist">{COL_LABEL[c]}</span>
-                <span className="ml-auto text-[11px] tabular-nums text-dim">{cards.length}</span>
+      <LayoutGroup>
+        <div className={`grid grid-cols-2 px-4 py-4 sm:grid-cols-4 ${big ? "gap-x-6" : "gap-x-5"}`}>
+          {COLS.map((c) => {
+            const cards = steps.map((st, i) => ({ st, i })).filter(({ i }) => s.cols[i] === c);
+            return (
+              <div key={c} className="min-w-0">
+                <div className="mb-1 flex items-center gap-2 border-b border-line px-1 pb-1.5">
+                  <Led state={c} />
+                  <span className="text-[11px] text-mist">{COL_LABEL[c]}</span>
+                  <span className="ml-auto text-[11px] tabular-nums text-dim">{cards.length}</span>
+                </div>
+                <div style={{ minHeight: colH }}>
+                  <AnimatePresence initial={false}>
+                    {cards.map(({ st, i }) => (
+                      <motion.div
+                        key={st.id}
+                        layout
+                        layoutId={st.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{
+                          layout: { duration: 0.42, ease: [0.45, 0, 0.55, 1] },
+                          opacity: { duration: 0.18 },
+                        }}
+                        className="mb-1.5 flex items-center gap-2 rounded-md border border-line bg-panel/60 px-2 py-2"
+                      >
+                        <Led state={s.cols[i]} />
+                        <span className={`truncate ${big ? "text-[13px]" : "text-[12.5px]"} text-chalk`}>{st.id}</span>
+                        {s.cols[i] === "done" && (
+                          <span className="ml-auto text-mint">
+                            <Icon name="check" size={12} />
+                          </span>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
               </div>
-              <div className="min-h-[10.5rem]">
-                {cards.map(({ sub }) => (
-                  <div
-                    key={`${item}-${sub.id}-${c}`}
-                    className="liveboard-card border-b border-line px-1.5 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Led state={c} />
-                      <span className="text-[12.5px] text-chalk">{sub.id}</span>
-                      {c === "done" && (
-                        <span className="ml-auto text-mint">
-                          <Icon name="check" size={12} />
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 pl-[18px] text-[10.5px] text-dim">{item}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </LayoutGroup>
 
       {/* bottom bar — the heartbeat, streaming */}
       <div className="flex h-9 items-center gap-2.5 border-t border-line bg-panel/40 px-3">
         <Heart beat={beat} />
         <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-mono text-[11.5px] text-mist">
-          <TypewriterText text={s.note} speed={16} cursor={false} />
+          <TypewriterText text={s.note} speed={12} cursor={false} />
         </span>
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-dim">{done}/{SUBS.length}</span>
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-dim">{done}/{steps.length}</span>
       </div>
     </div>
   );

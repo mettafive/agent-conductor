@@ -16,7 +16,7 @@ const LINKS = [
 export function Nav({ active }: { active?: string }) {
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-ink/80 backdrop-blur-xl">
-      <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5">
+      <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between px-5">
         <a href={`${BASE}#/`} className="flex items-center gap-2.5">
           <img src={`${BASE}conductor.svg`} alt="" className="h-6 w-6 opacity-90" />
           <span className="font-mono text-sm font-medium tracking-tight text-chalk">agent-conductor</span>

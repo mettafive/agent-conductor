@@ -19,7 +19,7 @@ export function ExamplesPage() {
         sub="From a linear pipeline to a gated review with branches and loops."
       />
 
-      <div className="mx-auto mt-12 max-w-3xl space-y-3">
+      <div className="mx-auto mt-12 max-w-5xl space-y-3">
         {EXAMPLES.map((ex) => {
           const isOpen = open === ex.id;
           return (

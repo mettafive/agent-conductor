@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { CodeBlock } from "../components/CodeBlock";
 import { useScrollSpy } from "../lib/useScrollSpy";
+import { useReveal } from "../lib/useReveal";
 import { Nav } from "../components/Nav";
 import { FooterNav } from "../components/FooterNav";
 
@@ -69,9 +70,10 @@ function Eyebrow({ children }: { children: ReactNode }) {
 }
 
 function H2({ id, kicker, children }: { id: string; kicker?: string; children: ReactNode }) {
+  const ref = useReveal<HTMLDivElement>();
   return (
-    <div className="scroll-mt-24" id={id}>
-      {kicker && <div className="mb-2 font-mono text-[11px] uppercase tracking-wider text-iris">{kicker}</div>}
+    <div ref={ref} className="reveal scroll-mt-24" id={id}>
+      {kicker && <div className="mb-2 font-mono text-[11px] uppercase tracking-wider text-mist">{kicker}</div>}
       <h2 className="text-balance text-2xl font-semibold tracking-tight text-chalk sm:text-3xl">
         <a href={`#${id}`} className="group">
           {children}
@@ -162,7 +164,7 @@ export function BoardGuide() {
     <div className="min-h-screen">
       <Nav active="guide" />
 
-      <main className="mx-auto max-w-6xl px-5 pt-10">
+      <main className="mx-auto max-w-5xl px-5 pt-10">
         {/* hero */}
         <div className="border-b border-line pb-10">
           <Eyebrow>
