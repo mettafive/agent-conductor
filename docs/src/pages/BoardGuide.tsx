@@ -114,10 +114,10 @@ const COLUMNS = [
   },
   {
     name: "Running",
-    dot: "bg-cyan",
-    text: "text-cyan",
-    border: "border-cyan/30",
-    body: "The agent is executing the step's instruction. The card streams the latest heartbeat and pulses; if no beat lands for 90s it flags a possible stall.",
+    dot: "bg-mint",
+    text: "text-mint",
+    border: "border-mint/30",
+    body: "The agent is executing the step's instruction. The focus LED pulses green→white; the card streams the latest heartbeat. If beats go quiet it slows and a stall dot turns amber.",
   },
   {
     name: "Gate Check",
@@ -302,7 +302,7 @@ export function BoardGuide() {
               <ul className="space-y-2 text-sm text-mist-2">
                 {[
                   ["Identity", "the step id and its position in the workflow; a fork icon for condition steps, a loop icon for loops."],
-                  ["Gates", "each criterion with a soft / hard label and a ✓ / ✕ / ○ as the agent records pass, fail, or not-yet-checked."],
+                  ["Gates", "each criterion with a soft / hard label and a ✓ / ✗ / ○ as the agent records pass, fail, or not-yet-checked."],
                   ["Heartbeats", "a vertical timeline of the agent's notes, newest first, with relative time while running and absolute time once done."],
                   ["finalBeat", "the closing beat, marked ·→, showing the handoff to the next step."],
                   ["Loops", "for loop steps, a per-iteration breakdown with its own status dots and filter tabs."],
@@ -460,7 +460,8 @@ export function BoardGuide() {
               <H2 id="improve" kicker="The loop closes">A workflow that improves itself</H2>
               <P>
                 The same heartbeat that keeps an agent on track can carry an{" "}
-                <span className="text-amber">💡 insight</span> — a faster path, a
+                <span className="inline-block h-1.5 w-1.5 translate-y-px rounded-full bg-amber" />{" "}
+                <span className="text-amber">insight</span> — a faster path, a
                 too-strict gate, a missing instruction. Before a run ends, the
                 agent distills those into a few <strong className="text-chalk">suggestions</strong>.
                 When the run finishes, the board surfaces them with a before/after
