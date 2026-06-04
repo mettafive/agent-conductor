@@ -13,10 +13,12 @@ export interface BeatGroup {
   id: string;
   /** the activity's intent — the card-opener's note, or (fallback) the context label */
   title: string;
-  /** every beat in the card, in order. When `explicit`, beats[0] is the title beat. */
+  /** every beat in the card, in order. When `titleFromBeat`, beats[0] IS the title beat. */
   beats: HeartbeatEntry[];
-  /** true = agent-declared card (--card); false = mechanical fallback group */
+  /** true = agent-declared card (--card) — drives the accent only */
   explicit: boolean;
+  /** the title is beats[0]'s note (card-driven groups) vs a synthetic context label (mechanical) */
+  titleFromBeat: boolean;
   startedAt: string;
   endedAt: string;
   insightCount: number;
@@ -24,9 +26,9 @@ export interface BeatGroup {
   hasFinal: boolean;
 }
 
-/** The detail beats shown under a card (the title beat itself isn't a detail). */
+/** The detail beats shown under a card — excludes the title beat when the title came from one. */
 export function detailBeats(g: BeatGroup): HeartbeatEntry[] {
-  return g.explicit ? g.beats.slice(1) : g.beats;
+  return g.titleFromBeat ? g.beats.slice(1) : g.beats;
 }
 
 /** Group heartbeats into activity cards. Uses declared --card boundaries when present. */
@@ -34,12 +36,13 @@ export function groupBeats(entries: HeartbeatEntry[]): BeatGroup[] {
   return entries.some((h) => h.card) ? byCards(entries) : mechanical(entries);
 }
 
-function newGroup(h: HeartbeatEntry, explicit: boolean, title: string): BeatGroup {
+function newGroup(h: HeartbeatEntry, explicit: boolean, title: string, titleFromBeat: boolean): BeatGroup {
   return {
     id: h.at,
     title,
     beats: [h],
     explicit,
+    titleFromBeat,
     startedAt: h.at,
     endedAt: h.at,
     insightCount: h.insight ? 1 : 0,
@@ -60,7 +63,9 @@ function extend(g: BeatGroup, h: HeartbeatEntry): void {
 function byCards(entries: HeartbeatEntry[]): BeatGroup[] {
   const groups: BeatGroup[] = [];
   for (const h of entries) {
-    if (h.card || groups.length === 0) groups.push(newGroup(h, !!h.card, h.note));
+    // a --card beat opens a card; the very first beat opens an implicit one. Either way the
+    // title comes from the beat, so it's excluded from the detail (no duplicate line).
+    if (h.card || groups.length === 0) groups.push(newGroup(h, !!h.card, h.note, true));
     else extend(groups[groups.length - 1], h);
   }
   return groups;
@@ -75,10 +80,14 @@ function mechanical(entries: HeartbeatEntry[]): BeatGroup[] {
   for (const h of entries) {
     const last = groups[groups.length - 1];
     const gap = last ? new Date(h.at).getTime() - new Date(last.endedAt).getTime() : Infinity;
-    const related =
-      last && ctxKey(last.beats[last.beats.length - 1]) === ctxKey(h) && !last.hasFinal && gap < GAP_MS;
+    // an unparseable timestamp must not shatter grouping — only split on a *known* long silence
+    const within = Number.isNaN(gap) || gap < GAP_MS;
+    const related = !!last && ctxKey(last.beats[last.beats.length - 1]) === ctxKey(h) && !last.hasFinal && within;
     if (related) extend(last!, h);
-    else groups.push(newGroup(h, false, h.iteration ? `${h.iteration}${h.sub ? ` · ${h.sub}` : ""}` : h.sub ?? "activity"));
+    else
+      groups.push(
+        newGroup(h, false, h.iteration ? `${h.iteration}${h.sub ? ` · ${h.sub}` : ""}` : h.sub ?? "activity", false),
+      );
   }
   return groups;
 }

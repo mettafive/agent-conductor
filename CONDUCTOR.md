@@ -105,13 +105,26 @@ still group mechanically, but you lose the composed titles.)
 
 **When a card closes, spawn a parallel summarizer for it.** The instant you open the *next*
 card (the previous one is now done), fire a **background sub-agent** that reads the closed
-card's beats and writes a 1–2 line overview — *what that card accomplished* — then keep
+card's beats and writes a one-line overview — *what that card accomplished* — then keep
 working; the summary backfills without slowing you. `heartbeat … --card` prints the card's
-id (`[card <ISO>]`); pass it to the summarizer, which writes:
+id (`[card <ISO>]`); pass it + the closed card's beats to the summarizer, which writes:
 
 ```
 conductor-board overview <step> "…what the card accomplished…" --card <ISO>
 ```
+
+Give the summarizer **these exact instructions** — they're tuned to produce overviews that are
+a genuine pleasure to read (a flat step-list is the failure mode):
+
+> Write the one-line recap that sits atop a finished card. **One sentence, ≤20 words.** Lead
+> with the THING that changed (the page, the FAQ, the sources, the build…) and what became of
+> it — the outcome, plus at most one telling detail. **Never** start with "Someone", "I", "We",
+> or the card's title. Warm, plain, human. No step-lists, no number pile-ups, no jargon, no
+> hedging. Then run `conductor-board overview <step> "<your sentence>" --card <id>` — the
+> sentence is the only thing that ships, so write nothing else.
+> GOOD: *"The bird page's sources are trustworthy again — three broken links swapped for real Jordbruksverket ones."*
+> GOOD: *"The deploy was just waiting on a stale cache — one flush turned everything green."*
+> BAD: *"Checked the sources, found three broken links, replaced them, and re-ran the linker."*
 
 The board then shows each card's **overview by default, with a toggle to the raw beats** — so
 the user gets a clean per-card recap and can drill into the play-by-play when they want. (No
