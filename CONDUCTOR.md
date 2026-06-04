@@ -103,6 +103,21 @@ renders each card with its title as the hero, the latest detail as its live stat
 collapsed, and a comment box — and threads each card into the next. (Runs with no `--card`
 still group mechanically, but you lose the composed titles.)
 
+**When a card closes, spawn a parallel summarizer for it.** The instant you open the *next*
+card (the previous one is now done), fire a **background sub-agent** that reads the closed
+card's beats and writes a 1–2 line overview — *what that card accomplished* — then keep
+working; the summary backfills without slowing you. `heartbeat … --card` prints the card's
+id (`[card <ISO>]`); pass it to the summarizer, which writes:
+
+```
+conductor-board overview <step> "…what the card accomplished…" --card <ISO>
+```
+
+The board then shows each card's **overview by default, with a toggle to the raw beats** — so
+the user gets a clean per-card recap and can drill into the play-by-play when they want. (No
+paid API: the summarizer is a runtime sub-agent. A future option is the board server spawning
+`claude -p` automatically on card-close.)
+
 **End every step with a finalBeat.** Before you mark a step `done`, append one last
 heartbeat with `"finalBeat": true` that summarizes what the step accomplished and
 carries context forward: `"handoff": { "to": "<next-step>", "context": "<what the

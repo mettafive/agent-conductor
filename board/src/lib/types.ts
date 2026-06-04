@@ -222,6 +222,8 @@ export interface BoardStep extends ConductorStep {
   approvalState?: ApprovalState;
   heartbeat: HeartbeatEntry[];
   learnings: string[];
+  /** parallel-agent overviews of activity cards, keyed by card id (the opener beat's `at`) */
+  cardOverviews?: Record<string, string>;
 }
 
 export interface BoardModel {

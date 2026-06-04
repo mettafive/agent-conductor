@@ -96,6 +96,7 @@ export function ActiveCard({ step }: { step: BoardStep }) {
                   learnings={step.learnings}
                   now={now}
                   running={u.running}
+                  cardOverviews={step.cardOverviews}
                 />
               )}
             </motion.div>

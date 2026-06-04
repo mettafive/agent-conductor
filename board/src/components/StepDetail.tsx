@@ -66,7 +66,7 @@ export function StepDetail({
 
         {/* the story — the full heartbeat narration, ABOVE the gate proof */}
         {(step.heartbeat.length > 0 || step.learnings.length > 0) && (
-          <HeartbeatTimeline entries={step.heartbeat} learnings={step.learnings} now={now} running={running} />
+          <HeartbeatTimeline entries={step.heartbeat} learnings={step.learnings} now={now} running={running} cardOverviews={step.cardOverviews} />
         )}
 
         {/* the proof — gate results */}

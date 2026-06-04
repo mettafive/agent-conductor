@@ -23,13 +23,15 @@ interface Props {
   now: number;
   running: boolean;
   loop?: LoopState;
+  /** parallel-agent overviews per card id — when present, the card defaults to its overview */
+  cardOverviews?: Record<string, string>;
 }
 
 /**
  * The per-card heartbeat history as a vertical timeline — connected dots, with
  * finalBeats marked as handoffs. Loop steps get iteration filter tabs.
  */
-export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Props) {
+export function HeartbeatTimeline({ entries, learnings, now, running, loop, cardOverviews }: Props) {
   const iterations = loop?.iterations.map((i) => i.item) ?? [];
   const [filter, setFilter] = useState<string>("all");
 
@@ -83,7 +85,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Pr
           {/* Related beats are grouped into activities, newest first, so there's always a
               coherent "current activity" at the top instead of a flat firehose. */}
           {[...groupBeats(shown)].reverse().map((g, gi) => (
-            <GroupBlock key={g.id} group={g} defaultOpen={gi === 0} running={running} now={now} showIter={filter === "all"} />
+            <GroupBlock key={g.id} group={g} overview={cardOverviews?.[g.id]} defaultOpen={gi === 0} running={running} now={now} showIter={filter === "all"} />
           ))}
         </div>
       )}
@@ -95,12 +97,15 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Pr
  *  status; earlier detail beats collapse; a comment box annotates the activity. */
 function GroupBlock({
   group,
+  overview,
   defaultOpen,
   running,
   now,
   showIter,
 }: {
   group: BeatGroup;
+  /** parallel-agent overview for this card — when present, the card defaults to it */
+  overview?: string;
   defaultOpen: boolean;
   running: boolean;
   now: number;
@@ -109,13 +114,14 @@ function GroupBlock({
   const [open, setOpen] = useState(defaultOpen);
   const [comment, setComment] = useState(() => loadComment(group.id));
   const [editing, setEditing] = useState(false);
+  // a summarized card defaults to its overview; toggle to the raw beats
+  const [view, setView] = useState<"overview" | "beats">(overview ? "overview" : "beats");
 
   const detail = detailBeats(group);
   const status = detail.at(-1); // the current/last thing happening within this activity
   const earlier = detail.slice(0, -1);
   const iter = showIter ? group.beats[0]?.iteration : undefined;
-  // explicit (agent-declared) cards read as the title; mechanical fallback groups don't repeat
-  // the context label as a status when it equals the title.
+  const showOverview = view === "overview" && !!overview;
   const accent = group.insightCount
     ? "border-amber/50 bg-amber/[0.04]"
     : group.hasFinal
@@ -146,21 +152,42 @@ function GroupBlock({
               {renderNote(group.title)}
             </span>
           </div>
-          {status && (
-            <p className="mt-0.5 text-[11px] leading-snug text-mist">
-              {renderNote(status.note)}
-              {status.insight && (
-                <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {status.insight.seed}</span>
+          {showOverview ? (
+            <p className="mt-1 text-[11.5px] leading-relaxed text-mist-2">{overview}</p>
+          ) : (
+            <>
+              {status && (
+                <p className="mt-0.5 text-[11px] leading-snug text-mist">
+                  {renderNote(status.note)}
+                  {status.insight && (
+                    <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {status.insight.seed}</span>
+                  )}
+                </p>
               )}
-            </p>
-          )}
-          {group.hasFinal && status?.handoff?.to && (
-            <p className="mt-0.5 font-mono text-[9px] text-mint/80">→ handoff to {status.handoff.to}</p>
+              {group.hasFinal && status?.handoff?.to && (
+                <p className="mt-0.5 font-mono text-[9px] text-mint/80">→ handoff to {status.handoff.to}</p>
+              )}
+            </>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {overview && (
+            <div className="flex overflow-hidden rounded border border-line font-mono text-[8.5px] leading-none">
+              {(["overview", "beats"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-1.5 py-0.5 transition-colors ${
+                    view === v ? "bg-cyan/15 text-cyan" : "text-dim hover:text-mist"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          )}
           <Stamp iso={group.endedAt} running={running} now={now} />
-          {earlier.length > 0 && (
+          {!showOverview && earlier.length > 0 && (
             <button onClick={() => setOpen((o) => !o)} className="font-mono text-[9px] text-dim transition-colors hover:text-mist">
               {open ? "▾" : "▸"} {detail.length}
             </button>
@@ -168,8 +195,8 @@ function GroupBlock({
         </div>
       </div>
 
-      {/* expanded — the earlier detail beats of this activity */}
-      {open && earlier.length > 0 && (
+      {/* expanded — the earlier detail beats (beats view only) */}
+      {!showOverview && open && earlier.length > 0 && (
         <div className="space-y-1 border-l border-line pb-1.5 pl-3.5">
           {[...earlier].reverse().map((h, i) => (
             <div key={i} className="flex items-start gap-2">

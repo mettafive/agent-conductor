@@ -21,6 +21,8 @@ interface RawStepStatus {
   output?: unknown;
   started_at?: string;
   completed_at?: string;
+  /** parallel-agent overviews of activity cards, keyed by card id (the opener beat's `at`) */
+  cardOverviews?: Record<string, string>;
   // Phase 0 self-improvement card metadata (on _improve::* / _validate steps)
   improve?: {
     step?: string;
@@ -345,6 +347,7 @@ function buildModelImpl(snap: Snapshot): BoardModel {
       learnings: Array.isArray(st.learnings)
         ? st.learnings.filter((x): x is string => typeof x === "string")
         : [],
+      cardOverviews: (st.cardOverviews && typeof st.cardOverviews === "object" ? st.cardOverviews : {}) as Record<string, string>,
     };
     return wfStep;
   });

@@ -151,7 +151,35 @@ export async function runHeartbeat(args) {
     (step.heartbeat = step.heartbeat || []).push(entry);
   }
   save(sp, s);
-  return ok(`${id}${typeof sub === "string" ? `/${it}/${sub}` : ""} ♥ ${note.length > 50 ? note.slice(0, 50) + "…" : note}`);
+  // When this beat opens a card, surface its id so a parallel summarizer can target it later.
+  const cardTag = entry.card ? ` [card ${entry.at}]` : "";
+  return ok(`${id}${typeof sub === "string" ? `/${it}/${sub}` : ""} ♥ ${note.length > 50 ? note.slice(0, 50) + "…" : note}${cardTag}`);
+}
+
+// conductor-board overview <step> "summary" [--card <cardId>]
+//
+// Attach a synthesized OVERVIEW to an activity card — written by a parallel agent that
+// summarizes the card's heartbeats once it closes. The board shows the overview by default
+// with a toggle to the raw beats. Without --card, targets the most-recently CLOSED card
+// (the second-to-last card opener; the last opener is the still-open card).
+export async function runOverview(args) {
+  const sp = statusPathOf(args);
+  const [id, text] = positionals(args);
+  if (!id || !text) return fail('usage: conductor-board overview <step> "summary" [--card <cardId>]');
+  const s = load(sp);
+  if (!s) return fail("no status.json — run status-init first");
+  const step = s.steps[id];
+  if (!step) return fail(`no step "${id}"`);
+  let cardId = flag(args, ["--card"]);
+  if (typeof cardId !== "string") {
+    const openers = (step.heartbeat || []).filter((h) => h && h.card).map((h) => h.at);
+    cardId = openers.length >= 2 ? openers[openers.length - 2] : openers[openers.length - 1];
+    if (!cardId) return fail(`no cards on step "${id}" to summarize`);
+  }
+  step.cardOverviews = step.cardOverviews || {};
+  step.cardOverviews[cardId] = text;
+  save(sp, s);
+  return ok(`${id} ▸ overview saved for card ${cardId}`);
 }
 
 // conductor-board loop-scope <loopId> <item...> [--note "..."]
