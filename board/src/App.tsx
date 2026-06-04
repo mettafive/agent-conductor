@@ -13,6 +13,7 @@ import {
   setTicksMuted,
 } from "./lib/sounds";
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
+import { relativeTime } from "./lib/heartbeat";
 import { useNow } from "./lib/useNow";
 import { activeIterationItem, clockSince, followStep, resolveActiveUnit } from "./lib/view";
 import { TopBar } from "./components/TopBar";
@@ -380,7 +381,7 @@ export function App() {
                 </motion.div>
               </AnimatePresence>
             ) : (
-              <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
+              <WaitingState model={liveModel} statusPath={liveSnap.statusPath} lastBeat={globalLastBeat} now={now} />
             )}
           </div>
 
@@ -562,7 +563,17 @@ function fmtRunDate(iso?: string | null): string {
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
+function WaitingState({
+  model,
+  statusPath,
+  lastBeat,
+  now,
+}: {
+  model: BoardModel;
+  statusPath: string;
+  lastBeat?: string | null;
+  now: number;
+}) {
   return (
     <div className="grid h-full place-items-center px-5">
       <div className="max-w-md text-center">
@@ -601,7 +612,11 @@ function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: st
 
         <div className="mt-6 flex items-center justify-center gap-2 font-mono text-xs text-mist">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mint" />
-          watching for changes
+          {lastBeat ? (
+            <span className="text-mint">agent active · last beat {relativeTime(lastBeat, now)}</span>
+          ) : (
+            "watching for changes"
+          )}
         </div>
         <p className="mt-2 font-mono text-[11px] text-dim">{statusPath}</p>
       </div>
