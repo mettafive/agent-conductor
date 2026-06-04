@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { CodeBlock } from "../components/CodeBlock";
 import { useScrollSpy } from "../lib/useScrollSpy";
+import { Nav } from "../components/Nav";
 
 const HOME = import.meta.env.BASE_URL; // "/agent-conductor/"
 const GH = "https://github.com/mettafive/agent-conductor";
@@ -158,35 +159,9 @@ export function BoardGuide() {
 
   return (
     <div className="min-h-screen">
-      {/* top bar */}
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-line/70 bg-ink/70 backdrop-blur-xl">
-        <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-          <a href={HOME} className="flex items-center gap-2.5">
-            <img src={`${HOME}conductor.svg`} alt="" className="h-7 w-7" />
-            <span className="font-mono text-sm font-medium tracking-tight text-chalk">
-              agent-conductor
-            </span>
-            <span className="rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-mist">
-              Board guide
-            </span>
-          </a>
-          <div className="flex items-center gap-1">
-            <a href={HOME} className="rounded-lg px-3 py-2 text-sm text-mist transition-colors hover:text-chalk">
-              ← Home
-            </a>
-            <a
-              href={GH}
-              target="_blank"
-              rel="noreferrer"
-              className="ml-1 flex items-center gap-2 rounded-lg border border-line-2 bg-panel px-3 py-2 text-sm text-chalk transition-colors hover:border-iris/50 hover:bg-panel-2"
-            >
-              GitHub ↗
-            </a>
-          </div>
-        </nav>
-      </header>
+      <Nav active="guide" />
 
-      <main className="mx-auto max-w-6xl px-5 pt-24">
+      <main className="mx-auto max-w-6xl px-5 pt-10">
         {/* hero */}
         <div className="border-b border-line pb-10">
           <Eyebrow>
@@ -212,7 +187,7 @@ export function BoardGuide() {
         <div className="grid gap-12 py-12 lg:grid-cols-[200px_minmax(0,1fr)]">
           {/* sticky ToC */}
           <aside className="hidden lg:block">
-            <div className="sticky top-24">
+            <div className="sticky top-20">
               <div className="mb-3 font-mono text-[11px] uppercase tracking-wider text-mist">
                 On this page
               </div>

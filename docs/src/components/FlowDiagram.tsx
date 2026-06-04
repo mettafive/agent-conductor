@@ -24,7 +24,7 @@ export function FlowDiagram({ yaml, className }: Props) {
       {parsed.error && parsed.nodes.length === 0 ? (
         <div className="grid h-full place-items-center p-8 text-center">
           <div>
-            <p className="font-mono text-sm text-rose">⚠ {parsed.error}</p>
+            <p className="font-mono text-sm text-rose">{parsed.error}</p>
             <p className="mt-2 text-xs text-mist">
               Fix the YAML and the graph will redraw.
             </p>
@@ -36,6 +36,7 @@ export function FlowDiagram({ yaml, className }: Props) {
           nodes={parsed.nodes}
           edges={parsed.edges}
           nodeTypes={nodeTypes}
+          defaultEdgeOptions={{ type: "smoothstep" }}
           fitView
           fitViewOptions={{ padding: 0.25 }}
           proOptions={{ hideAttribution: true }}

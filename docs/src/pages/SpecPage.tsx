@@ -100,8 +100,8 @@ export function SpecPage() {
           { t: "Rejoins", d: "then: brings a branch back to the main line." },
           { t: "Outputs", d: "output: names data that downstream steps template in." },
         ].map((f) => (
-          <Reveal key={f.t}>
-            <div className="rounded-xl border border-line bg-panel/30 p-5">
+          <Reveal key={f.t} className="h-full">
+            <div className="flex h-full flex-col rounded-xl border border-line bg-panel/30 p-5">
               <div className="font-mono text-sm font-medium text-chalk">{f.t}</div>
               <p className="mt-1.5 text-sm text-mist">{f.d}</p>
             </div>

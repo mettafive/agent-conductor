@@ -14,9 +14,11 @@ export function Shell() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  const active = location.pathname.split("/")[1] || undefined;
+
   return (
     <div className="flex min-h-screen flex-col">
-      <Nav />
+      <Nav active={active} />
       <AnimatePresence mode="wait">
         <motion.main
           key={location.pathname}
