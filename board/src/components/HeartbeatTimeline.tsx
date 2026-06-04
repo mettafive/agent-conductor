@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HeartbeatEntry, LoopState, DeveloperNote } from "../lib/types";
 import { relativeTime, renderNote } from "../lib/heartbeat";
 import { groupBeats, detailBeats, postComment, type BeatGroup } from "../lib/groups";
@@ -44,6 +44,15 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
 
   const shown =
     filter === "all" ? entries : entries.filter((h) => h.iteration === filter);
+  const groups = groupBeats(shown);
+
+  // keep the latest (bottom) activity in view as it streams, unless the user scrolled up
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+  }, [shown.length, running]);
 
   return (
     <div className="mt-2.5 border-t border-line pt-2 pl-7">
@@ -87,24 +96,34 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
         </div>
       )}
 
-      {shown.length > 0 && (
-        <div className="max-h-96 space-y-2 overflow-y-auto board-scroll">
-          {/* Beats grouped into activity cards, newest first — the live card streams its rows,
-              closed cards collapse to their summary, so there's always a clear current activity. */}
-          {[...groupBeats(shown)].reverse().map((g, gi) => (
-            <GroupBlock
-              key={g.id}
-              group={g}
-              overview={cardOverviews?.[g.id]}
-              cardNotes={(notes ?? []).filter((n) => n.card === g.id && n.status !== "removed")}
-              workflow={workflow}
-              step={step}
-              active={gi === 0 && running && !g.hasFinal}
-              running={running}
-              now={now}
-              showIter={filter === "all"}
-            />
-          ))}
+      {groups.length > 0 && (
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+          }}
+          className="relative max-h-[28rem] overflow-y-auto board-scroll pl-7"
+        >
+          {/* the timeline spine — activity blocks stack along it, oldest → newest */}
+          <span className="pointer-events-none absolute bottom-3 left-[11px] top-3 w-px bg-line" />
+          <div className="space-y-2.5">
+            {groups.map((g, gi) => (
+              <GroupBlock
+                key={g.id}
+                group={g}
+                number={gi + 1}
+                overview={cardOverviews?.[g.id]}
+                cardNotes={(notes ?? []).filter((n) => n.card === g.id && n.status !== "removed")}
+                workflow={workflow}
+                step={step}
+                active={gi === groups.length - 1 && running && !g.hasFinal}
+                running={running}
+                now={now}
+                showIter={filter === "all"}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -116,6 +135,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
  *  shows its SUMMARY instead — the overview replaces the stream), then COMMENTS at the bottom. */
 function GroupBlock({
   group,
+  number,
   overview,
   cardNotes,
   workflow,
@@ -126,6 +146,8 @@ function GroupBlock({
   showIter,
 }: {
   group: BeatGroup;
+  /** the block's position on the timeline spine (1-based) */
+  number: number;
   /** parallel-agent summary for this card — replaces the stream once the card closes */
   overview?: string;
   /** the developer's notes/directives pinned to this card (a thread) */
@@ -152,11 +174,27 @@ function GroupBlock({
   const shownRows = collapsible && !expanded ? rows.slice(-2) : rows;
 
   return (
-    <div className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+    <div
+      className={`relative rounded-lg border bg-panel/40 px-3 py-2.5 ${
+        active ? "border-mint/30" : "border-line"
+      }`}
+    >
+      {/* numbered node sitting on the timeline spine */}
+      <span
+        className={`absolute -left-7 top-2.5 grid h-[22px] w-[22px] place-items-center rounded-full border bg-ink font-mono text-[9px] leading-none ${
+          active
+            ? "border-mint/60 text-mint"
+            : group.hasFinal
+              ? "border-mint/40 text-mint/80"
+              : "border-line-2 text-mist"
+        }`}
+      >
+        {group.hasFinal ? "→" : String(number).padStart(2, "0")}
+      </span>
+
       {/* card NAME + state + timestamp */}
       <div className="flex items-baseline gap-2">
         {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
-        {group.hasFinal && <span className="shrink-0 font-mono text-[10px] leading-none text-mint">→</span>}
         {group.insightCount > 0 && (
           <span className="shrink-0 h-1.5 w-1.5 translate-y-px rounded-full bg-amber" title="carries an insight" />
         )}
@@ -318,7 +356,9 @@ function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () =
           ) : note.status === "deferred" ? (
             <span className="shrink-0 text-dim">– deferred</span>
           ) : (
-            <span className="shrink-0 text-mist">● steers next run · {note.scope ?? "this-conductor"}</span>
+            <span className="shrink-0 text-mist" title="the next run must apply this or explain why not">
+              ● directive · {note.scope ?? "this-conductor"}
+            </span>
           )
         ) : (
           <span className="shrink-0 text-dim">note</span>
@@ -374,18 +414,22 @@ function NoteEditor({
             onCancel();
           }
         }}
-        placeholder="Note… (Enter saves · Shift+Enter for a new line · steer the next run to make it a directive)"
+        placeholder="Note on this activity… (Enter saves · Shift+Enter = new line)"
         className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1.5 text-[11px] leading-snug text-mist-2 outline-none focus:border-mist/40"
       />
       <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
-        <label className="flex items-center gap-1 text-mist">
+        <label
+          className="flex items-center gap-1 text-mist"
+          title="A plain note is just for you. A directive is an instruction the next run must address — apply it or explain why not — so your note actually changes the flow."
+        >
           <input type="checkbox" checked={directive} onChange={(e) => setDirective(e.target.checked)} className="accent-mint" />
-          steer the next run
+          make the agent act on this next run
         </label>
         {directive && (
           <select
             value={scope}
             onChange={(e) => setScope(e.target.value)}
+            title="where the change should land"
             className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[9px] text-mist outline-none"
           >
             {SCOPES.map((s) => (
