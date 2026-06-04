@@ -133,6 +133,9 @@ export interface HeartbeatEntry {
   insight?: Insight;
   /** The last beat of a step — summarizes + carries context to the next step. */
   finalBeat?: boolean;
+  /** Opens a new activity card (one coherent unit of work: one intent, one target).
+   *  This beat's note is the card title; following beats (no card) are its detail. */
+  card?: boolean;
   handoff?: Handoff;
 }
 

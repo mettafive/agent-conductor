@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { HeartbeatEntry, LoopState } from "../lib/types";
 import { relativeTime, renderNote } from "../lib/heartbeat";
-import { groupBeats, loadComment, saveComment, type BeatGroup } from "../lib/groups";
+import { groupBeats, detailBeats, loadComment, saveComment, type BeatGroup } from "../lib/groups";
 
 function absTime(iso: string): string {
   const d = new Date(iso);
@@ -91,7 +91,8 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Pr
   );
 }
 
-/** One activity group: a clickable headline (latest note + meta), its beats, and a comment. */
+/** One activity CARD: the intent (title) is the hero; the latest detail beat is the live
+ *  status; earlier detail beats collapse; a comment box annotates the activity. */
 function GroupBlock({
   group,
   defaultOpen,
@@ -108,46 +109,69 @@ function GroupBlock({
   const [open, setOpen] = useState(defaultOpen);
   const [comment, setComment] = useState(() => loadComment(group.id));
   const [editing, setEditing] = useState(false);
-  const latest = group.beats[group.beats.length - 1];
-  const multi = group.beats.length > 1;
+
+  const detail = detailBeats(group);
+  const status = detail.at(-1); // the current/last thing happening within this activity
+  const earlier = detail.slice(0, -1);
+  const iter = showIter ? group.beats[0]?.iteration : undefined;
+  // explicit (agent-declared) cards read as the title; mechanical fallback groups don't repeat
+  // the context label as a status when it equals the title.
+  const accent = group.insightCount
+    ? "border-amber/50 bg-amber/[0.04]"
+    : group.hasFinal
+      ? "border-mint/40"
+      : group.explicit
+        ? "border-cyan/30"
+        : "border-line-2";
 
   return (
-    <div
-      className={`rounded-md border-l-2 pl-2.5 ${
-        group.insightCount ? "border-amber/50 bg-amber/[0.05]" : group.hasFinal ? "border-mint/40" : "border-line-2"
-      }`}
-    >
-      {/* headline — the latest note is the "current activity"; click to expand the beats */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (multi) setOpen((o) => !o);
-        }}
-        className="flex w-full items-start gap-2 py-1 text-left"
-      >
-        <Stamp iso={group.endedAt} running={running} now={now} />
-        <span className="flex-1 text-[11px] leading-snug text-mist-2">
-          {showIter && group.label !== "activity" && (
-            <span className="mr-1 rounded bg-cyan/10 px-1 font-mono text-[9px] text-cyan">{group.label}</span>
-          )}
-          {group.hasFinal && <span className="mr-1 font-mono text-[10px] text-mint">→</span>}
-          {renderNote(latest.note)}
-          {latest.insight && <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {latest.insight.seed}</span>}
-          {latest.finalBeat && latest.handoff?.to && (
-            <span className="mt-0.5 block font-mono text-[9px] text-mint/80">→ handoff to {latest.handoff.to}</span>
+    <div className={`rounded-md border-l-2 pl-2.5 ${accent}`}>
+      {/* card heading — the intent */}
+      <div className="flex items-start gap-2 py-1.5">
+        <span className="mt-[5px] shrink-0">
+          {group.hasFinal ? (
+            <span className="font-mono text-[10px] leading-none text-mint">→</span>
+          ) : (
+            <span
+              className={`block h-1.5 w-1.5 rounded-full ${
+                group.insightCount ? "bg-amber" : group.explicit ? "bg-cyan" : "bg-line-2"
+              }`}
+            />
           )}
         </span>
-        {multi && (
-          <span className="shrink-0 font-mono text-[9px] text-dim">
-            {open ? "▾" : "▸"} {group.beats.length}
-          </span>
-        )}
-      </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5">
+            {iter && <span className="shrink-0 rounded bg-cyan/10 px-1 font-mono text-[9px] text-cyan">{iter}</span>}
+            <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk">
+              {renderNote(group.title)}
+            </span>
+          </div>
+          {status && (
+            <p className="mt-0.5 text-[11px] leading-snug text-mist">
+              {renderNote(status.note)}
+              {status.insight && (
+                <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {status.insight.seed}</span>
+              )}
+            </p>
+          )}
+          {group.hasFinal && status?.handoff?.to && (
+            <p className="mt-0.5 font-mono text-[9px] text-mint/80">→ handoff to {status.handoff.to}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          <Stamp iso={group.endedAt} running={running} now={now} />
+          {earlier.length > 0 && (
+            <button onClick={() => setOpen((o) => !o)} className="font-mono text-[9px] text-dim transition-colors hover:text-mist">
+              {open ? "▾" : "▸"} {detail.length}
+            </button>
+          )}
+        </div>
+      </div>
 
-      {/* expanded — the earlier beats of this activity */}
-      {multi && open && (
-        <div className="space-y-1 border-l border-line pb-1.5 pl-2.5">
-          {group.beats.slice(0, -1).reverse().map((h, i) => (
+      {/* expanded — the earlier detail beats of this activity */}
+      {open && earlier.length > 0 && (
+        <div className="space-y-1 border-l border-line pb-1.5 pl-3.5">
+          {[...earlier].reverse().map((h, i) => (
             <div key={i} className="flex items-start gap-2">
               <Stamp iso={h.at} running={running} now={now} />
               <span className="flex-1 text-[10.5px] leading-snug text-mist">
@@ -159,7 +183,7 @@ function GroupBlock({
         </div>
       )}
 
-      {/* comment — annotate this activity (persists locally) */}
+      {/* comment — annotate this card (persists locally) */}
       <div className="pb-1.5">
         {editing ? (
           <textarea
@@ -171,15 +195,12 @@ function GroupBlock({
               saveComment(group.id, comment);
               setEditing(false);
             }}
-            placeholder="Leave a note on this activity…"
+            placeholder="Leave a note on this card…"
             className="w-full rounded border border-line bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-cyan/40"
           />
         ) : comment ? (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing(true);
-            }}
+            onClick={() => setEditing(true)}
             className="flex w-full items-start gap-1.5 rounded border border-cyan/20 bg-cyan/[0.06] px-2 py-1 text-left text-[10.5px] leading-snug text-mist-2"
           >
             <span className="text-cyan">✎</span>
@@ -187,10 +208,7 @@ function GroupBlock({
           </button>
         ) : (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing(true);
-            }}
+            onClick={() => setEditing(true)}
             className="font-mono text-[9px] text-dim transition-colors hover:text-cyan"
           >
             + note

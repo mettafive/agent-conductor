@@ -59,6 +59,7 @@ interface RawStepStatus {
     sub?: string;
     insight?: { type?: string; seed?: string; step?: string; scope?: string; confidence?: string };
     finalBeat?: boolean;
+    card?: boolean;
     handoff?: { to?: string; to_iteration?: string; context?: string; produced?: string };
   }>;
   learnings?: string[];
@@ -84,6 +85,7 @@ function buildHeartbeat(st: RawStepStatus) {
                 }
               : undefined,
           finalBeat: h.finalBeat === true,
+          card: h.card === true,
           handoff:
             h.handoff && typeof h.handoff === "object"
               ? {

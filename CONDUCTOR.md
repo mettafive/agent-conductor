@@ -75,6 +75,34 @@ step's gate **and** the workflow's `goal`. Use `[text](url)` links for any PR or
 page you produce — the board renders them clickable. After each loop iteration,
 distill durable patterns into the step's `learnings` (max 5).
 
+### Group your beats into activity cards
+
+A run should read as a **story**, not a firehose. So narrate in **cards** — and tell the
+board where each one begins.
+
+> **A card is one coherent unit of work: a single _intent_ on a single _target_.**
+> **intent** = one kind of action (researching, writing, verifying, fixing, shipping…).
+> **target** = one thing (a page, a file, an entity, a check).
+> A card **opens** when you turn to a new intent _or_ a new target; it **stays open** while
+> the play-by-play serves that same intent+target; it **closes** when either changes, or the
+> step hands off.
+
+Open a card with `--card`, where the note **is the card's title** (your one-line statement of
+intent). The beats that follow — without `--card` — are that card's detail:
+
+```
+heartbeat polish-and-ship "Writing fågel's FAQ" --iteration fagel --card
+heartbeat polish-and-ship "grounded in GSC + PAA, snippet-shaped" --iteration fagel
+heartbeat polish-and-ship "Fixing fågel's dead Källor link" --iteration fagel --card
+```
+
+Before each beat, run the check yourself: *"is this still the same intent + target as my open
+card?"* — yes → a detail beat; no → open a new card. Good titles are short and concrete
+("Claiming the batch", "Verifying artroskopi has no price data"), never "working…". The board
+renders each card with its title as the hero, the latest detail as its live status, the rest
+collapsed, and a comment box — and threads each card into the next. (Runs with no `--card`
+still group mechanically, but you lose the composed titles.)
+
 **End every step with a finalBeat.** Before you mark a step `done`, append one last
 heartbeat with `"finalBeat": true` that summarizes what the step accomplished and
 carries context forward: `"handoff": { "to": "<next-step>", "context": "<what the
@@ -146,6 +174,7 @@ npx conductor-board status-init conductor.yaml     # all steps pending
 npx conductor-board step polish running             # running | done | failed
 npx conductor-board heartbeat polish "fixed dead link" --insight-type gate_issue --insight-seed "verify link liveness" --insight-scope this-conductor
 npx conductor-board heartbeat polish-and-ship "scraping links…" --iteration akupunktur --sub check-links   # a loop sub-step beat (bubbles to the parent)
+npx conductor-board heartbeat polish "Writing the FAQ" --card           # opens an activity card (note = its title)
 npx conductor-board heartbeat polish "done" --final --to gate-page
 npx conductor-board loop polish akupunktur polish-page done   # a loop sub-step
 npx conductor-board suggest "Sitemap-first is faster" --scope this-conductor --step discover-prices --current "Nav first." --proposed "Sitemap first, nav fallback."   # → conductor knowledge:

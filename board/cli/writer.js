@@ -127,6 +127,9 @@ export async function runHeartbeat(args) {
       confidence: typeof flag(args, ["--insight-confidence"]) === "string" ? flag(args, ["--insight-confidence"]) : "medium",
     };
   }
+  // --card opens a new activity card (a coherent unit of work: one intent, one target).
+  // This beat's note is the card's title; following beats (no --card) are its detail.
+  if (args.includes("--card")) entry.card = true;
   if (args.includes("--final")) {
     entry.finalBeat = true;
     const to = flag(args, ["--to"]);
