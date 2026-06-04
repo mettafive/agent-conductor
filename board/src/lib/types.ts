@@ -226,27 +226,44 @@ export interface BoardStep extends ConductorStep {
   cardOverviews?: Record<string, string>;
 }
 
+/** One entry in a note's audit trail — an edit or removal never destroys the record, it logs here. */
+export interface NoteEvent {
+  at: string;
+  action: "created" | "edited" | "removed" | "restored";
+  from?: string;
+  to?: string;
+}
+
 /**
  * A note the developer (the "flow manager") left on an activity card. A plain note is
  * transparency; promoted to a `directive` it becomes a flow-changer the next run's Phase 0
  * improve-pass MUST resolve — applied (with how) or deferred (with why), never silently glossed.
+ *
+ * A card can hold several notes (a thread), each with its own audit `history`. Editing or
+ * removing a note keeps the record and appends to `history` ("edited from X to Y").
  */
 export interface DeveloperNote {
-  /** stable id — the card id it's attached to (one note per card) */
+  /** unique note id (`<card>:<ts>`) — a card can carry more than one */
   id: string;
   at: string;
+  updated_at?: string;
   step: string;
+  /** the card id this note is pinned to */
   card: string;
+  /** FOOTNOTE — the card's title (its intent), so the agent knows what was commented on */
+  card_title?: string;
   text: string;
   /** promoted from a note to a steering directive the next run must acknowledge */
   directive: boolean;
   /** where it should land: this-conductor | upstream | template | tooling | corpus */
   scope?: string;
-  status: "open" | "applied" | "deferred";
+  status: "open" | "applied" | "deferred" | "removed";
   /** how it was applied, or why it was deferred */
   resolution?: string;
   resolved_at?: string;
   resolved_run?: string;
+  /** audit trail — created / edited (from→to) / removed / restored */
+  history?: NoteEvent[];
 }
 
 export interface BoardModel {

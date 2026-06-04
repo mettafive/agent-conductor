@@ -910,7 +910,9 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       return;
     }
     // developer notes / directives on activity cards — the flow-manager feedback loop.
-    // Body: { card, step, text, directive, scope, action }. Empty text or action:"delete" removes it.
+    // Body actions: create {card, cardTitle, step, text, directive, scope}; edit {id, text, directive,
+    // scope}; remove {id, action:"remove"}. Edits/removals are logged to the note's audit history,
+    // never destroyed — the record stays, the footnote grows ("edited from X to Y").
     if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/comment$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       if (!wf) return json(res, 404, { error: "not found" });
@@ -921,38 +923,48 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
         } catch {
           return json(res, 400, { error: "invalid request body" });
         }
-        const card = body.card;
-        if (!card) return json(res, 400, { error: "card id required" });
         let status;
         try {
           status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
         } catch {
           return json(res, 500, { error: "could not read status.json" });
         }
-        status.developer_notes = Array.isArray(status.developer_notes) ? status.developer_notes : [];
-        const idx = status.developer_notes.findIndex((n) => n && n.id === card);
+        const notes = (status.developer_notes = Array.isArray(status.developer_notes) ? status.developer_notes : []);
+        const at = new Date().toISOString();
         const text = typeof body.text === "string" ? body.text.trim() : "";
-        if (!text || body.action === "delete") {
-          if (idx >= 0) status.developer_notes.splice(idx, 1);
-        } else if (idx >= 0) {
-          const n = status.developer_notes[idx];
-          n.text = text;
-          n.at = new Date().toISOString();
-          n.directive = !!body.directive;
-          if (typeof body.scope === "string") n.scope = body.scope;
-          // an edit reopens the ask so the next run reconsiders it
-          n.status = "open";
-          delete n.resolution;
+
+        if (body.id) {
+          const n = notes.find((x) => x && x.id === body.id);
+          if (!n) return json(res, 404, { error: "note not found" });
+          n.history = Array.isArray(n.history) ? n.history : [];
+          if (body.action === "remove") {
+            n.history.push({ at, action: "removed", from: n.text });
+            n.status = "removed";
+          } else {
+            if (n.text !== text)
+              n.history.push({ at, action: n.status === "removed" ? "restored" : "edited", from: n.text, to: text });
+            n.text = text;
+            n.directive = !!body.directive;
+            if (typeof body.scope === "string") n.scope = body.scope;
+            n.updated_at = at;
+            n.status = "open"; // an edit reopens the ask so the next run reconsiders it
+            delete n.resolution;
+          }
         } else {
-          status.developer_notes.push({
-            id: card,
-            at: new Date().toISOString(),
+          // create
+          if (!body.card || !text) return json(res, 400, { error: "card id and text required" });
+          notes.push({
+            id: `${body.card}:${Date.now()}`,
+            at,
+            updated_at: at,
             step: body.step || "",
-            card,
+            card: body.card,
+            card_title: typeof body.cardTitle === "string" ? body.cardTitle : undefined,
             text,
             directive: !!body.directive,
             scope: typeof body.scope === "string" ? body.scope : undefined,
             status: "open",
+            history: [{ at, action: "created", to: text }],
           });
         }
         try {

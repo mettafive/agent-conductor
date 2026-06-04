@@ -97,12 +97,16 @@ function mechanical(entries: HeartbeatEntry[]): BeatGroup[] {
 // the same feedback rail as agent insights: a directive is read + resolved at the next run's
 // Phase 0 (applied-with-how or deferred-with-why), never silently glossed.
 export interface CommentBody {
+  /** present to edit/remove an existing note; absent to create a new one */
+  id?: string;
   step: string;
   card: string;
+  /** the card's title — captured on create so the agent knows what was commented (footnote) */
+  cardTitle?: string;
   text: string;
-  directive: boolean;
+  directive?: boolean;
   scope?: string;
-  action?: "delete";
+  action?: "remove";
 }
 
 export async function postComment(workflow: string, body: CommentBody): Promise<boolean> {

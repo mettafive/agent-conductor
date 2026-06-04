@@ -96,7 +96,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
               key={g.id}
               group={g}
               overview={cardOverviews?.[g.id]}
-              note={notes?.find((n) => n.card === g.id)}
+              cardNotes={(notes ?? []).filter((n) => n.card === g.id && n.status !== "removed")}
               workflow={workflow}
               step={step}
               defaultOpen={gi === 0}
@@ -116,7 +116,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
 function GroupBlock({
   group,
   overview,
-  note,
+  cardNotes,
   workflow,
   step,
   defaultOpen,
@@ -127,8 +127,8 @@ function GroupBlock({
   group: BeatGroup;
   /** parallel-agent overview for this card — when present, the card defaults to it */
   overview?: string;
-  /** the developer's note/directive on this card, if any */
-  note?: DeveloperNote;
+  /** the developer's notes/directives pinned to this card (a thread) */
+  cardNotes?: DeveloperNote[];
   workflow?: string;
   step?: string;
   defaultOpen: boolean;
@@ -137,18 +137,11 @@ function GroupBlock({
   showIter: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(note?.text ?? "");
-  const [directive, setDirective] = useState(note?.directive ?? false);
-  const [scope, setScope] = useState(note?.scope ?? "this-conductor");
   // a summarized card defaults to its overview; toggle to the raw beats
   const [view, setView] = useState<"overview" | "beats">(overview ? "overview" : "beats");
 
+  const notes = cardNotes ?? [];
   const canComment = !!workflow && !!step;
-  const saveNote = (action?: "delete") => {
-    if (canComment) postComment(workflow!, { step: step!, card: group.id, text: draft, directive, scope, action });
-    setEditing(false);
-  };
 
   const detail = detailBeats(group);
   const status = detail.at(-1); // the current/last thing happening within this activity
@@ -216,6 +209,11 @@ function GroupBlock({
               ))}
             </div>
           )}
+          {notes.length > 0 && (
+            <span className="shrink-0 font-mono text-[9px] text-mist" title={`${notes.length} note${notes.length > 1 ? "s" : ""}`}>
+              ✎ {notes.length}
+            </span>
+          )}
           <Stamp iso={group.endedAt} running={running} now={now} />
           {!showOverview && earlier.length > 0 && (
             <button onClick={() => setOpen((o) => !o)} className="font-mono text-[9px] text-dim transition-colors hover:text-mist">
@@ -240,91 +238,201 @@ function GroupBlock({
         </div>
       )}
 
-      {/* developer note / directive — the flow-manager loop (persists server-side) */}
+      {/* developer notes / directives — a managed thread, persisted server-side (flow-manager loop) */}
       {canComment && (
-        <div className="pb-1.5">
-          {editing ? (
-            <div className="space-y-1.5">
-              <textarea
-                autoFocus
-                rows={2}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Leave a note on this card… (steer the next run to make it a directive)"
-                className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-mist/40"
-              />
-              <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
-                <label className="flex items-center gap-1 text-mist">
-                  <input
-                    type="checkbox"
-                    checked={directive}
-                    onChange={(e) => setDirective(e.target.checked)}
-                    className="accent-mint"
-                  />
-                  steer the next run
-                </label>
-                {directive && (
-                  <select
-                    value={scope}
-                    onChange={(e) => setScope(e.target.value)}
-                    className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[9px] text-mist outline-none"
-                  >
-                    {SCOPES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <span className="flex-1" />
-                <button onClick={() => saveNote()} className="rounded bg-line-2 px-2 py-0.5 text-chalk transition-colors hover:bg-line-2/70">
-                  Save
-                </button>
-                {note && (
-                  <button onClick={() => { setDraft(""); saveNote("delete"); }} className="text-dim transition-colors hover:text-rose">
-                    delete
-                  </button>
-                )}
-                <button
-                  onClick={() => { setEditing(false); setDraft(note?.text ?? ""); }}
-                  className="text-dim transition-colors hover:text-mist"
-                >
-                  cancel
-                </button>
-              </div>
-            </div>
-          ) : note?.text ? (
-            <div className="rounded border border-line bg-panel-2 px-2 py-1">
-              <button
-                onClick={() => setEditing(true)}
-                className="flex w-full items-start gap-1.5 text-left text-[10.5px] leading-snug text-mist-2"
-              >
-                <span className="text-mist">✎</span>
-                <span className="flex-1">{note.text}</span>
-              </button>
-              {note.directive && (
-                <div className="mt-1 flex items-start gap-1.5 border-t border-line pt-1 font-mono text-[9px]">
-                  {note.status === "applied" ? (
-                    <span className="shrink-0 text-mint">✓ applied</span>
-                  ) : note.status === "deferred" ? (
-                    <span className="shrink-0 text-dim">– deferred</span>
-                  ) : (
-                    <span className="shrink-0 text-mist">● steers next run</span>
-                  )}
-                  {note.resolution && <span className="flex-1 text-dim">{note.resolution}</span>}
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => setEditing(true)}
-              className="font-mono text-[9px] text-dim transition-colors hover:text-mist"
-            >
-              + note
-            </button>
-          )}
-        </div>
+        <NoteThread notes={notes} workflow={workflow!} step={step!} card={group.id} cardTitle={group.title} />
       )}
+    </div>
+  );
+}
+
+/** The thread of developer notes on one card: each note shows its directive status + an edit/remove
+ *  affordance; you can add more throughout the run. Edits/removals append to the server-side audit. */
+function NoteThread({
+  notes,
+  workflow,
+  step,
+  card,
+  cardTitle,
+}: {
+  notes: DeveloperNote[];
+  workflow: string;
+  step: string;
+  card: string;
+  cardTitle: string;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [directive, setDirective] = useState(false);
+  const [scope, setScope] = useState("this-conductor");
+
+  const reset = () => {
+    setAdding(false);
+    setEditingId(null);
+    setDraft("");
+    setDirective(false);
+    setScope("this-conductor");
+  };
+  const startAdd = () => {
+    reset();
+    setAdding(true);
+  };
+  const startEdit = (n: DeveloperNote) => {
+    setAdding(false);
+    setEditingId(n.id);
+    setDraft(n.text);
+    setDirective(n.directive);
+    setScope(n.scope ?? "this-conductor");
+  };
+  const save = () => {
+    if (!draft.trim()) return reset();
+    postComment(
+      workflow,
+      editingId
+        ? { id: editingId, step, card, text: draft, directive, scope }
+        : { step, card, cardTitle, text: draft, directive, scope },
+    );
+    reset();
+  };
+  const remove = (n: DeveloperNote) => postComment(workflow, { id: n.id, step, card, text: "", action: "remove" });
+
+  return (
+    <div className="space-y-1 pb-1.5">
+      {notes.map((n) =>
+        editingId === n.id ? (
+          <NoteEditor
+            key={n.id}
+            draft={draft}
+            setDraft={setDraft}
+            directive={directive}
+            setDirective={setDirective}
+            scope={scope}
+            setScope={setScope}
+            onSave={save}
+            onCancel={reset}
+          />
+        ) : (
+          <NoteRow key={n.id} note={n} onEdit={() => startEdit(n)} onRemove={() => remove(n)} />
+        ),
+      )}
+
+      {adding ? (
+        <NoteEditor
+          draft={draft}
+          setDraft={setDraft}
+          directive={directive}
+          setDirective={setDirective}
+          scope={scope}
+          setScope={setScope}
+          onSave={save}
+          onCancel={reset}
+        />
+      ) : (
+        <button onClick={startAdd} className="font-mono text-[9px] text-dim transition-colors hover:text-mist">
+          + note
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A single saved note — its text, directive status, and an edit/remove affordance. */
+function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () => void; onRemove: () => void }) {
+  const edits = (note.history ?? []).filter((h) => h.action === "edited");
+  const lastEdit = edits.at(-1);
+  return (
+    <div className="group rounded border border-line bg-panel-2 px-2 py-1">
+      <div className="flex items-start gap-1.5 text-[10.5px] leading-snug text-mist-2">
+        <span className="text-mist">✎</span>
+        <span className="flex-1">{note.text}</span>
+        <span className="flex shrink-0 gap-1.5 font-mono text-[9px] text-dim opacity-0 transition-opacity group-hover:opacity-100">
+          <button onClick={onEdit} className="hover:text-mist">edit</button>
+          <button onClick={onRemove} className="hover:text-rose">remove</button>
+        </span>
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 border-t border-line pt-1 font-mono text-[9px]">
+        {note.directive ? (
+          note.status === "applied" ? (
+            <span className="shrink-0 text-mint">✓ applied</span>
+          ) : note.status === "deferred" ? (
+            <span className="shrink-0 text-dim">– deferred</span>
+          ) : (
+            <span className="shrink-0 text-mist">● steers next run · {note.scope ?? "this-conductor"}</span>
+          )
+        ) : (
+          <span className="shrink-0 text-dim">note</span>
+        )}
+        {note.resolution && <span className="min-w-0 flex-1 truncate text-dim" title={note.resolution}>{note.resolution}</span>}
+        {edits.length > 0 && (
+          <span
+            className="ml-auto shrink-0 text-dim"
+            title={lastEdit ? `edited from “${lastEdit.from ?? ""}” to “${lastEdit.to ?? ""}”` : "edited"}
+          >
+            · edited {edits.length}×
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The add/edit form: text + a "steer the next run" toggle (promotes to a directive) + scope. */
+function NoteEditor({
+  draft,
+  setDraft,
+  directive,
+  setDirective,
+  scope,
+  setScope,
+  onSave,
+  onCancel,
+}: {
+  draft: string;
+  setDraft: (s: string) => void;
+  directive: boolean;
+  setDirective: (b: boolean) => void;
+  scope: string;
+  setScope: (s: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <textarea
+        autoFocus
+        rows={2}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Leave a note on this card… (steer the next run to make it a directive)"
+        className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-mist/40"
+      />
+      <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
+        <label className="flex items-center gap-1 text-mist">
+          <input type="checkbox" checked={directive} onChange={(e) => setDirective(e.target.checked)} className="accent-mint" />
+          steer the next run
+        </label>
+        {directive && (
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[9px] text-mist outline-none"
+          >
+            {SCOPES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
+        <span className="flex-1" />
+        <button onClick={onSave} className="rounded bg-line-2 px-2 py-0.5 text-chalk transition-colors hover:bg-line-2/70">
+          Save
+        </button>
+        <button onClick={onCancel} className="text-dim transition-colors hover:text-mist">
+          cancel
+        </button>
+      </div>
     </div>
   );
 }

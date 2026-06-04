@@ -186,51 +186,49 @@ export async function runOverview(args) {
 // A note the developer leaves on a card. Promoted with --directive it becomes a steering
 // signal the next run's Phase 0 improve-pass MUST resolve (applied-with-how or deferred-with-why).
 
-// conductor-board comment <step> "text" --card <cardId> [--directive --scope SC]
+// conductor-board comment <step> "text" --card <cardId> [--card-title "…"] [--directive --scope SC]
+// Appends a note (a card can hold several) with an audit history. Edits/removals are board-driven.
 export async function runComment(args) {
   const sp = statusPathOf(args);
   const [id, text] = positionals(args);
   const cardId = flag(args, ["--card"]);
   if (!id || !text || typeof cardId !== "string")
-    return fail('usage: conductor-board comment <step> "text" --card <cardId> [--directive --scope SC]');
+    return fail('usage: conductor-board comment <step> "text" --card <cardId> [--card-title "…"] [--directive --scope SC]');
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   s.developer_notes = Array.isArray(s.developer_notes) ? s.developer_notes : [];
   const directive = args.includes("--directive");
   const scope = flag(args, ["--scope"]);
-  const existing = s.developer_notes.find((n) => n && n.id === cardId);
-  if (existing) {
-    existing.text = text;
-    existing.at = now();
-    existing.directive = directive || existing.directive;
-    if (typeof scope === "string") existing.scope = scope;
-    // editing reopens a previously-resolved note (the developer changed their ask)
-    existing.status = "open";
-    existing.resolution = undefined;
-  } else {
-    s.developer_notes.push({
-      id: cardId,
-      at: now(),
-      step: id,
-      card: cardId,
-      text,
-      directive,
-      scope: typeof scope === "string" ? scope : undefined,
-      status: "open",
-    });
-  }
+  const cardTitle = flag(args, ["--card-title"]);
+  const at = now();
+  s.developer_notes.push({
+    id: `${cardId}:${Date.now()}`,
+    at,
+    updated_at: at,
+    step: id,
+    card: cardId,
+    card_title: typeof cardTitle === "string" ? cardTitle : undefined,
+    text,
+    directive,
+    scope: typeof scope === "string" ? scope : undefined,
+    status: "open",
+    history: [{ at, action: "created", to: text }],
+  });
   save(sp, s);
   return ok(`${id} ▸ ${directive ? "directive" : "note"} on card ${cardId}: ${text.slice(0, 40)}${text.length > 40 ? "…" : ""}`);
 }
 
-// conductor-board directives [--open] [--step <id>]  — list directives (for the Phase 0 ACK pass)
+// conductor-board directives [--open] [--step <id>]  — list directives (for the Phase 0 ACK pass).
+// Prints the card-title FOOTNOTE so the agent knows which activity each directive is about.
 export async function runDirectives(args) {
   const sp = statusPathOf(args);
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   const openOnly = args.includes("--open");
   const stepF = flag(args, ["--step"]);
-  let notes = (Array.isArray(s.developer_notes) ? s.developer_notes : []).filter((n) => n && n.directive);
+  let notes = (Array.isArray(s.developer_notes) ? s.developer_notes : []).filter(
+    (n) => n && n.directive && n.status !== "removed",
+  );
   if (openOnly) notes = notes.filter((n) => n.status === "open");
   if (typeof stepF === "string") notes = notes.filter((n) => n.step === stepF);
   if (notes.length === 0) {
@@ -239,9 +237,12 @@ export async function runDirectives(args) {
   }
   for (const n of notes) {
     const tag = n.status === "open" ? "● open" : n.status === "applied" ? "✓ applied" : "– deferred";
-    console.log(`${tag}  [${n.step}] (${n.scope || "this-conductor"})  ${n.text}`);
+    const where = n.card_title ? `“${n.card_title}”` : `card ${n.card}`;
+    console.log(`${tag}  [${n.step}] ${where} (${n.scope || "this-conductor"})`);
+    console.log(`        ${n.text}`);
     if (n.resolution) console.log(`        ↳ ${n.resolution}`);
-    console.log(`        card=${n.card}`);
+    const edits = (n.history || []).filter((h) => h.action === "edited").length;
+    console.log(`        id=${n.id}${edits ? ` · edited ${edits}×` : ""}`);
   }
   return true;
 }
