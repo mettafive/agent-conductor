@@ -164,8 +164,13 @@ export function App() {
         return;
       }
       if (e.key === "Escape") {
-        if (showSettings) setShowSettings(false);
-        else if (selectedStep !== null || selectedRun !== null) backToLive();
+        if (showSettings) {
+          e.preventDefault();
+          setShowSettings(false);
+        } else if (selectedStep !== null || selectedRun !== null) {
+          e.preventDefault();
+          backToLive(); // drop any manual selection / past-run view and snap back to following the agent live
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -308,6 +313,7 @@ export function App() {
             width={sidebarWidth}
             onResize={setSidebarWidth}
             activeStep={selectedStep ?? liveHighlight}
+            following={liveFollow}
             onSelectStep={setSelectedStep}
             viewingSnap={viewing ? record?.snapshot : null}
           />

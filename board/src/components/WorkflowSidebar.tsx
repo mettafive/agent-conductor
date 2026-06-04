@@ -10,7 +10,10 @@ import { fmtDurCompact } from "../lib/format";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
 
-const SEL = "bg-line-2/40"; // selected row — a neutral surface lift, never colour
+const SEL = "bg-line-2/40"; // manually-selected row — a neutral surface lift, never colour
+// Live-follow row — a mint accent + inset ring, clearly DIFFERENT from a manual selection,
+// so "I'm auto-following the agent here" never reads as "a tab is stuck selected".
+const FOLLOW = "bg-mint/10 ring-1 ring-inset ring-mint/30";
 
 /** Fixed-width, vertically-centred leading slot so every label lines up. */
 function Slot({ children }: { children: React.ReactNode }) {
@@ -32,10 +35,14 @@ function textFor(col: string, on: boolean): string {
 function StepTree({
   snap,
   activeStep,
+  following,
   onSelectStep,
 }: {
   snap: Snapshot;
   activeStep?: string | null;
+  /** true when the main view is auto-following live (no manual selection) — render the
+   *  highlighted row as "following the agent", not as a clicked selection. */
+  following?: boolean;
   onSelectStep?: (id: string | null) => void;
 }) {
   const model = buildModel(snap);
@@ -65,7 +72,7 @@ function StepTree({
       <div key={s.id}>
         <div
           className={`flex items-stretch rounded transition-colors duration-150 ${
-            on ? SEL : "hover:bg-panel-2/60"
+            on ? (following ? FOLLOW : SEL) : "hover:bg-panel-2/60"
           }`}
         >
           {collapsible ? (
@@ -91,6 +98,12 @@ function StepTree({
             <span className={`min-w-0 flex-1 transition-colors duration-300 ${textFor(s.column, on)}`}>
               {label}
             </span>
+            {following && on && (
+              <span className="ml-auto flex shrink-0 items-center gap-1 self-center pr-0.5 text-[10px] font-medium uppercase tracking-wide text-mint">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mint" />
+                live
+              </span>
+            )}
           </button>
         </div>
 
@@ -112,8 +125,8 @@ function StepTree({
                     <button
                       key={it.item}
                       onClick={() => onSelectStep?.(iterId)}
-                      className={`flex w-full items-start gap-2 rounded px-2 py-0.5 text-left text-[12.5px] leading-[18px] transition-colors duration-150 ${
-                        onIter ? SEL : "hover:bg-panel-2/60"
+                      className={`flex w-full items-center gap-2 rounded px-2 py-0.5 text-left text-[12.5px] leading-[18px] transition-colors duration-150 ${
+                        onIter ? (following ? FOLLOW : SEL) : "hover:bg-panel-2/60"
                       }`}
                     >
                       <Slot>
@@ -191,6 +204,7 @@ interface Props {
   width: number;
   onResize: (w: number) => void;
   activeStep?: string | null;
+  following?: boolean;
   onSelectStep?: (id: string | null) => void;
   viewingSnap?: Snapshot | null;
 }
@@ -205,6 +219,7 @@ export function WorkflowSidebar({
   width,
   onResize,
   activeStep,
+  following,
   onSelectStep,
   viewingSnap,
 }: Props) {
@@ -265,7 +280,7 @@ export function WorkflowSidebar({
             {/* progress tree */}
             <div className="mt-4">
               {selectedRun === null && (
-                <StepTree snap={workflows[activeWf].snap} activeStep={activeStep} onSelectStep={onSelectStep} />
+                <StepTree snap={workflows[activeWf].snap} activeStep={activeStep} following={following} onSelectStep={onSelectStep} />
               )}
             </div>
 
