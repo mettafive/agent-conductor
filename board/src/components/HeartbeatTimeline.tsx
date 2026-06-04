@@ -192,16 +192,20 @@ function GroupBlock({
         {group.hasFinal ? "→" : String(number).padStart(2, "0")}
       </span>
 
-      {/* card NAME + state + timestamp */}
-      <div className="flex items-baseline gap-2">
+      {/* meta row — context + state + time (kept off the title's line so the title never
+          gets squeezed into a narrow column) */}
+      <div className="flex items-center gap-2">
         {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
         {group.insightCount > 0 && (
-          <span className="shrink-0 h-1.5 w-1.5 translate-y-px rounded-full bg-amber" title="carries an insight" />
+          <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-amber" title="carries an insight" />
         )}
-        <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk">{renderNote(group.title)}</span>
+        <span className="flex-1" />
         {active && <span className="shrink-0 font-mono text-[9px] tracking-wide text-mint">● live</span>}
         <Stamp iso={group.endedAt} running={running} now={now} />
       </div>
+
+      {/* card NAME — its own full-width line */}
+      <div className="mt-1 text-[12.5px] font-medium leading-snug text-chalk">{renderNote(group.title)}</div>
 
       {/* body — the summary, or the heartbeat-row stream */}
       {asSummary ? (

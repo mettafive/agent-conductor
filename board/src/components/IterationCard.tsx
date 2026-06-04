@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { ConductorStep, HeartbeatEntry, IterationStep, DeveloperNote } from "../lib/types";
 import { useNow } from "../lib/useNow";
@@ -54,6 +54,25 @@ export function IterationCard({
   const dur = fmtDur(sub.started_at, sub.completed_at);
   const hasDetail = shown.length > 0 || soft.length + hard.length > 0 || gateTotal > 0;
 
+  // pulse the card once when a fresh heartbeat lands inside it
+  const [pulse, setPulse] = useState(false);
+  const prevAt = useRef<string | undefined>(undefined);
+  const seeded = useRef(false);
+  useEffect(() => {
+    const at = latest?.at;
+    if (!seeded.current) {
+      seeded.current = true;
+      prevAt.current = at;
+      return;
+    }
+    if (at && at !== prevAt.current) {
+      prevAt.current = at;
+      setPulse(true);
+      const t = setTimeout(() => setPulse(false), 760);
+      return () => clearTimeout(t);
+    }
+  }, [latest?.at]);
+
   return (
     <motion.div
       layout
@@ -63,7 +82,9 @@ export function IterationCard({
       exit={{ opacity: 0, y: -2 }}
       transition={MOVE}
       onClick={() => hasDetail && setOpen((o) => !o)}
-      className={`border-b border-line px-2.5 py-2.5 transition-colors duration-200 ${hasDetail ? "cursor-pointer hover:bg-panel-2/50" : ""}`}
+      className={`rounded-md border-b border-line px-2.5 py-2.5 transition-colors duration-200 ${
+        hasDetail ? "cursor-pointer hover:bg-panel-2/50" : ""
+      } ${pulse ? "beat-flash" : ""}`}
     >
       <div className="flex items-center gap-2.5">
         <Led state={col} />

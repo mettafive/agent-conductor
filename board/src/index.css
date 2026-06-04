@@ -175,6 +175,16 @@
   animation: stall-breathe 2.1s ease-in-out infinite;
 }
 
+/* one-shot mint ring flash — a card pulses when a new heartbeat lands inside it */
+@keyframes beat-flash {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-mint) 55%, transparent); }
+  45% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-mint) 28%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.beat-flash {
+  animation: beat-flash 0.75s ease-out;
+}
+
 /* teletype block cursor */
 @keyframes tw-blink {
   0%, 49% { opacity: 1; }
