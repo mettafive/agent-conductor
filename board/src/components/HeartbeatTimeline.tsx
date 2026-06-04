@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { HeartbeatEntry, LoopState } from "../lib/types";
 import { relativeTime, renderNote } from "../lib/heartbeat";
+import { groupBeats, loadComment, saveComment, type BeatGroup } from "../lib/groups";
 
 function absTime(iso: string): string {
   const d = new Date(iso);
@@ -78,63 +79,124 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Pr
       )}
 
       {shown.length > 0 && (
-        <div className="relative max-h-64 space-y-2 overflow-y-auto board-scroll pl-3.5">
-          {/* the connecting line */}
-          <span className="pointer-events-none absolute bottom-1 left-[3px] top-1.5 w-px bg-line" />
-          {[...shown].reverse().map((h, i) => (
-            <div
-              key={i}
-              className={`relative ${
-                h.insight ? "-ml-1 rounded-md border-l-2 border-amber/50 bg-amber/[0.05] pl-2" : ""
-              }`}
-            >
-              {/* dot (or handoff arrow for finalBeats) */}
-              {h.finalBeat ? (
-                <span
-                  className="absolute -left-[15px] top-[3px] font-mono text-[10px] leading-none text-mint"
-                  title={h.handoff?.to ? `handoff → ${h.handoff.to}` : "final beat"}
-                >
-                  →
-                </span>
-              ) : (
-                <span
-                  className={`absolute -left-[13px] top-[5px] h-1.5 w-1.5 rounded-full ${
-                    h.insight ? "bg-amber" : "bg-line-2"
-                  }`}
-                />
-              )}
+        <div className="max-h-72 space-y-1.5 overflow-y-auto board-scroll">
+          {/* Related beats are grouped into activities, newest first, so there's always a
+              coherent "current activity" at the top instead of a flat firehose. */}
+          {[...groupBeats(shown)].reverse().map((g, gi) => (
+            <GroupBlock key={g.id} group={g} defaultOpen={gi === 0} running={running} now={now} showIter={filter === "all"} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-              <div className="flex items-start gap-2">
-                <Stamp iso={h.at} running={running} now={now} />
-                <span className="flex-1 text-[11px] leading-snug text-mist-2">
-                  {h.iteration && filter === "all" && (
-                    <span className="mr-1 rounded bg-cyan/10 px-1 font-mono text-[9px] text-cyan">
-                      {h.iteration}
-                    </span>
-                  )}
-                  {h.insight && (
-                    <span
-                      className="mr-1 inline-block h-1.5 w-1.5 translate-y-px rounded-full bg-amber"
-                      title="carries an insight"
-                    />
-                  )}
-                  {renderNote(h.note)}
-                  {h.insight && (
-                    <span className="mt-0.5 block text-[10px] italic text-amber/90">
-                      ↳ {h.insight.seed}
-                    </span>
-                  )}
-                  {h.finalBeat && h.handoff?.to && (
-                    <span className="mt-0.5 block font-mono text-[9px] text-mint/80">
-                      → handoff to {h.handoff.to}
-                    </span>
-                  )}
-                </span>
-              </div>
+/** One activity group: a clickable headline (latest note + meta), its beats, and a comment. */
+function GroupBlock({
+  group,
+  defaultOpen,
+  running,
+  now,
+  showIter,
+}: {
+  group: BeatGroup;
+  defaultOpen: boolean;
+  running: boolean;
+  now: number;
+  showIter: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [comment, setComment] = useState(() => loadComment(group.id));
+  const [editing, setEditing] = useState(false);
+  const latest = group.beats[group.beats.length - 1];
+  const multi = group.beats.length > 1;
+
+  return (
+    <div
+      className={`rounded-md border-l-2 pl-2.5 ${
+        group.insightCount ? "border-amber/50 bg-amber/[0.05]" : group.hasFinal ? "border-mint/40" : "border-line-2"
+      }`}
+    >
+      {/* headline — the latest note is the "current activity"; click to expand the beats */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (multi) setOpen((o) => !o);
+        }}
+        className="flex w-full items-start gap-2 py-1 text-left"
+      >
+        <Stamp iso={group.endedAt} running={running} now={now} />
+        <span className="flex-1 text-[11px] leading-snug text-mist-2">
+          {showIter && group.label !== "activity" && (
+            <span className="mr-1 rounded bg-cyan/10 px-1 font-mono text-[9px] text-cyan">{group.label}</span>
+          )}
+          {group.hasFinal && <span className="mr-1 font-mono text-[10px] text-mint">→</span>}
+          {renderNote(latest.note)}
+          {latest.insight && <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {latest.insight.seed}</span>}
+          {latest.finalBeat && latest.handoff?.to && (
+            <span className="mt-0.5 block font-mono text-[9px] text-mint/80">→ handoff to {latest.handoff.to}</span>
+          )}
+        </span>
+        {multi && (
+          <span className="shrink-0 font-mono text-[9px] text-dim">
+            {open ? "▾" : "▸"} {group.beats.length}
+          </span>
+        )}
+      </button>
+
+      {/* expanded — the earlier beats of this activity */}
+      {multi && open && (
+        <div className="space-y-1 border-l border-line pb-1.5 pl-2.5">
+          {group.beats.slice(0, -1).reverse().map((h, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <Stamp iso={h.at} running={running} now={now} />
+              <span className="flex-1 text-[10.5px] leading-snug text-mist">
+                {renderNote(h.note)}
+                {h.insight && <span className="mt-0.5 block text-[9.5px] italic text-amber/90">↳ {h.insight.seed}</span>}
+              </span>
             </div>
           ))}
         </div>
       )}
+
+      {/* comment — annotate this activity (persists locally) */}
+      <div className="pb-1.5">
+        {editing ? (
+          <textarea
+            autoFocus
+            rows={2}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            onBlur={() => {
+              saveComment(group.id, comment);
+              setEditing(false);
+            }}
+            placeholder="Leave a note on this activity…"
+            className="w-full rounded border border-line bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-cyan/40"
+          />
+        ) : comment ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+            className="flex w-full items-start gap-1.5 rounded border border-cyan/20 bg-cyan/[0.06] px-2 py-1 text-left text-[10.5px] leading-snug text-mist-2"
+          >
+            <span className="text-cyan">✎</span>
+            <span className="flex-1">{comment}</span>
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
+            className="font-mono text-[9px] text-dim transition-colors hover:text-cyan"
+          >
+            + note
+          </button>
+        )}
+      </div>
     </div>
   );
 }
