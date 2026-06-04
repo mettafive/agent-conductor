@@ -509,7 +509,15 @@ function serveStatic(req, res) {
     return;
   }
   const ext = path.extname(filePath);
-  res.writeHead(200, { "content-type": MIME[ext] || "application/octet-stream" });
+  const headers = { "content-type": MIME[ext] || "application/octet-stream" };
+  // index.html must always revalidate so a fresh build is picked up on reload;
+  // the hashed /assets/ files are content-addressed, so cache them hard.
+  if (ext === ".html") {
+    headers["cache-control"] = "no-cache, no-store, must-revalidate";
+  } else if (urlPath.startsWith("/assets/")) {
+    headers["cache-control"] = "public, max-age=31536000, immutable";
+  }
+  res.writeHead(200, headers);
   fs.createReadStream(filePath).pipe(res);
 }
 

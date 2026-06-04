@@ -286,7 +286,20 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
   });
 }
 
+// Snapshots are fresh objects only when the server pushes an update, so caching
+// the derived model by snapshot identity is correct — and it stops the YAML from
+// being re-parsed on every render / clock tick (the board re-renders each second).
+const modelCache = new WeakMap<Snapshot, BoardModel>();
+
 export function buildModel(snap: Snapshot): BoardModel {
+  const cached = modelCache.get(snap);
+  if (cached) return cached;
+  const model = buildModelImpl(snap);
+  modelCache.set(snap, model);
+  return model;
+}
+
+function buildModelImpl(snap: Snapshot): BoardModel {
   const status = snap.status ?? {};
   const statusSteps = (status.steps as Record<string, RawStepStatus>) ?? {};
   const parsed = parseConductor(snap.conductorYaml);

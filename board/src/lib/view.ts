@@ -52,12 +52,36 @@ export function resolveActiveUnit(step: BoardStep): ActiveUnit {
   };
 }
 
-/** The step the main area auto-follows: the current step, else the running one. */
+/** The step the main area auto-follows: the current step, else the running one,
+ *  else (on a finished run) the last step — so the final card lingers a beat
+ *  before the summary instead of snapping to "preparing". */
 export function followStep(model: BoardModel): BoardStep | null {
+  const workflow = model.steps.filter((s) => s.phase === "workflow");
   return (
-    model.steps.find((s) => s.id === model.currentStep && s.phase === "workflow") ??
-    model.steps.find((s) => s.column === "running" && s.phase === "workflow") ??
-    null
+    workflow.find((s) => s.id === model.currentStep) ??
+    workflow.find((s) => s.column === "running") ??
+    (model.overallStatus === "done" || model.overallStatus === "failed"
+      ? (workflow[workflow.length - 1] ?? null)
+      : null)
+  );
+}
+
+/**
+ * The loop iteration the agent is currently working — currentItem if set, else
+ * the first not-yet-done one, else the last. Undefined if the step isn't a loop
+ * or has no iterations yet. This is what the live view locks onto so you watch
+ * the agent's sub-step cards move.
+ */
+export function activeIterationItem(step: BoardStep | null): string | undefined {
+  if (!step?.isLoop || !step.loop) return undefined;
+  const iters = step.loop.iterations;
+  if (iters.length === 0) return undefined;
+  return (
+    (step.loop.currentItem && iters.some((it) => it.item === step.loop!.currentItem)
+      ? step.loop.currentItem
+      : undefined) ??
+    iters.find((it) => !it.done && !it.failed)?.item ??
+    iters[iters.length - 1]?.item
   );
 }
 

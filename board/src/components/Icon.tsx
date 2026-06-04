@@ -6,6 +6,7 @@ export type IconName =
   | "chevronRight"
   | "chevronDown"
   | "arrowLeft"
+  | "arrowRight"
   | "loop"
   | "clock"
   | "menu"
@@ -19,6 +20,7 @@ const PATHS: Record<IconName, ReactNode> = {
   chevronRight: <path d="M9 6l6 6-6 6" />,
   chevronDown: <path d="M6 9l6 6 6-6" />,
   arrowLeft: <path d="M11 6l-6 6 6 6M5 12h14" />,
+  arrowRight: <path d="M13 6l6 6-6 6M19 12H5" />,
   loop: <path d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4m14-1v2a4 4 0 0 1-4 4H3" />,
   clock: (
     <>

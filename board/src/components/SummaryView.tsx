@@ -1,6 +1,7 @@
 import type { BoardModel } from "../lib/types";
 import { Icon } from "./Icon";
 import { Led } from "./Led";
+import { AppearIcon } from "./Appear";
 
 /** Shown when a run is complete — every step with its result, at a glance. */
 export function SummaryView({ model }: { model: BoardModel }) {
@@ -8,9 +9,11 @@ export function SummaryView({ model }: { model: BoardModel }) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
       <div className="flex flex-col items-center text-center">
-        <span className={failed ? "text-rose" : "text-mint"}>
-          <Icon name={failed ? "cross" : "check"} size={28} />
-        </span>
+        <AppearIcon swap={failed ? "fail" : "done"}>
+          <span className={failed ? "text-rose" : "text-mint"}>
+            <Icon name={failed ? "cross" : "check"} size={28} />
+          </span>
+        </AppearIcon>
         <h2 className="mt-2 text-xl font-medium text-chalk">
           {model.workflow} — {failed ? "failed" : "complete"}
         </h2>

@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { EMPTY, useBoardState } from "./lib/useBoardState";
 import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
-import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sounds";
+import {
+  isChimesMuted,
+  isTicksMuted,
+  playFailure,
+  playSuccess,
+  playTick,
+  setChimesMuted,
+  setTicksMuted,
+} from "./lib/sounds";
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
-import { clockSince, followStep, resolveActiveUnit } from "./lib/view";
+import { activeIterationItem, clockSince, followStep, resolveActiveUnit } from "./lib/view";
 import { TopBar } from "./components/TopBar";
 import { ContextHeader } from "./components/ContextHeader";
 import { ActiveCard } from "./components/ActiveCard";
@@ -16,25 +24,61 @@ import { LoopOverview } from "./components/LoopOverview";
 import { IterationKanban } from "./components/IterationKanban";
 import { ImprovementCard } from "./components/ImprovementCard";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
-import { InsightsDashboard } from "./components/InsightsDashboard";
+import { Settings } from "./components/Settings";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
 import type { BoardModel, BoardStep, RunRecord, Snapshot } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
 
+function loadSidebarOpen(): boolean {
+  try {
+    return localStorage.getItem("cb-sidebar-open") !== "0";
+  } catch {
+    return true;
+  }
+}
+function loadSidebarWidth(): number {
+  try {
+    const v = Number(localStorage.getItem("cb-sidebar-w"));
+    if (v >= 248 && v <= 600) return v;
+  } catch {
+    /* ignore */
+  }
+  return 280;
+}
+
 export function App() {
   const { workflows, order, conn } = useBoardState();
   const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
   const [selectedRun, setSelectedRun] = useState<string | null>(params.get("run"));
   const [record, setRecord] = useState<RunRecord | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(280); // Part 1.1 — wide enough to never truncate
-  const [muted, setMutedState] = useState(isMuted());
+  const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
+  const [ticksOn, setTicksOn] = useState(!isTicksMuted());
+  const [chimesOn, setChimesOn] = useState(!isChimesMuted());
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
   const [selectedStep, setSelectedStep] = useState<string | null>(null); // null = auto-follow live
-  const [showInsights, setShowInsights] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const now = useNow(1000);
+
+  // remember the sidebar's open/closed state and custom width across sessions
+  useEffect(() => {
+    try {
+      localStorage.setItem("cb-sidebar-open", sidebarOpen ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarOpen]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("cb-sidebar-w", String(sidebarWidth));
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarWidth]);
+
+  const [summaryReady, setSummaryReady] = useState(false);
 
   // live heartbeat stream across every workflow — drives the monitor, the heart,
   // and the tick sound. Arrivals are seeded on load so nothing false-fires.
@@ -84,8 +128,9 @@ export function App() {
       setRecord(null);
       return;
     }
+    // Keep the current record on screen while the next one loads — swapping it
+    // in only when it arrives avoids a blank "loading" flash between runs.
     let alive = true;
-    setRecord(null);
     fetch(`/api/workflow/${encodeURIComponent(activeWf)}/history/${encodeURIComponent(selectedRun)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((rec: RunRecord | null) => alive && setRecord(rec))
@@ -99,19 +144,47 @@ export function App() {
     setSelectedWf(name);
     setSelectedRun(null);
     setSelectedStep(null);
-    setShowInsights(false);
   };
   const pickRun = (wf: string, runId: string) => {
     setSelectedWf(wf);
     setSelectedRun(runId);
     setSelectedStep(null);
-    setShowInsights(false);
   };
   const backToLive = () => {
     setSelectedRun(null);
     setSelectedStep(null);
-    setShowInsights(false);
   };
+
+  // ⌘, toggles settings; Esc closes settings, then returns to the live run.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setShowSettings((s) => !s);
+        return;
+      }
+      if (e.key === "Escape") {
+        if (showSettings) setShowSettings(false);
+        else if (selectedStep !== null || selectedRun !== null) backToLive();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showSettings, selectedStep, selectedRun]);
+
+  // When a run finishes, hold on the last step for a beat before the summary
+  // crossfades in — so the final card is seen, not snapped past.
+  useEffect(() => {
+    if (selectedRun !== null) return; // past runs show their summary immediately
+    const st = liveModel.overallStatus;
+    if (st === "done" || st === "failed") {
+      // long enough that the final cards visibly settle at Done and rest there
+      // before the summary crossfades in (the card move itself takes ~0.42s).
+      const t = setTimeout(() => setSummaryReady(true), 1600);
+      return () => clearTimeout(t);
+    }
+    setSummaryReady(false);
+  }, [liveModel.overallStatus, liveModel.runId, selectedRun]);
 
   // human approval — write the decisions to status.json; the agent routes on them
   const applyApproval = async (
@@ -156,8 +229,12 @@ export function App() {
 
   // Auto-follow: with nothing selected on the live run, the main area tracks the
   // active step (Part 3) — the view follows the action, no clicking needed.
-  const liveFollow = !viewing && selectedStep === null && !showInsights;
+  const liveFollow = !viewing && selectedStep === null;
   const follow = liveFollow ? followStep(liveModel) : null;
+  // When the agent is in a loop, lock onto the iteration it's working so the
+  // live view shows that iteration's kanban with cards moving (follow the agent).
+  const followItem = activeIterationItem(follow);
+  const followInLoop = !!(follow?.isLoop && followItem);
 
   // Selected-step resolution (manual inspection / past runs). "loopId::item"
   // selects an iteration; "_improve::*" ids are NOT iterations.
@@ -172,8 +249,12 @@ export function App() {
       : (model?.currentStep ?? null);
   const selectedStepObj = model?.steps.find((s) => s.id === activeStepId) ?? null;
 
+  // What the sidebar highlights: the selection, or — when following live — the
+  // exact iteration the agent is in (so you can see where it is at a glance).
+  const liveHighlight = followInLoop ? `${follow!.id}::${followItem}` : activeStepId;
+
   const showSummary =
-    !showInsights &&
+    (viewing || summaryReady) &&
     selectedStep === null &&
     !!model &&
     (model.overallStatus === "done" || model.overallStatus === "failed");
@@ -187,28 +268,34 @@ export function App() {
     iterSel,
     selectedStepObj,
     structuralPending,
-    showInsights,
+    followItem,
     showSummary,
     now,
   });
-  const showBackToLive = selectedStep !== null || selectedRun !== null || showInsights;
+  const showBackToLive = selectedStep !== null || selectedRun !== null;
 
-  // motion key — changes whenever the rendered view changes, giving the crossfade
-  const viewKey = showInsights
-    ? "insights"
-    : `${activeWf}:${selectedRun ?? "live"}:${
+  // motion key — changes whenever the rendered view changes, giving the crossfade.
+  // Includes the live iteration so advancing to the next one crossfades, while
+  // staying stable within an iteration so its cards animate in place.
+  const viewKey = `${activeWf}:${selectedRun ?? "live"}:${
         showSummary
           ? "sum"
           : structuralPending && liveFollow
             ? `imp:${structuralPending.id}`
             : liveFollow
-              ? `follow:${follow?.id ?? "none"}`
+              ? `follow:${follow?.id ?? "none"}:${followItem ?? ""}`
               : (selectedStep ?? selectedStepObj?.id ?? "none")
       }`;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <TopBar workflow={activeWf ?? liveModel.workflow} />
+      <TopBar
+        workflow={activeWf ?? liveModel.workflow}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((o) => !o)}
+        showBackToLive={showBackToLive}
+        onBackToLive={backToLive}
+      />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {sidebarOpen && (
           <WorkflowSidebar
@@ -220,14 +307,9 @@ export function App() {
             onPickRun={pickRun}
             width={sidebarWidth}
             onResize={setSidebarWidth}
-            activeStep={selectedStep ?? activeStepId}
+            activeStep={selectedStep ?? liveHighlight}
             onSelectStep={setSelectedStep}
             viewingSnap={viewing ? record?.snapshot : null}
-            onOpenInsights={() => {
-              setShowInsights(true);
-              setSelectedStep(null);
-            }}
-            insightsOpen={showInsights}
           />
         )}
 
@@ -238,13 +320,7 @@ export function App() {
             </div>
           )}
 
-          <ContextHeader
-            label={header.label}
-            timer={header.timer}
-            timerPrefix={header.timerPrefix}
-            onBackToLive={showBackToLive ? backToLive : undefined}
-            onToggleSidebar={() => setSidebarOpen((o) => !o)}
-          />
+          <ContextHeader label={header.label} timer={header.timer} timerPrefix={header.timerPrefix} />
 
           {model?.error && (
             <div className="px-5 pt-4">
@@ -255,41 +331,48 @@ export function App() {
           )}
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            {showInsights ? (
-              <ViewShell vkey="insights">
-                <InsightsDashboard
-                  workflow={activeWf ?? "workflow"}
-                  knowledge={(model ?? liveModel).knowledge}
-                  runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
-                />
-              </ViewShell>
-            ) : viewing && !record ? (
+            {viewing && !record ? (
               <div className="grid h-full place-items-center">
                 <span className="font-mono text-xs text-mist">loading run…</span>
               </div>
             ) : showBoard && model ? (
-              <ViewShell vkey={viewKey} fill={liveFollow && !showSummary && !structuralPending}>
-                {showSummary ? (
-                  <SummaryView model={model} />
-                ) : structuralPending && liveFollow ? (
-                  <ImprovementCard step={structuralPending} onApprove={applyApproval} />
-                ) : liveFollow ? (
-                  follow ? (
-                    <ActiveCard step={follow} />
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={viewKey}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  className={
+                    liveFollow && !showSummary && !structuralPending && !followInLoop
+                      ? "h-full"
+                      : "board-scroll h-full overflow-y-auto"
+                  }
+                >
+                  {showSummary ? (
+                    <SummaryView model={model} />
+                  ) : structuralPending && liveFollow ? (
+                    <ImprovementCard step={structuralPending} onApprove={applyApproval} />
+                  ) : liveFollow ? (
+                    followInLoop ? (
+                      <IterationKanban loopStep={follow!} item={followItem!} />
+                    ) : follow ? (
+                      <ActiveCard step={follow} />
+                    ) : (
+                      <Idle />
+                    )
                   ) : (
-                    <Idle />
-                  )
-                ) : (
-                  <SelectedView
-                    step={selectedStepObj}
-                    iterSel={iterSel}
-                    viewing={viewing}
-                    onApprove={applyApproval}
-                    onBackToOverview={(id) => setSelectedStep(id)}
-                    onOpenIteration={(loopId, item) => setSelectedStep(`${loopId}::${item}`)}
-                  />
-                )}
-              </ViewShell>
+                    <SelectedView
+                      step={selectedStepObj}
+                      iterSel={iterSel}
+                      viewing={viewing}
+                      onApprove={applyApproval}
+                      onBackToOverview={(id) => setSelectedStep(id)}
+                      onOpenIteration={(loopId, item) => setSelectedStep(`${loopId}::${item}`)}
+                    />
+                  )}
+                </motion.div>
+              </AnimatePresence>
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
             )}
@@ -303,44 +386,35 @@ export function App() {
             onMode={setMonitorMode}
             lastBeatIso={globalLastBeat}
             conn={conn}
-            muted={muted}
-            onToggleMute={() => {
-              const next = !muted;
-              setMuted(next);
-              setMutedState(next);
-            }}
           />
         </div>
       </div>
+
+      <Settings
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        ticksOn={ticksOn}
+        chimesOn={chimesOn}
+        onToggleTicks={() => {
+          const next = !ticksOn;
+          setTicksMuted(!next);
+          setTicksOn(next);
+        }}
+        onToggleChimes={() => {
+          const next = !chimesOn;
+          setChimesMuted(!next);
+          setChimesOn(next);
+        }}
+        workflow={activeWf ?? liveModel.workflow}
+        knowledge={(model ?? liveModel).knowledge}
+        runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
+      />
     </div>
   );
 }
 
 function statusOf(entry: WorkflowEntry | undefined): string | undefined {
   return (entry?.snap.status as { status?: string } | null)?.status;
-}
-
-/** A crossfading shell so view changes transition smoothly (Part 3). */
-function ViewShell({
-  vkey,
-  fill,
-  children,
-}: {
-  vkey: string;
-  fill?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      key={vkey}
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-      className={fill ? "h-full" : "board-scroll h-full overflow-y-auto"}
-    >
-      {children}
-    </motion.div>
-  );
 }
 
 /** The detail surface when a step/iteration is selected, or a past run browsed. */
@@ -399,7 +473,7 @@ function buildHeader({
   iterSel,
   selectedStepObj,
   structuralPending,
-  showInsights,
+  followItem,
   showSummary,
   now,
 }: {
@@ -411,13 +485,11 @@ function buildHeader({
   iterSel: string[] | null;
   selectedStepObj: BoardStep | null;
   structuralPending?: BoardStep;
-  showInsights: boolean;
+  followItem?: string;
   showSummary: boolean;
   now: number;
 }): { label: string; timer?: string | null; timerPrefix?: string } {
   const wf = model?.workflow ?? "workflow";
-
-  if (showInsights) return { label: `${wf} · knowledge` };
 
   if (viewing) {
     const runLabel = record?.run_name || fmtRunDate(record?.completed_at || record?.started_at) || wf;
@@ -442,6 +514,13 @@ function buildHeader({
         timer: dur,
         timerPrefix: dur ? "ran" : undefined,
       };
+    }
+    if (follow && follow.isLoop && followItem) {
+      const iters = follow.loop?.iterations ?? [];
+      const pos = iters.findIndex((it) => it.item === followItem) + 1;
+      const total = follow.loop?.total || iters.length;
+      const count = pos > 0 && total > 0 ? ` · ${pos}/${total}` : "";
+      return { label: `${follow.id} · ${followItem}${count}` };
     }
     if (follow) {
       const u = resolveActiveUnit(follow);

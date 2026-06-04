@@ -1,20 +1,26 @@
+import { motion } from "framer-motion";
 import type { GateCriterion } from "../lib/types";
 import { Icon } from "./Icon";
 import { Led } from "./Led";
+import { AppearIcon } from "./Appear";
 
-/** Pass / fail / not-yet mark — thin SVG icons + a pending LED. */
+/** Pass / fail / not-yet mark — thin SVG icons that ease in, + a pending LED. */
 function Mark({ passed }: { passed?: boolean | null }) {
   if (passed === true)
     return (
-      <span className="text-mint">
-        <Icon name="check" size={13} />
-      </span>
+      <AppearIcon swap="pass">
+        <span className="text-mint">
+          <Icon name="check" size={13} />
+        </span>
+      </AppearIcon>
     );
   if (passed === false)
     return (
-      <span className="text-rose">
-        <Icon name="cross" size={13} />
-      </span>
+      <AppearIcon swap="fail">
+        <span className="text-rose">
+          <Icon name="cross" size={13} />
+        </span>
+      </AppearIcon>
     );
   return <Led state="pending" />;
 }
@@ -36,7 +42,13 @@ export function GateList({
     <div className={bordered ? "mt-4 border-t border-line pt-3" : ""}>
       <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-mist">gate</div>
       {criteria.map((c, i) => (
-        <div key={i} className="flex items-start gap-2 py-1">
+        <motion.div
+          key={i}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="flex items-start gap-2 py-1"
+        >
           <span className="mt-0.5 w-3 text-center font-mono text-[11px]">
             <Mark passed={c.passed} />
           </span>
@@ -62,7 +74,7 @@ export function GateList({
               <span className="ml-1 text-mist">exit {c.exitCode}</span>
             )}
           </span>
-        </div>
+        </motion.div>
       ))}
     </div>
   );

@@ -4,23 +4,30 @@
 let ctx: AudioContext | null = null;
 let lastPlayed = 0;
 
-const MUTE_KEY = "cb-muted";
+// Two independent controls: the heartbeat ticks (frequent, ambient) and the
+// completion chimes (success / failure). Either can be muted on its own.
+const TICKS_KEY = "cb-mute-ticks";
+const CHIMES_KEY = "cb-mute-chimes";
 
-export function isMuted(): boolean {
+function getFlag(key: string): boolean {
   try {
-    return localStorage.getItem(MUTE_KEY) === "1";
+    return localStorage.getItem(key) === "1";
   } catch {
     return false;
   }
 }
-
-export function setMuted(m: boolean): void {
+function setFlag(key: string, muted: boolean): void {
   try {
-    localStorage.setItem(MUTE_KEY, m ? "1" : "0");
+    localStorage.setItem(key, muted ? "1" : "0");
   } catch {
     /* ignore */
   }
 }
+
+export const isTicksMuted = () => getFlag(TICKS_KEY);
+export const setTicksMuted = (m: boolean) => setFlag(TICKS_KEY, m);
+export const isChimesMuted = () => getFlag(CHIMES_KEY);
+export const setChimesMuted = (m: boolean) => setFlag(CHIMES_KEY, m);
 
 function getCtx(): AudioContext | null {
   try {
@@ -35,7 +42,7 @@ function getCtx(): AudioContext | null {
 
 /** Returns true if a tone actually played (false if muted or debounced). */
 function tone(freq: number, decay: number): boolean {
-  if (isMuted()) return false;
+  if (isChimesMuted()) return false;
   const now = Date.now();
   if (now - lastPlayed < 2000) return false; // debounce rapid completions
   const ac = getCtx();
@@ -66,7 +73,7 @@ export const playFailure = () => tone(400, 0.7);
 // mute toggle, but not the completion debounce (ticks are meant to be frequent).
 let lastTick = 0;
 export function playTick(): boolean {
-  if (isMuted()) return false;
+  if (isTicksMuted()) return false;
   const now = Date.now();
   if (now - lastTick < 120) return false; // collapse bursts only
   const ac = getCtx();

@@ -4,10 +4,10 @@
  * (done dim, pending grey). Accepts a board column directly.
  */
 const CLS: Record<string, string> = {
-  running: "led led-running",
-  gate: "led led-stalled", // gate-check shares the amber attention glow
+  running: "led led-running", // green↔white — neutral focus
+  gate: "led led-gate", // green↔amber — warning / checking
   done: "led led-done",
-  failed: "led led-failed",
+  failed: "led led-failed", // red↔green — something went wrong here
   stalled: "led led-stalled",
   pending: "led led-pending",
   idle: "led led-pending",

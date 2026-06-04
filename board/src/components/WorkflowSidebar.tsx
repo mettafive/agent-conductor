@@ -1,13 +1,21 @@
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { WorkflowEntry } from "../lib/useBoardState";
 import type { BoardStep, HistoryRun, Snapshot } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { buildModel } from "../lib/merge";
 import { iterationColumn } from "../lib/loop";
 import { clockSince } from "../lib/view";
+import { fmtDurCompact } from "../lib/format";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
 
 const SEL = "bg-line-2/40"; // selected row — a neutral surface lift, never colour
+
+/** Fixed-width, vertically-centred leading slot so every label lines up. */
+function Slot({ children }: { children: React.ReactNode }) {
+  return <span className="flex h-[18px] w-3.5 shrink-0 items-center justify-center">{children}</span>;
+}
 
 function textFor(col: string, on: boolean): string {
   if (col === "running" || col === "gate") return "text-chalk";
@@ -31,6 +39,16 @@ function StepTree({
   onSelectStep?: (id: string | null) => void;
 }) {
   const model = buildModel(snap);
+  // Loops are open by default; collapsing is independent per loop, so several
+  // can be open at once. `collapsed` holds the ones the user has folded shut.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
   if (!model.steps.length) return null;
 
   // §7: improvement runs silently — only structural changes (needing approval)
@@ -41,43 +59,76 @@ function StepTree({
   const renderStep = (s: BoardStep) => {
     const on = activeStep === s.id || (!!activeStep && activeStep.startsWith(`${s.id}::`));
     const label = s.phase === "improve" ? s.improve?.title ?? s.id.replace("_improve::", "") : s.id;
+    const collapsible = s.isLoop && !!s.loop && s.loop.iterations.length > 0;
+    const open = collapsible && !collapsed.has(s.id);
     return (
       <div key={s.id}>
-        <button
-          onClick={() => onSelectStep?.(s.id)}
-          className={`flex w-full items-start gap-2.5 rounded px-2 py-1 text-left text-[13px] leading-snug transition-colors duration-150 ${
+        <div
+          className={`flex items-stretch rounded transition-colors duration-150 ${
             on ? SEL : "hover:bg-panel-2/60"
           }`}
         >
-          <span className="mt-1.5">
-            <Led state={s.column} />
-          </span>
-          <span className={`min-w-0 flex-1 ${textFor(s.column, on)}`}>{label}</span>
-        </button>
+          {collapsible ? (
+            <button
+              onClick={() => toggle(s.id)}
+              aria-label={open ? "Collapse" : "Expand"}
+              className="grid w-5 shrink-0 place-items-center text-dim transition-colors hover:text-mist"
+            >
+              <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: "easeOut" }} className="grid place-items-center">
+                <Icon name="chevronRight" size={12} />
+              </motion.span>
+            </button>
+          ) : (
+            <span className="w-5 shrink-0" />
+          )}
+          <button
+            onClick={() => onSelectStep?.(s.id)}
+            className="flex min-w-0 flex-1 items-start gap-2 py-1 pr-2 text-left text-[13px] leading-[18px]"
+          >
+            <Slot>
+              <Led state={s.column} />
+            </Slot>
+            <span className={`min-w-0 flex-1 transition-colors duration-300 ${textFor(s.column, on)}`}>
+              {label}
+            </span>
+          </button>
+        </div>
 
-        {s.isLoop && s.loop && s.loop.iterations.length > 0 && (
-          <div className="ml-5 space-y-0.5">
-            {s.loop.iterations.map((it) => {
-              const c = iterationColumn(it);
-              const iterId = `${s.id}::${it.item}`;
-              const onIter = activeStep === iterId;
-              return (
-                <button
-                  key={it.item}
-                  onClick={() => onSelectStep?.(iterId)}
-                  className={`flex w-full items-start gap-2.5 rounded px-2 py-0.5 text-left text-[12.5px] leading-snug transition-colors duration-150 ${
-                    onIter ? SEL : "hover:bg-panel-2/60"
-                  }`}
-                >
-                  <span className="mt-1.5">
-                    <Led state={c} />
-                  </span>
-                  <span className={`min-w-0 flex-1 ${textFor(c, onIter)}`}>{it.item}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {collapsible && open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className="overflow-hidden"
+            >
+              <div className="ml-5 space-y-0.5 pt-0.5">
+                {s.loop!.iterations.map((it) => {
+                  const c = iterationColumn(it);
+                  const iterId = `${s.id}::${it.item}`;
+                  const onIter = activeStep === iterId;
+                  return (
+                    <button
+                      key={it.item}
+                      onClick={() => onSelectStep?.(iterId)}
+                      className={`flex w-full items-start gap-2 rounded px-2 py-0.5 text-left text-[12.5px] leading-[18px] transition-colors duration-150 ${
+                        onIter ? SEL : "hover:bg-panel-2/60"
+                      }`}
+                    >
+                      <Slot>
+                        <Led state={c} />
+                      </Slot>
+                      <span className={`min-w-0 flex-1 transition-colors duration-300 ${textFor(c, onIter)}`}>
+                        {it.item}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   };
@@ -98,7 +149,7 @@ function StepTree({
 
 function SectionRule({ text }: { text: string }) {
   return (
-    <div className="mb-1 mt-1 flex items-center gap-2 px-1">
+    <div className="mb-1 mt-1 flex items-center gap-2 px-2">
       <span className="text-[12px] text-dim">{text}</span>
       <span className="h-px flex-1 bg-line" />
     </div>
@@ -123,19 +174,6 @@ function fmtDate(iso?: string | null): string {
   });
 }
 
-/** Compact duration for the history list — "45s" / "18m" / "1h 3m". */
-function fmtDur(start?: string | null, end?: string | null): string {
-  if (!start || !end) return "";
-  const a = new Date(start).getTime();
-  const b = new Date(end).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return "";
-  const s = Math.round((b - a) / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
 const STATUS_WORD: Record<string, string> = {
   running: "Running",
   done: "Done",
@@ -155,8 +193,6 @@ interface Props {
   activeStep?: string | null;
   onSelectStep?: (id: string | null) => void;
   viewingSnap?: Snapshot | null;
-  onOpenInsights?: () => void;
-  insightsOpen?: boolean;
 }
 
 export function WorkflowSidebar({
@@ -171,14 +207,12 @@ export function WorkflowSidebar({
   activeStep,
   onSelectStep,
   viewingSnap,
-  onOpenInsights,
-  insightsOpen,
 }: Props) {
   const now = useNow(1000);
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
-    const move = (ev: PointerEvent) => onResize(Math.max(248, Math.min(380, ev.clientX)));
+    const move = (ev: PointerEvent) => onResize(Math.max(248, Math.min(600, ev.clientX)));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -215,7 +249,7 @@ export function WorkflowSidebar({
         {activeWf && liveModel ? (
           <>
             {/* active workflow — name + status · elapsed */}
-            <button onClick={() => onPickWorkflow(activeWf)} className="block w-full px-1 text-left">
+            <button onClick={() => onPickWorkflow(activeWf)} className="block w-full px-2 text-left">
               <div className="truncate text-[15px] font-semibold text-chalk">{activeWf}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-[13px] text-mist">
                 <span>{STATUS_WORD[overallStatus] ?? overallStatus}</span>
@@ -246,9 +280,11 @@ export function WorkflowSidebar({
                       <button
                         key={name}
                         onClick={() => onPickWorkflow(name)}
-                        className="flex w-full items-center gap-2.5 rounded px-2 py-1 text-left text-[13px] transition-colors duration-150 hover:bg-panel-2/60"
+                        className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] transition-colors duration-150 hover:bg-panel-2/60"
                       >
-                        <Led state={st} />
+                        <Slot>
+                          <Led state={st} />
+                        </Slot>
                         <span className="min-w-0 flex-1 truncate text-mist">{name}</span>
                       </button>
                     );
@@ -277,18 +313,20 @@ export function WorkflowSidebar({
                     const active = activeWf === name && selectedRun === r.run_id;
                     const failed = r.status === "failed";
                     const label = r.run_name || fmtDate(r.completed_at || r.archived_at || r.started_at);
-                    const dur = fmtDur(r.started_at, r.completed_at);
+                    const dur = fmtDurCompact(r.started_at, r.completed_at);
                     return (
                       <div key={r.run_id}>
                         <button
                           onClick={() => onPickRun(name, r.run_id)}
-                          className={`flex w-full items-center gap-2.5 rounded px-2 py-1 text-left transition-colors duration-150 ${
+                          className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left transition-colors duration-150 ${
                             active ? SEL : "hover:bg-panel-2/60"
                           }`}
                         >
-                          <span className={failed ? "text-rose" : "text-mist"}>
-                            <Icon name={failed ? "cross" : "check"} size={13} />
-                          </span>
+                          <Slot>
+                            <span className={failed ? "text-rose" : "text-mist"}>
+                              <Icon name={failed ? "cross" : "check"} size={13} />
+                            </span>
+                          </Slot>
                           <span className="min-w-0 flex-1 truncate text-[12.5px] text-mist">{label}</span>
                           {dur && <span className="shrink-0 text-[11px] tabular-nums text-dim">{dur}</span>}
                         </button>
@@ -306,21 +344,6 @@ export function WorkflowSidebar({
           )}
         </div>
       </div>
-
-      {/* footer — knowledge is a link here, not a persistent counter */}
-      {onOpenInsights && (
-        <button
-          onClick={onOpenInsights}
-          className={`flex items-center gap-2 border-t border-line px-4 py-2.5 text-left text-[13px] transition-colors ${
-            insightsOpen ? "text-chalk" : "text-mist hover:text-chalk"
-          }`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 19V5a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2Zm0 0a2 2 0 0 1 2-2h12" />
-          </svg>
-          Knowledge
-        </button>
-      )}
 
       <div
         onPointerDown={startDrag}

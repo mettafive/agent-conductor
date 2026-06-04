@@ -4,20 +4,17 @@ import type { ConductorStep, HeartbeatEntry, IterationStep } from "../lib/types"
 import { useNow } from "../lib/useNow";
 import { subStepColumn } from "../lib/loop";
 import { renderNote } from "../lib/heartbeat";
+import { fmtDur } from "../lib/format";
 import { GateList } from "./GateList";
 import { HeartbeatTimeline } from "./HeartbeatTimeline";
 import { Led } from "./Led";
 
-function fmtDur(start?: string, end?: string): string {
-  if (!start || !end) return "";
-  const a = new Date(start).getTime();
-  const b = new Date(end).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return "";
-  const s = Math.round((b - a) / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
-
-const MOVE = { duration: 0.2, ease: "easeOut" } as const;
+// Movement between columns eases in and out (accelerate, then settle) — subtle
+// but alive. The fade in/out stays quick so cards don't linger.
+const MOVE = {
+  layout: { duration: 0.42, ease: [0.45, 0, 0.55, 1] },
+  default: { duration: 0.2, ease: "easeOut" },
+} as const;
 
 /**
  * A full-size card for one loop sub-step within an iteration. Shows the
@@ -62,7 +59,7 @@ export function IterationCard({
       exit={{ opacity: 0, y: -2 }}
       transition={MOVE}
       onClick={() => hasDetail && setOpen((o) => !o)}
-      className={`rounded-lg border px-3 py-2.5 ${col === "running" ? "border-line-2" : "border-line"} bg-panel ${hasDetail ? "cursor-pointer transition-colors hover:border-line-2" : ""}`}
+      className={`border-b border-line px-2.5 py-2.5 transition-colors duration-200 ${hasDetail ? "cursor-pointer hover:bg-panel-2/50" : ""}`}
     >
       <div className="flex items-center gap-2.5">
         <Led state={col} />

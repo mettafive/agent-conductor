@@ -39,33 +39,6 @@ export function loadMonitorMode(): MonitorMode {
   return "min";
 }
 
-/** Small mute toggle — the one audio control, lives in the bottom bar (§6.3). */
-function MuteButton({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      title={muted ? "Unmute sounds" : "Mute sounds"}
-      className="grid h-6 w-6 place-items-center rounded text-dim transition-colors hover:text-chalk"
-    >
-      {muted ? (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M11 5 6 9H2v6h4l5 4V5Z" />
-          <path d="m23 9-6 6M17 9l6 6" />
-        </svg>
-      ) : (
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M11 5 6 9H2v6h4l5 4V5Z" />
-          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-        </svg>
-      )}
-    </button>
-  );
-}
-
 /** A small amber dot that breathes when beats have gone quiet (§5.1). */
 function StallDot({ lastBeatIso }: { lastBeatIso?: string }) {
   const now = useNow(1000);
@@ -99,8 +72,6 @@ interface Props {
   mode: MonitorMode;
   onMode: (m: MonitorMode) => void;
   lastBeatIso?: string;
-  muted: boolean;
-  onToggleMute: () => void;
   conn?: Conn;
 }
 
@@ -111,8 +82,6 @@ export function HeartbeatMonitor({
   mode,
   onMode,
   lastBeatIso,
-  muted,
-  onToggleMute,
   conn,
 }: Props) {
   const wfColor = (name: string) => WF_COLORS[Math.max(0, order.indexOf(name)) % WF_COLORS.length];
@@ -145,7 +114,7 @@ export function HeartbeatMonitor({
       <motion.button
         initial={{ opacity: 0, scale: 0.85 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
         onClick={() => onMode("min")}
         title="Show heartbeat monitor"
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-ink-2/90 px-3 py-2 shadow-lg backdrop-blur transition-colors hover:border-line-2"
@@ -191,7 +160,6 @@ export function HeartbeatMonitor({
           )}
           <span className="shrink-0 font-mono text-[10px] text-dim">▲</span>
         </button>
-        <MuteButton muted={muted} onToggle={onToggleMute} />
       </motion.div>
     );
   }
@@ -205,8 +173,6 @@ export function HeartbeatMonitor({
       wfColor={wfColor}
       multi={multi}
       lastBeatIso={lastBeatIso}
-      muted={muted}
-      onToggleMute={onToggleMute}
       conn={conn}
     />
   );
@@ -220,8 +186,6 @@ function ExpandedMonitor({
   wfColor,
   multi,
   lastBeatIso,
-  muted,
-  onToggleMute,
   conn,
 }: {
   beats: StreamBeat[];
@@ -231,8 +195,6 @@ function ExpandedMonitor({
   wfColor: (n: string) => string;
   multi: boolean;
   lastBeatIso?: string;
-  muted: boolean;
-  onToggleMute: () => void;
   conn?: Conn;
 }) {
   const [filter, setFilter] = useState<string>("all");
@@ -321,7 +283,6 @@ function ExpandedMonitor({
         </span>
         <span className="text-[10px] text-dim">{beats.length}</span>
         <span className="ml-auto flex items-center gap-1.5 text-dim">
-          <MuteButton muted={muted} onToggle={onToggleMute} />
           <span aria-hidden title="Minimize" className="grid h-5 w-5 place-items-center rounded transition-colors group-hover/bar:text-chalk">
             ▼
           </span>
@@ -415,7 +376,7 @@ function ExpandedMonitor({
             initial={{ opacity: 0, y: 8, x: "-50%" }}
             animate={{ opacity: 1, y: 0, x: "-50%" }}
             exit={{ opacity: 0, y: 8, x: "-50%" }}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
             onClick={jumpToLatest}
             className="absolute bottom-3 left-1/2 z-10 rounded-full border border-cyan/40 bg-ink/90 px-3 py-1 text-[10px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
           >

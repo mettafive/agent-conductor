@@ -1,5 +1,6 @@
 import type { BoardStep } from "../lib/types";
 import { useNow } from "../lib/useNow";
+import { fmtDur } from "../lib/format";
 import { GateList } from "./GateList";
 import { HeartbeatTimeline } from "./HeartbeatTimeline";
 import { ApprovalCard, type Decision } from "./ApprovalCard";
@@ -12,15 +13,6 @@ const COL_LABEL: Record<string, string> = {
   failed: "Failed",
   pending: "Pending",
 };
-
-function fmtDur(start?: string, end?: string): string {
-  if (!start || !end) return "";
-  const a = new Date(start).getTime();
-  const b = new Date(end).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return "";
-  const s = Math.round((b - a) / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
 
 /** The active non-loop step, shown large and centred in the main area. */
 export function StepDetail({

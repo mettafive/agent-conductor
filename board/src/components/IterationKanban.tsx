@@ -43,6 +43,10 @@ export function IterationKanban({
   const cols: Col[] = anyFailed ? [...MAIN, "failed"] : MAIN;
   const gridCols = anyFailed ? "lg:grid-cols-5" : "lg:grid-cols-4";
 
+  const iters = loopStep.loop?.iterations ?? [];
+  const pos = iters.findIndex((it) => it.item === item) + 1;
+  const total = loopStep.loop?.total || iters.length;
+
   return (
     <div className="mx-auto max-w-[1400px] px-5 py-6">
       <div className="mb-4 flex items-center gap-2.5">
@@ -52,18 +56,19 @@ export function IterationKanban({
             title="Back to the loop overview"
             className="grid h-6 w-6 place-items-center rounded-md border border-line text-mist transition-colors hover:border-line-2 hover:text-chalk"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24">
-              <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="M11 17 6 12l5-5M6 12h12" />
-            </svg>
+            <Icon name="arrowLeft" size={13} />
           </button>
         )}
         <span className="grid h-6 w-6 place-items-center rounded-md bg-panel-2 text-mist">
           <Icon name="loop" size={14} />
         </span>
         <h2 className="text-lg font-medium text-chalk">{item}</h2>
-        <span className="font-mono text-[11px] text-mist">
-          {loopStep.id} · iteration
-        </span>
+        {pos > 0 && total > 0 && (
+          <span className="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-mist">
+            {pos}/{total}
+          </span>
+        )}
+        <span className="font-mono text-[11px] text-dim">{loopStep.id}</span>
       </div>
 
       <LayoutGroup>
@@ -72,12 +77,12 @@ export function IterationKanban({
             const inCol = iter.steps.filter((s) => subStepColumn(s) === c);
             return (
               <div key={c} className="min-w-0">
-                <div className="mb-2 flex items-center gap-2 px-0.5">
+                <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
                   <Led state={c} />
                   <span className="text-[11px] text-mist">{LABEL[c]}</span>
                   <span className="ml-auto text-[11px] tabular-nums text-dim">{inCol.length}</span>
                 </div>
-                <div className="space-y-3">
+                <div>
                   <AnimatePresence mode="popLayout" initial={false}>
                     {inCol.map((s) => (
                       <IterationCard

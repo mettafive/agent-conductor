@@ -69,11 +69,59 @@
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+  /* ease between states instead of snapping from one colour to the next */
+  transition:
+    background-color 0.35s ease,
+    box-shadow 0.35s ease,
+    opacity 0.35s ease;
 }
+/* The current focus pulses between two colours, eased, to read state at a
+   glance: green↔white = neutral/running, green↔amber = warning (gate check),
+   red↔green = something went wrong in here. */
 .led-running {
-  background: var(--color-green);
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
-  animation: led-pulse 2s ease-in-out infinite;
+  background-color: var(--color-green);
+  animation: led-running 1.9s ease-in-out infinite;
+}
+@keyframes led-running {
+  0%,
+  100% {
+    background-color: #4ade80;
+    box-shadow: 0 0 7px rgba(74, 222, 128, 0.45);
+  }
+  50% {
+    background-color: #e9fff1;
+    box-shadow: 0 0 10px rgba(214, 255, 230, 0.6);
+  }
+}
+.led-gate {
+  background-color: var(--color-green);
+  animation: led-gate 1.5s ease-in-out infinite;
+}
+@keyframes led-gate {
+  0%,
+  100% {
+    background-color: #4ade80;
+    box-shadow: 0 0 7px rgba(74, 222, 128, 0.4);
+  }
+  50% {
+    background-color: #fbbf24;
+    box-shadow: 0 0 9px rgba(251, 191, 36, 0.5);
+  }
+}
+.led-failed {
+  background-color: var(--color-rose);
+  animation: led-error 1.5s ease-in-out infinite;
+}
+@keyframes led-error {
+  0%,
+  100% {
+    background-color: #f87171;
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+  }
+  50% {
+    background-color: #4ade80;
+    box-shadow: 0 0 8px rgba(74, 222, 128, 0.45);
+  }
 }
 .led-done {
   background: var(--color-green);
@@ -82,22 +130,9 @@
 .led-pending {
   background: var(--color-dim);
 }
-.led-failed {
-  background: var(--color-rose);
-  box-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
-}
 .led-stalled {
   background: var(--color-amber);
   box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
-}
-@keyframes led-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 6px rgba(74, 222, 128, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 9px rgba(74, 222, 128, 0.6);
-  }
 }
 
 /* ---- The heartbeat ---- */
