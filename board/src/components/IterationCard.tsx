@@ -84,7 +84,7 @@ export function IterationCard({
       onClick={() => hasDetail && setOpen((o) => !o)}
       className={`rounded-md border-b border-line px-2.5 py-2.5 transition-colors duration-200 ${
         hasDetail ? "cursor-pointer hover:bg-panel-2/50" : ""
-      } ${pulse ? "beat-flash" : ""}`}
+      } ${pulse ? (open ? "beat-flash-faint" : "beat-flash") : ""}`}
     >
       <div className="flex items-center gap-2.5">
         <Led state={col} />

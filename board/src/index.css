@@ -185,6 +185,16 @@
   animation: beat-flash 0.75s ease-out;
 }
 
+/* faint white glow — used when the card is already open (you're looking; just a gentle ack) */
+@keyframes beat-flash-faint {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-chalk) 20%, transparent); }
+  45% { box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-chalk) 9%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.beat-flash-faint {
+  animation: beat-flash-faint 0.75s ease-out;
+}
+
 /* teletype block cursor */
 @keyframes tw-blink {
   0%, 49% { opacity: 1; }
