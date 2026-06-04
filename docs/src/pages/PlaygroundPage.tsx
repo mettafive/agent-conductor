@@ -8,7 +8,7 @@ export function PlaygroundPage() {
       <SectionHead
         kicker="Live playground"
         title="Paste a conductor. Watch it become a flow."
-        sub="Edit the YAML on the left and the graph redraws on the right — conditions branch, dependencies dash, outputs label. The same engine drives the board."
+        sub="Edit the YAML; the flow graph redraws as you type."
       />
       <Reveal className="mt-12">
         <Playground />

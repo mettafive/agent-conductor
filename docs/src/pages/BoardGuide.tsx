@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { CodeBlock } from "../components/CodeBlock";
 import { useScrollSpy } from "../lib/useScrollSpy";
 import { Nav } from "../components/Nav";
+import { FooterNav } from "../components/FooterNav";
 
 const HOME = import.meta.env.BASE_URL; // "/agent-conductor/"
 const GH = "https://github.com/mettafive/agent-conductor";
@@ -507,15 +508,7 @@ export function BoardGuide() {
         </div>
       </main>
 
-      <footer className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-5 py-8 sm:flex-row">
-          <div className="flex items-center gap-2.5">
-            <img src={`${HOME}conductor.svg`} alt="" className="h-6 w-6" />
-            <span className="font-mono text-sm text-mist">agent-conductor</span>
-          </div>
-          <p className="font-mono text-xs text-mist">MIT © mettafive · built to be conducted</p>
-        </div>
-      </footer>
+      <FooterNav />
     </div>
   );
 }

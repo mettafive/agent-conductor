@@ -1,14 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#0a0a0f"/>
-  <rect width="32" height="32" rx="7" fill="url(#g)" opacity="0.18"/>
-  <circle cx="16" cy="8" r="2.4" fill="#a78bfa"/>
-  <circle cx="8.5" cy="22" r="2.4" fill="#22d3ee"/>
-  <circle cx="23.5" cy="22" r="2.4" fill="#34d399"/>
-  <path d="M16 10.4 L9.2 19.8 M16 10.4 L22.8 19.8" stroke="#3f3f5a" stroke-width="1.4" stroke-linecap="round"/>
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="32" y2="32">
-      <stop stop-color="#a78bfa"/>
-      <stop offset="1" stop-color="#22d3ee"/>
-    </linearGradient>
-  </defs>
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="agent-conductor">
+  <rect width="64" height="64" rx="15" fill="#ffffff"/>
+  <g stroke="#0b0b0d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M16 49 C 26 43, 31 29, 49 16"/>
+    <path d="M49 16 L 53 11"/>
+  </g>
+  <g fill="#0b0b0d">
+    <path d="M-6 0 C -3 -3.4 3 -3.4 6 0 C 3 3.4 -3 3.4 -6 0 Z" transform="translate(52,11) rotate(-62)"/>
+    <path d="M-6 0 C -3 -3.4 3 -3.4 6 0 C 3 3.4 -3 3.4 -6 0 Z" transform="translate(44,20) rotate(-52)"/>
+    <path d="M-5.4 0 C -2.7 -3 2.7 -3 5.4 0 C 2.7 3 -2.7 3 -5.4 0 Z" transform="translate(40,28) rotate(34)"/>
+    <path d="M-5.4 0 C -2.7 -3 2.7 -3 5.4 0 C 2.7 3 -2.7 3 -5.4 0 Z" transform="translate(31,34) rotate(-52)"/>
+    <path d="M-4.8 0 C -2.4 -2.7 2.4 -2.7 4.8 0 C 2.4 2.7 -2.4 2.7 -4.8 0 Z" transform="translate(27,41) rotate(34)"/>
+    <circle cx="38" cy="22" r="2.9"/>
+    <circle cx="30" cy="30" r="2.7"/>
+  </g>
 </svg>

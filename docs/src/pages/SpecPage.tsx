@@ -52,7 +52,7 @@ export function SpecPage() {
       <SectionHead
         kicker="The spec"
         title="One YAML file. Any agent."
-        sub="No SDK, no runtime, no lock-in. The conductor file is the entire contract between you and the agent."
+        sub="No SDK, no runtime, no lock-in — the conductor file is the whole contract."
       />
 
       <div className="mt-12 grid items-start gap-5 lg:grid-cols-2">

@@ -32,7 +32,7 @@ export function BoardPage() {
       <SectionHead
         kicker="The board"
         title="npx conductor-board"
-        sub="A local Kanban board watches the status file and moves each step through Pending → Running → Gate Check → Done as the agent works. It follows the agent into loops, archives every run, and stays calm until something needs you."
+        sub="Watches the status file and moves every step through the columns, live."
       />
       <div className="mt-7 flex justify-center">
         <code className="rounded-lg border border-line bg-ink-2/80 px-4 py-2 font-mono text-xs text-mist-2">
@@ -52,7 +52,7 @@ export function BoardPage() {
         <SectionHead
           kicker="The color language"
           title="Color is a signal, not decoration"
-          sub="The board is monochrome by default. The only colour is a small status LED, so your eye only moves when something actually needs it."
+          sub="The only colour is a small status LED — your eye moves only when it should."
         />
         <div className="mx-auto mt-10 max-w-xl divide-y divide-line rounded-2xl border border-line bg-panel/40">
           {LEDS.map((l) => (
@@ -70,7 +70,7 @@ export function BoardPage() {
         <SectionHead
           kicker="Self-regulation"
           title="Agents that check in"
-          sub="On long steps, agents drift. A heartbeat is a pulse the agent writes to itself — re-anchoring to the step's gate and the goal. The board shows it live, links and all."
+          sub="A pulse the agent writes to itself on long steps, shown live."
         />
         <div className="mt-12 grid items-center gap-5 lg:grid-cols-2">
           <Reveal>

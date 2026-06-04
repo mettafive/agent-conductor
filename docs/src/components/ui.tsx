@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useReveal } from "../lib/useReveal";
 
 export function Eyebrow({ children }: { children: ReactNode }) {
   return (
@@ -17,8 +18,9 @@ export function SectionHead({
   title: string;
   sub?: string;
 }) {
+  const ref = useReveal<HTMLDivElement>();
   return (
-    <div className="mx-auto max-w-2xl text-center">
+    <div ref={ref} className="reveal mx-auto max-w-2xl text-center">
       <Eyebrow>{kicker}</Eyebrow>
       <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight text-chalk sm:text-4xl">
         {title}

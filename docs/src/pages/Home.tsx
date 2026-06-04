@@ -61,8 +61,8 @@ export function Home() {
       <section className="grid gap-4 pb-10 md:grid-cols-2">
         <Reveal className="h-full">
           <div className="flex h-full items-start gap-3 rounded-2xl border border-line bg-panel/40 p-5">
-            <span className="mt-0.5 inline-grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-rose/30 bg-rose/10 text-rose">
-              <Icon name="cross" size={14} />
+            <span className="mt-1 shrink-0 text-rose">
+              <Icon name="cross" size={15} />
             </span>
             <p className="text-pretty text-sm leading-relaxed text-mist-2">
               <span className="font-medium text-chalk">The problem.</span> Hand an
@@ -73,8 +73,8 @@ export function Home() {
         </Reveal>
         <Reveal className="h-full">
           <div className="flex h-full items-start gap-3 rounded-2xl border border-line bg-panel/40 p-5">
-            <span className="mt-0.5 inline-grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-mint/30 bg-mint/10 text-mint">
-              <Icon name="check" size={14} />
+            <span className="mt-1 shrink-0 text-mint">
+              <Icon name="check" size={15} />
             </span>
             <p className="text-pretty text-sm leading-relaxed text-mist-2">
               <span className="font-medium text-chalk">The solution.</span> Gated

@@ -123,7 +123,7 @@ export function LiveBoard() {
     const id = setInterval(() => {
       setS(advance(sref.current));
       setBeat((b) => b + 1);
-    }, 2000);
+    }, 2600);
     return () => clearInterval(id);
   }, []);
 
@@ -185,8 +185,8 @@ export function LiveBoard() {
       {/* bottom bar — the heartbeat, streaming */}
       <div className="flex h-9 items-center gap-2.5 border-t border-line bg-panel/40 px-3">
         <Heart beat={beat} />
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-mist">
-          <TypewriterText text={s.note} cursor={false} />
+        <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-mono text-[11.5px] text-mist">
+          <TypewriterText text={s.note} speed={16} cursor={false} />
         </span>
         <span className="shrink-0 font-mono text-[10px] tabular-nums text-dim">{done}/{SUBS.length}</span>
       </div>
