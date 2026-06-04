@@ -11,9 +11,9 @@ import { Led } from "./Led";
 import { Icon } from "./Icon";
 
 const SEL = "bg-line-2/40"; // manually-selected row — a neutral surface lift, never colour
-// Live-follow row — a mint accent + inset ring, clearly DIFFERENT from a manual selection,
-// so "I'm auto-following the agent here" never reads as "a tab is stuck selected".
-const FOLLOW = "bg-mint/10 ring-1 ring-inset ring-mint/30";
+// Live-follow row — a slightly stronger neutral lift; the small mint "● live" marker (status
+// colour, used sparingly) is what says "I'm auto-following the agent here", not a tinted surface.
+const FOLLOW = "bg-line-2/70";
 
 /** Fixed-width, vertically-centred leading slot so every label lines up. */
 function Slot({ children }: { children: React.ReactNode }) {

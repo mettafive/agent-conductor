@@ -77,7 +77,7 @@ export function SummaryView({ model }: { model: BoardModel }) {
             ))}
             {knowledge.map((k, i) => (
               <li key={`k${i}`} className="flex gap-2 text-[12px] leading-snug text-mist-2">
-                <span className="mt-px shrink-0 rounded bg-cyan/15 px-1 font-mono text-[9px] text-cyan">
+                <span className="mt-px shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">
                   {k.status}
                 </span>
                 <span className="flex-1">{k.title}</span>
@@ -95,7 +95,7 @@ export function SummaryView({ model }: { model: BoardModel }) {
               <Led state={s.column} />
               <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-chalk">{s.id}</span>
               {s.isLoop && s.loop && (
-                <span className="shrink-0 font-mono text-[10px] text-cyan">
+                <span className="shrink-0 font-mono text-[10px] text-mist">
                   {s.loop.completed}/{s.loop.total}
                 </span>
               )}

@@ -122,13 +122,12 @@ function GroupBlock({
   const earlier = detail.slice(0, -1);
   const iter = showIter ? group.beats[0]?.iteration : undefined;
   const showOverview = view === "overview" && !!overview;
+  // colour carries STATE only (amber = insight, mint = handoff); everything else stays grayscale
   const accent = group.insightCount
     ? "border-amber/50 bg-amber/[0.04]"
     : group.hasFinal
       ? "border-mint/40"
-      : group.explicit
-        ? "border-cyan/30"
-        : "border-line-2";
+      : "border-line-2";
 
   return (
     <div className={`rounded-md border-l-2 pl-2.5 ${accent}`}>
@@ -139,15 +138,13 @@ function GroupBlock({
             <span className="font-mono text-[10px] leading-none text-mint">→</span>
           ) : (
             <span
-              className={`block h-1.5 w-1.5 rounded-full ${
-                group.insightCount ? "bg-amber" : group.explicit ? "bg-cyan" : "bg-line-2"
-              }`}
+              className={`block h-1.5 w-1.5 rounded-full ${group.insightCount ? "bg-amber" : "bg-line-2"}`}
             />
           )}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5">
-            {iter && <span className="shrink-0 rounded bg-cyan/10 px-1 font-mono text-[9px] text-cyan">{iter}</span>}
+            {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
             <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk">
               {renderNote(group.title)}
             </span>
@@ -178,7 +175,7 @@ function GroupBlock({
                   key={v}
                   onClick={() => setView(v)}
                   className={`px-1.5 py-0.5 transition-colors ${
-                    view === v ? "bg-cyan/15 text-cyan" : "text-dim hover:text-mist"
+                    view === v ? "bg-line-2 text-chalk" : "text-dim hover:text-mist"
                   }`}
                 >
                   {v}
@@ -223,20 +220,20 @@ function GroupBlock({
               setEditing(false);
             }}
             placeholder="Leave a note on this card…"
-            className="w-full rounded border border-line bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-cyan/40"
+            className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-mist/40"
           />
         ) : comment ? (
           <button
             onClick={() => setEditing(true)}
-            className="flex w-full items-start gap-1.5 rounded border border-cyan/20 bg-cyan/[0.06] px-2 py-1 text-left text-[10.5px] leading-snug text-mist-2"
+            className="flex w-full items-start gap-1.5 rounded border border-line bg-panel-2 px-2 py-1 text-left text-[10.5px] leading-snug text-mist-2"
           >
-            <span className="text-cyan">✎</span>
+            <span className="text-mist">✎</span>
             <span className="flex-1">{comment}</span>
           </button>
         ) : (
           <button
             onClick={() => setEditing(true)}
-            className="font-mono text-[9px] text-dim transition-colors hover:text-cyan"
+            className="font-mono text-[9px] text-dim transition-colors hover:text-mist"
           >
             + note
           </button>
