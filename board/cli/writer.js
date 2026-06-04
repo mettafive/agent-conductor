@@ -182,6 +182,90 @@ export async function runOverview(args) {
   return ok(`${id} ▸ overview saved for card ${cardId}`);
 }
 
+// ── developer notes / directives — the flow-manager feedback loop ────────────────
+// A note the developer leaves on a card. Promoted with --directive it becomes a steering
+// signal the next run's Phase 0 improve-pass MUST resolve (applied-with-how or deferred-with-why).
+
+// conductor-board comment <step> "text" --card <cardId> [--directive --scope SC]
+export async function runComment(args) {
+  const sp = statusPathOf(args);
+  const [id, text] = positionals(args);
+  const cardId = flag(args, ["--card"]);
+  if (!id || !text || typeof cardId !== "string")
+    return fail('usage: conductor-board comment <step> "text" --card <cardId> [--directive --scope SC]');
+  const s = load(sp);
+  if (!s) return fail("no status.json — run status-init first");
+  s.developer_notes = Array.isArray(s.developer_notes) ? s.developer_notes : [];
+  const directive = args.includes("--directive");
+  const scope = flag(args, ["--scope"]);
+  const existing = s.developer_notes.find((n) => n && n.id === cardId);
+  if (existing) {
+    existing.text = text;
+    existing.at = now();
+    existing.directive = directive || existing.directive;
+    if (typeof scope === "string") existing.scope = scope;
+    // editing reopens a previously-resolved note (the developer changed their ask)
+    existing.status = "open";
+    existing.resolution = undefined;
+  } else {
+    s.developer_notes.push({
+      id: cardId,
+      at: now(),
+      step: id,
+      card: cardId,
+      text,
+      directive,
+      scope: typeof scope === "string" ? scope : undefined,
+      status: "open",
+    });
+  }
+  save(sp, s);
+  return ok(`${id} ▸ ${directive ? "directive" : "note"} on card ${cardId}: ${text.slice(0, 40)}${text.length > 40 ? "…" : ""}`);
+}
+
+// conductor-board directives [--open] [--step <id>]  — list directives (for the Phase 0 ACK pass)
+export async function runDirectives(args) {
+  const sp = statusPathOf(args);
+  const s = load(sp);
+  if (!s) return fail("no status.json — run status-init first");
+  const openOnly = args.includes("--open");
+  const stepF = flag(args, ["--step"]);
+  let notes = (Array.isArray(s.developer_notes) ? s.developer_notes : []).filter((n) => n && n.directive);
+  if (openOnly) notes = notes.filter((n) => n.status === "open");
+  if (typeof stepF === "string") notes = notes.filter((n) => n.step === stepF);
+  if (notes.length === 0) {
+    console.log(openOnly ? "No open directives." : "No directives.");
+    return true;
+  }
+  for (const n of notes) {
+    const tag = n.status === "open" ? "● open" : n.status === "applied" ? "✓ applied" : "– deferred";
+    console.log(`${tag}  [${n.step}] (${n.scope || "this-conductor"})  ${n.text}`);
+    if (n.resolution) console.log(`        ↳ ${n.resolution}`);
+    console.log(`        card=${n.card}`);
+  }
+  return true;
+}
+
+// conductor-board resolve <cardId> --applied "how" | --deferred "why"
+export async function runResolve(args) {
+  const sp = statusPathOf(args);
+  const [cardId] = positionals(args);
+  const applied = flag(args, ["--applied"]);
+  const deferred = flag(args, ["--deferred"]);
+  if (!cardId || (typeof applied !== "string" && typeof deferred !== "string"))
+    return fail('usage: conductor-board resolve <cardId> --applied "how" | --deferred "why"');
+  const s = load(sp);
+  if (!s) return fail("no status.json — run status-init first");
+  const note = (Array.isArray(s.developer_notes) ? s.developer_notes : []).find((n) => n && n.id === cardId);
+  if (!note) return fail(`no developer note on card "${cardId}"`);
+  note.status = typeof applied === "string" ? "applied" : "deferred";
+  note.resolution = typeof applied === "string" ? applied : deferred;
+  note.resolved_at = now();
+  if (typeof s.run_id === "string") note.resolved_run = s.run_id;
+  save(sp, s);
+  return ok(`${note.status} directive on card ${cardId}`);
+}
+
 // conductor-board loop-scope <loopId> <item...> [--note "..."]
 //
 // Frontload a loop's whole iteration list as pending the moment it's determined

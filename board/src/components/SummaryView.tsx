@@ -27,6 +27,7 @@ export function SummaryView({ model }: { model: BoardModel }) {
     .filter((ins): ins is NonNullable<typeof ins> => !!ins && !seen.has(ins.seed) && !!seen.add(ins.seed));
 
   const knowledge = model.knowledge ?? [];
+  const directives = (model.developerNotes ?? []).filter((n) => n.directive);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
@@ -81,6 +82,33 @@ export function SummaryView({ model }: { model: BoardModel }) {
                   {k.status}
                 </span>
                 <span className="flex-1">{k.title}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {/* Directives the flow manager set, and what became of them */}
+      {directives.length > 0 && (
+        <Section title="Directives you set">
+          <ul className="space-y-1.5">
+            {directives.map((d, i) => (
+              <li key={`d${i}`} className="flex gap-2 text-[12px] leading-snug text-mist-2">
+                <span
+                  className={`mt-px shrink-0 rounded px-1 font-mono text-[9px] ${
+                    d.status === "applied"
+                      ? "bg-mint/15 text-mint"
+                      : d.status === "deferred"
+                        ? "bg-line-2/60 text-dim"
+                        : "bg-line-2/60 text-mist"
+                  }`}
+                >
+                  {d.status}
+                </span>
+                <span className="flex-1">
+                  {d.text}
+                  {d.resolution && <span className="mt-0.5 block text-[10.5px] text-dim">↳ {d.resolution}</span>}
+                </span>
               </li>
             ))}
           </ul>

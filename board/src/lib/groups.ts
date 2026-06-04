@@ -92,24 +92,28 @@ function mechanical(entries: HeartbeatEntry[]): BeatGroup[] {
   return groups;
 }
 
-// ── user comments on cards (MVP: localStorage, keyed by card id) ────────────────
-// "Submit them at the right place" (server/status.json) is a follow-up; persisting
-// locally already lets the user annotate a run and have it stick across reloads.
-const commentKey = (groupId: string) => `cb-comment:${groupId}`;
-
-export function loadComment(groupId: string): string {
-  try {
-    return localStorage.getItem(commentKey(groupId)) ?? "";
-  } catch {
-    return "";
-  }
+// ── developer notes / directives on cards — persisted server-side (the flow-manager loop) ──
+// Posts to the board server, which writes status.json's developer_notes. The note then rides
+// the same feedback rail as agent insights: a directive is read + resolved at the next run's
+// Phase 0 (applied-with-how or deferred-with-why), never silently glossed.
+export interface CommentBody {
+  step: string;
+  card: string;
+  text: string;
+  directive: boolean;
+  scope?: string;
+  action?: "delete";
 }
 
-export function saveComment(groupId: string, text: string): void {
+export async function postComment(workflow: string, body: CommentBody): Promise<boolean> {
   try {
-    if (text.trim()) localStorage.setItem(commentKey(groupId), text.trim());
-    else localStorage.removeItem(commentKey(groupId));
+    const r = await fetch(`/api/workflow/${encodeURIComponent(workflow)}/comment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return r.ok;
   } catch {
-    /* ignore */
+    return false;
   }
 }

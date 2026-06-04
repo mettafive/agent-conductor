@@ -1,7 +1,9 @@
 import { useState } from "react";
-import type { HeartbeatEntry, LoopState } from "../lib/types";
+import type { HeartbeatEntry, LoopState, DeveloperNote } from "../lib/types";
 import { relativeTime, renderNote } from "../lib/heartbeat";
-import { groupBeats, detailBeats, loadComment, saveComment, type BeatGroup } from "../lib/groups";
+import { groupBeats, detailBeats, postComment, type BeatGroup } from "../lib/groups";
+
+const SCOPES = ["this-conductor", "upstream", "template", "tooling", "corpus"] as const;
 
 function absTime(iso: string): string {
   const d = new Date(iso);
@@ -25,13 +27,18 @@ interface Props {
   loop?: LoopState;
   /** parallel-agent overviews per card id — when present, the card defaults to its overview */
   cardOverviews?: Record<string, string>;
+  /** developer notes/directives on this step's cards (flow-manager loop) */
+  notes?: DeveloperNote[];
+  /** workflow name + step id — needed to persist a comment to the server */
+  workflow?: string;
+  step?: string;
 }
 
 /**
  * The per-card heartbeat history as a vertical timeline — connected dots, with
  * finalBeats marked as handoffs. Loop steps get iteration filter tabs.
  */
-export function HeartbeatTimeline({ entries, learnings, now, running, loop, cardOverviews }: Props) {
+export function HeartbeatTimeline({ entries, learnings, now, running, loop, cardOverviews, notes, workflow, step }: Props) {
   const iterations = loop?.iterations.map((i) => i.item) ?? [];
   const [filter, setFilter] = useState<string>("all");
 
@@ -85,7 +92,18 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
           {/* Related beats are grouped into activities, newest first, so there's always a
               coherent "current activity" at the top instead of a flat firehose. */}
           {[...groupBeats(shown)].reverse().map((g, gi) => (
-            <GroupBlock key={g.id} group={g} overview={cardOverviews?.[g.id]} defaultOpen={gi === 0} running={running} now={now} showIter={filter === "all"} />
+            <GroupBlock
+              key={g.id}
+              group={g}
+              overview={cardOverviews?.[g.id]}
+              note={notes?.find((n) => n.card === g.id)}
+              workflow={workflow}
+              step={step}
+              defaultOpen={gi === 0}
+              running={running}
+              now={now}
+              showIter={filter === "all"}
+            />
           ))}
         </div>
       )}
@@ -98,6 +116,9 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
 function GroupBlock({
   group,
   overview,
+  note,
+  workflow,
+  step,
   defaultOpen,
   running,
   now,
@@ -106,16 +127,28 @@ function GroupBlock({
   group: BeatGroup;
   /** parallel-agent overview for this card — when present, the card defaults to it */
   overview?: string;
+  /** the developer's note/directive on this card, if any */
+  note?: DeveloperNote;
+  workflow?: string;
+  step?: string;
   defaultOpen: boolean;
   running: boolean;
   now: number;
   showIter: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const [comment, setComment] = useState(() => loadComment(group.id));
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note?.text ?? "");
+  const [directive, setDirective] = useState(note?.directive ?? false);
+  const [scope, setScope] = useState(note?.scope ?? "this-conductor");
   // a summarized card defaults to its overview; toggle to the raw beats
   const [view, setView] = useState<"overview" | "beats">(overview ? "overview" : "beats");
+
+  const canComment = !!workflow && !!step;
+  const saveNote = (action?: "delete") => {
+    if (canComment) postComment(workflow!, { step: step!, card: group.id, text: draft, directive, scope, action });
+    setEditing(false);
+  };
 
   const detail = detailBeats(group);
   const status = detail.at(-1); // the current/last thing happening within this activity
@@ -207,38 +240,91 @@ function GroupBlock({
         </div>
       )}
 
-      {/* comment — annotate this card (persists locally) */}
-      <div className="pb-1.5">
-        {editing ? (
-          <textarea
-            autoFocus
-            rows={2}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            onBlur={() => {
-              saveComment(group.id, comment);
-              setEditing(false);
-            }}
-            placeholder="Leave a note on this card…"
-            className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-mist/40"
-          />
-        ) : comment ? (
-          <button
-            onClick={() => setEditing(true)}
-            className="flex w-full items-start gap-1.5 rounded border border-line bg-panel-2 px-2 py-1 text-left text-[10.5px] leading-snug text-mist-2"
-          >
-            <span className="text-mist">✎</span>
-            <span className="flex-1">{comment}</span>
-          </button>
-        ) : (
-          <button
-            onClick={() => setEditing(true)}
-            className="font-mono text-[9px] text-dim transition-colors hover:text-mist"
-          >
-            + note
-          </button>
-        )}
-      </div>
+      {/* developer note / directive — the flow-manager loop (persists server-side) */}
+      {canComment && (
+        <div className="pb-1.5">
+          {editing ? (
+            <div className="space-y-1.5">
+              <textarea
+                autoFocus
+                rows={2}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Leave a note on this card… (steer the next run to make it a directive)"
+                className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1 text-[10.5px] text-mist-2 outline-none focus:border-mist/40"
+              />
+              <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
+                <label className="flex items-center gap-1 text-mist">
+                  <input
+                    type="checkbox"
+                    checked={directive}
+                    onChange={(e) => setDirective(e.target.checked)}
+                    className="accent-mint"
+                  />
+                  steer the next run
+                </label>
+                {directive && (
+                  <select
+                    value={scope}
+                    onChange={(e) => setScope(e.target.value)}
+                    className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[9px] text-mist outline-none"
+                  >
+                    {SCOPES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <span className="flex-1" />
+                <button onClick={() => saveNote()} className="rounded bg-line-2 px-2 py-0.5 text-chalk transition-colors hover:bg-line-2/70">
+                  Save
+                </button>
+                {note && (
+                  <button onClick={() => { setDraft(""); saveNote("delete"); }} className="text-dim transition-colors hover:text-rose">
+                    delete
+                  </button>
+                )}
+                <button
+                  onClick={() => { setEditing(false); setDraft(note?.text ?? ""); }}
+                  className="text-dim transition-colors hover:text-mist"
+                >
+                  cancel
+                </button>
+              </div>
+            </div>
+          ) : note?.text ? (
+            <div className="rounded border border-line bg-panel-2 px-2 py-1">
+              <button
+                onClick={() => setEditing(true)}
+                className="flex w-full items-start gap-1.5 text-left text-[10.5px] leading-snug text-mist-2"
+              >
+                <span className="text-mist">✎</span>
+                <span className="flex-1">{note.text}</span>
+              </button>
+              {note.directive && (
+                <div className="mt-1 flex items-start gap-1.5 border-t border-line pt-1 font-mono text-[9px]">
+                  {note.status === "applied" ? (
+                    <span className="shrink-0 text-mint">✓ applied</span>
+                  ) : note.status === "deferred" ? (
+                    <span className="shrink-0 text-dim">– deferred</span>
+                  ) : (
+                    <span className="shrink-0 text-mist">● steers next run</span>
+                  )}
+                  {note.resolution && <span className="flex-1 text-dim">{note.resolution}</span>}
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              className="font-mono text-[9px] text-dim transition-colors hover:text-mist"
+            >
+              + note
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

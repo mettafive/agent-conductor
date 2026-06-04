@@ -1,4 +1,4 @@
-import type { BoardStep } from "../lib/types";
+import type { BoardStep, DeveloperNote } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { fmtDur } from "../lib/format";
 import { renderNote } from "../lib/heartbeat";
@@ -19,9 +19,13 @@ const COL_LABEL: Record<string, string> = {
 export function StepDetail({
   step,
   onApprove,
+  workflow,
+  notes,
 }: {
   step: BoardStep;
   onApprove?: (stepId: string, decisions: Decision[]) => Promise<{ ok: boolean }> | void;
+  workflow?: string;
+  notes?: DeveloperNote[];
 }) {
   const now = useNow(1000);
 
@@ -66,7 +70,7 @@ export function StepDetail({
 
         {/* the story — the full heartbeat narration, ABOVE the gate proof */}
         {(step.heartbeat.length > 0 || step.learnings.length > 0) && (
-          <HeartbeatTimeline entries={step.heartbeat} learnings={step.learnings} now={now} running={running} cardOverviews={step.cardOverviews} />
+          <HeartbeatTimeline entries={step.heartbeat} learnings={step.learnings} now={now} running={running} cardOverviews={step.cardOverviews} notes={notes} workflow={workflow} step={step.id} />
         )}
 
         {/* the proof — gate results */}

@@ -364,7 +364,7 @@ export function App() {
                     followInLoop ? (
                       <IterationKanban loopStep={follow!} item={followItem!} />
                     ) : follow ? (
-                      <ActiveCard step={follow} />
+                      <ActiveCard step={follow} workflow={liveModel.workflow} notes={liveModel.developerNotes} />
                     ) : (
                       <Idle />
                     )
@@ -376,6 +376,8 @@ export function App() {
                       onApprove={applyApproval}
                       onBackToOverview={(id) => setSelectedStep(id)}
                       onOpenIteration={(loopId, item) => setSelectedStep(`${loopId}::${item}`)}
+                      workflow={viewing ? undefined : model.workflow}
+                      notes={model.developerNotes}
                     />
                   )}
                 </motion.div>
@@ -432,6 +434,8 @@ function SelectedView({
   onApprove,
   onBackToOverview,
   onOpenIteration,
+  workflow,
+  notes,
 }: {
   step: BoardStep | null;
   iterSel: string[] | null;
@@ -442,6 +446,8 @@ function SelectedView({
   ) => Promise<{ ok: boolean }>;
   onBackToOverview: (loopId: string) => void;
   onOpenIteration: (loopId: string, item: string) => void;
+  workflow?: string;
+  notes?: import("./lib/types").DeveloperNote[];
 }) {
   if (!step) {
     return (
@@ -459,7 +465,7 @@ function SelectedView({
   if (step.isLoop) {
     return <LoopOverview loopStep={step} onOpenIteration={(item) => onOpenIteration(step.id, item)} />;
   }
-  return <StepDetail step={step} onApprove={viewing ? undefined : onApprove} />;
+  return <StepDetail step={step} onApprove={viewing ? undefined : onApprove} workflow={workflow} notes={notes} />;
 }
 
 function Idle() {

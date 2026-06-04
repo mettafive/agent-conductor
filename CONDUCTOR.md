@@ -164,6 +164,22 @@ card done; run `conductor-board validate` at the end. Structural changes
 auto-apply them. Then write a scope beat: *"Applied N improvements. Watching M
 emerging. Starting workflow."* If there's nothing proven, the phase is empty.
 
+**Phase 0 — Developer directives (the flow manager's word, never glossed).** Still in
+Phase 0, read the developer's open directives — notes they left on activity cards and
+promoted to steering signals: `conductor-board directives --open`. These are **human**
+instructions and outrank your own insights. For **each** one you must do exactly one of:
+
+- **Apply it** — make the change it asks for (edit the step/gate/instruction per its
+  scope, add a guardrail, restructure the flow), then record how:
+  `conductor-board resolve <cardId> --applied "what I changed"`.
+- **Defer it** — only with a real reason (it conflicts with a hard rule, needs the user's
+  input, or can't be done safely): `conductor-board resolve <cardId> --deferred "why"`.
+
+**Never leave an open directive untouched and never silently skip one** — the whole point is
+that the developer is steering the flow, so each directive comes back applied-with-how or
+deferred-with-why, visible on its card. Close Phase 0 with a beat naming what you applied vs
+deferred. (A plain note — not promoted to a directive — is context only; read it, don't act.)
+
 **Phase 1+ — Execute.** Run the workflow steps as defined — gates, heartbeats,
 finalBeats, breathing beats.
 
@@ -203,7 +219,10 @@ npx conductor-board step polish running             # running | done | failed
 npx conductor-board heartbeat polish "fixed dead link" --insight-type gate_issue --insight-seed "verify link liveness" --insight-scope this-conductor
 npx conductor-board heartbeat polish-and-ship "scraping links…" --iteration akupunktur --sub check-links   # a loop sub-step beat (bubbles to the parent)
 npx conductor-board heartbeat polish "Writing the FAQ" --card           # opens an activity card (note = its title)
+npx conductor-board overview polish "The FAQ now leads with the price." --card <cardId>   # parallel summarizer recap
 npx conductor-board heartbeat polish "done" --final --to gate-page
+npx conductor-board directives --open                                  # Phase 0: read the developer's steering directives
+npx conductor-board resolve <cardId> --applied "added an early-exit gate when the price table is empty"   # …or --deferred "why"
 npx conductor-board loop polish akupunktur polish-page done   # a loop sub-step
 npx conductor-board suggest "Sitemap-first is faster" --scope this-conductor --step discover-prices --current "Nav first." --proposed "Sitemap first, nav fallback."   # → conductor knowledge:
 npx conductor-board knowledge --min 1 --min-scopes 2   # quality gate: ≥1 insight, ≥2 scopes

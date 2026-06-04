@@ -909,6 +909,61 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       });
       return;
     }
+    // developer notes / directives on activity cards — the flow-manager feedback loop.
+    // Body: { card, step, text, directive, scope, action }. Empty text or action:"delete" removes it.
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/comment$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "not found" });
+      readBody(req).then((bodyStr) => {
+        let body;
+        try {
+          body = JSON.parse(bodyStr || "{}");
+        } catch {
+          return json(res, 400, { error: "invalid request body" });
+        }
+        const card = body.card;
+        if (!card) return json(res, 400, { error: "card id required" });
+        let status;
+        try {
+          status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+        } catch {
+          return json(res, 500, { error: "could not read status.json" });
+        }
+        status.developer_notes = Array.isArray(status.developer_notes) ? status.developer_notes : [];
+        const idx = status.developer_notes.findIndex((n) => n && n.id === card);
+        const text = typeof body.text === "string" ? body.text.trim() : "";
+        if (!text || body.action === "delete") {
+          if (idx >= 0) status.developer_notes.splice(idx, 1);
+        } else if (idx >= 0) {
+          const n = status.developer_notes[idx];
+          n.text = text;
+          n.at = new Date().toISOString();
+          n.directive = !!body.directive;
+          if (typeof body.scope === "string") n.scope = body.scope;
+          // an edit reopens the ask so the next run reconsiders it
+          n.status = "open";
+          delete n.resolution;
+        } else {
+          status.developer_notes.push({
+            id: card,
+            at: new Date().toISOString(),
+            step: body.step || "",
+            card,
+            text,
+            directive: !!body.directive,
+            scope: typeof body.scope === "string" ? body.scope : undefined,
+            status: "open",
+          });
+        }
+        try {
+          fs.writeFileSync(wf.statusPath, JSON.stringify(status, null, 2));
+        } catch (e) {
+          return json(res, 500, { error: `write failed: ${e.message}` });
+        }
+        return json(res, 200, { ok: true });
+      });
+      return;
+    }
     if ((m = url.match(/^\/api\/workflow\/([^/]+)\/history$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       return wf ? json(res, 200, listHistory(wf.historyDir)) : json(res, 404, { error: "not found" });

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { BoardStep } from "../lib/types";
+import type { BoardStep, DeveloperNote } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { renderNote } from "../lib/heartbeat";
 import { resolveActiveUnit, clockSince } from "../lib/view";
@@ -14,7 +14,15 @@ import { Icon } from "./Icon";
  * fill the screen — it sits centred and breathes. Click to expand gates, the
  * handoff and the heartbeat timeline inline.
  */
-export function ActiveCard({ step }: { step: BoardStep }) {
+export function ActiveCard({
+  step,
+  workflow,
+  notes,
+}: {
+  step: BoardStep;
+  workflow?: string;
+  notes?: DeveloperNote[];
+}) {
   const [open, setOpen] = useState(false);
   const now = useNow(1000);
   const u = resolveActiveUnit(step);
@@ -97,6 +105,9 @@ export function ActiveCard({ step }: { step: BoardStep }) {
                   now={now}
                   running={u.running}
                   cardOverviews={step.cardOverviews}
+                  notes={notes}
+                  workflow={workflow}
+                  step={step.id}
                 />
               )}
             </motion.div>

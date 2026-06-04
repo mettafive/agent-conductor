@@ -226,6 +226,29 @@ export interface BoardStep extends ConductorStep {
   cardOverviews?: Record<string, string>;
 }
 
+/**
+ * A note the developer (the "flow manager") left on an activity card. A plain note is
+ * transparency; promoted to a `directive` it becomes a flow-changer the next run's Phase 0
+ * improve-pass MUST resolve — applied (with how) or deferred (with why), never silently glossed.
+ */
+export interface DeveloperNote {
+  /** stable id — the card id it's attached to (one note per card) */
+  id: string;
+  at: string;
+  step: string;
+  card: string;
+  text: string;
+  /** promoted from a note to a steering directive the next run must acknowledge */
+  directive: boolean;
+  /** where it should land: this-conductor | upstream | template | tooling | corpus */
+  scope?: string;
+  status: "open" | "applied" | "deferred";
+  /** how it was applied, or why it was deferred */
+  resolution?: string;
+  resolved_at?: string;
+  resolved_run?: string;
+}
+
 export interface BoardModel {
   workflow: string;
   description?: string;
@@ -235,6 +258,8 @@ export interface BoardModel {
   lastBeatAt?: string;
   insightCount: number;
   suggestions: Suggestion[];
+  /** developer notes/directives left on activity cards (the flow-manager feedback loop) */
+  developerNotes: DeveloperNote[];
   runId?: string;
   /** Human run name set at run start, e.g. "treatment-readability-run-4-2026-06-04T12-30" (§6.2). */
   runName?: string;

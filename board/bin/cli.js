@@ -113,13 +113,16 @@ if (command === "clean") {
 }
 
 // status-writer commands (for agents — keep the board live as you work)
-if (["step", "gate", "heartbeat", "overview", "loop", "loop-scope", "status-init", "suggest", "knowledge"].includes(command)) {
+if (["step", "gate", "heartbeat", "overview", "comment", "directives", "resolve", "loop", "loop-scope", "status-init", "suggest", "knowledge"].includes(command)) {
   const w = await import("../cli/writer.js");
   const fn = {
     step: w.runStep,
     gate: w.runGate,
     heartbeat: w.runHeartbeat,
     overview: w.runOverview,
+    comment: w.runComment,
+    directives: w.runDirectives,
+    resolve: w.runResolve,
     loop: w.runLoop,
     "loop-scope": w.runLoopScope,
     "status-init": w.runStatusInit,

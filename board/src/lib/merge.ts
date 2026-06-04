@@ -389,6 +389,9 @@ function buildModelImpl(snap: Snapshot): BoardModel {
   const suggestions = Array.isArray(status.suggestions)
     ? (status.suggestions as BoardModel["suggestions"])
     : [];
+  const developerNotes = Array.isArray(status.developer_notes)
+    ? (status.developer_notes as BoardModel["developerNotes"])
+    : [];
 
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
@@ -399,6 +402,7 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     lastBeatAt,
     insightCount,
     suggestions,
+    developerNotes,
     runId: status.run_id as string | undefined,
     runName: status.run_name as string | undefined,
     autoImprove,
