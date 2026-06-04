@@ -70,7 +70,7 @@ export function StepDetail({
           )}
         </div>
 
-        <GateList criteria={step.criteria} />
+        <GateList criteria={step.criteria} settled={step.column === "done"} />
 
         {finalBeat?.handoff && (
           <div className="mt-3 rounded-lg border border-line bg-ink/40 px-3 py-2">

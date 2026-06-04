@@ -111,7 +111,7 @@ export function IterationCard({
           >
             {sub.criteria.length > 0 ? (
               <div className="pl-7">
-                <GateList criteria={sub.criteria} />
+                <GateList criteria={sub.criteria} settled={col === "done"} />
               </div>
             ) : (
               (soft.length > 0 || hard.length > 0) && (

@@ -71,7 +71,7 @@ export function ActiveCard({ step }: { step: BoardStep }) {
               className="overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <GateList criteria={u.criteria} />
+              <GateList criteria={u.criteria} settled={!u.running} />
 
               {finalBeat?.handoff && (
                 <div className="mt-3 rounded-lg border border-line bg-ink/40 px-3 py-2">

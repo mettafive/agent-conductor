@@ -312,11 +312,11 @@ export function WorkflowSidebar({
           <p className="px-1 text-[13px] text-dim">No active workflow.</p>
         )}
 
-        {/* history */}
+        {/* finished runs */}
         <div className="mt-6">
-          <SectionRule text="History" />
+          <SectionRule text="Finished runs" />
           {historyGroups.length === 0 ? (
-            <p className="px-1 pt-0.5 text-[12px] text-dim">No past runs yet.</p>
+            <p className="px-1 pt-0.5 text-[12px] text-dim">No finished runs yet.</p>
           ) : (
             <div className="space-y-0.5 pt-0.5">
               {historyGroups.map(({ name, runs }) => (
@@ -348,6 +348,20 @@ export function WorkflowSidebar({
                         {active && viewingSnap && (
                           <div className="ml-3 mt-0.5 pl-2">
                             <StepTree snap={viewingSnap} activeStep={activeStep} onSelectStep={onSelectStep} />
+                            {/* per-run summary — selecting nothing shows this run's SummaryView */}
+                            <button
+                              onClick={() => onSelectStep?.(null)}
+                              className={`mt-0.5 flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12.5px] transition-colors duration-150 ${
+                                activeStep == null ? SEL : "hover:bg-panel-2/60"
+                              }`}
+                            >
+                              <Slot>
+                                <span className="text-mist">
+                                  <Icon name="check" size={12} />
+                                </span>
+                              </Slot>
+                              <span className="min-w-0 flex-1 text-mist">Run summary</span>
+                            </button>
                           </div>
                         )}
                       </div>
