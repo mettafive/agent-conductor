@@ -29,51 +29,6 @@ const LEDS: { state: string; label: string; meaning: string }[] = [
 export function BoardPage() {
   return (
     <Page>
-      {/* why the board exists */}
-      <section className="grid gap-5 py-6 md:grid-cols-2">
-        <Reveal className="h-full">
-          <div className="flex h-full flex-col rounded-2xl border border-line bg-panel/40 p-7">
-            <div className="mb-4 inline-grid h-9 w-9 place-items-center rounded-lg border border-rose/30 bg-rose/10 text-rose">
-              <Icon name="cross" size={16} />
-            </div>
-            <h3 className="text-lg font-semibold text-chalk">The problem</h3>
-            <p className="mt-2 text-pretty leading-relaxed text-mist-2">
-              You hand an agent twelve steps and hope. Around step seven it decides
-              the rest is implied, declares victory, and hands you a half-finished
-              thing that <em>looks</em> done.
-            </p>
-          </div>
-        </Reveal>
-        <Reveal className="h-full">
-          <div className="flex h-full flex-col rounded-2xl border border-line bg-panel/40 p-7">
-            <div className="mb-4 inline-grid h-9 w-9 place-items-center rounded-lg border border-mint/30 bg-mint/10 text-mint">
-              <Icon name="check" size={16} />
-            </div>
-            <h3 className="text-lg font-semibold text-chalk">The solution</h3>
-            <p className="mt-2 text-pretty leading-relaxed text-mist-2">
-              Gated steps, watched live. Soft gates capture taste, hard gates run real
-              checks. Fail a gate and the agent retries — it never skips. The board
-              shows exactly where it is.
-            </p>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="grid gap-4 pb-10 sm:grid-cols-3">
-        {[
-          { t: "Gated steps", d: "Soft + hard criteria gate every step. Nothing advances unverified." },
-          { t: "Heartbeats", d: "The agent checks in as it works — re-anchoring to the goal, live." },
-          { t: "Self-improving", d: "Proven learnings live in the conductor and apply themselves next run." },
-        ].map((f) => (
-          <Reveal key={f.t} className="h-full">
-            <div className="flex h-full flex-col rounded-xl border border-line bg-panel/30 p-5">
-              <div className="font-medium text-chalk">{f.t}</div>
-              <p className="mt-1.5 text-sm leading-relaxed text-mist">{f.d}</p>
-            </div>
-          </Reveal>
-        ))}
-      </div>
-
       <SectionHead
         kicker="The board"
         title="npx conductor-board"

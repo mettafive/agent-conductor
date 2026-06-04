@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
+import { Heart } from "./Heart";
 
 /**
  * A self-contained, continuously-looping board — the real visual language
@@ -59,30 +60,6 @@ function advance(s: State): State {
   else if (cur === "gate") row[i] = "done";
   const note = row[i] === "done" ? `${sub.id} cleared its gate — handing off.` : NOTES[sub.id];
   return { ...s, cols, note };
-}
-
-function Heart({ beat }: { beat: number }) {
-  const [pulse, setPulse] = useState(false);
-  useEffect(() => {
-    setPulse(true);
-    const t = setTimeout(() => setPulse(false), 420);
-    return () => clearTimeout(t);
-  }, [beat]);
-  return (
-    <svg
-      className={pulse ? "heart-strong" : "heart-rest"}
-      width={14}
-      height={14}
-      viewBox="0 0 24 24"
-      style={{ color: "var(--color-heart)" }}
-      aria-hidden
-    >
-      <path
-        fill="currentColor"
-        d="M12 21s-7.5-4.7-10-9.2C.4 8.4 2 5 5.2 5c2 0 3.3 1.1 4.1 2.3l.9 1.3.9-1.3C11.9 6.1 13.2 5 15.2 5 18.4 5 20 8.4 18.5 11.8 16 16.3 12 21 12 21Z"
-      />
-    </svg>
-  );
 }
 
 export function LiveBoard() {

@@ -1,16 +1,31 @@
 import { Link } from "react-router-dom";
-import { Eyebrow, Page } from "../components/ui";
+import type { ReactNode } from "react";
+import { Page } from "../components/ui";
 import { Reveal } from "../components/Reveal";
 import { LiveBoard } from "../components/LiveBoard";
+import { Heart } from "../components/Heart";
+import { Icon } from "../components/Icon";
+
+function Pillar({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-line bg-panel/50 px-3.5 py-1.5 text-[12.5px] text-mist-2">
+      <span className="text-mist">{icon}</span>
+      {label}
+    </span>
+  );
+}
 
 export function Home() {
   return (
     <Page>
-      <section className="flex flex-col items-center py-10 text-center lg:py-16">
-        <Eyebrow>
-          <span className="h-1.5 w-1.5 rounded-full bg-mint" />
-          open source · MIT · zero-dependency spec
-        </Eyebrow>
+      <section className="flex flex-col items-center py-10 text-center lg:py-14">
+        {/* three pillars instead of a tagline eyebrow */}
+        <div className="flex flex-wrap items-center justify-center gap-2.5">
+          <Pillar icon={<Icon name="check" size={14} />} label="Gated steps" />
+          <Pillar icon={<Heart size={14} />} label="Heartbeats" />
+          <Pillar icon={<Icon name="loop" size={14} />} label="Self-improving" />
+        </div>
+
         <h1 className="mt-6 text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-chalk sm:text-6xl">
           Conduct your agents.
         </h1>
@@ -39,6 +54,33 @@ export function Home() {
 
         <Reveal className="mt-12 w-full max-w-3xl">
           <LiveBoard />
+        </Reveal>
+      </section>
+
+      {/* simpler problem / solution, right under the hero */}
+      <section className="grid gap-4 pb-10 md:grid-cols-2">
+        <Reveal className="h-full">
+          <div className="flex h-full items-start gap-3 rounded-2xl border border-line bg-panel/40 p-5">
+            <span className="mt-0.5 inline-grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-rose/30 bg-rose/10 text-rose">
+              <Icon name="cross" size={14} />
+            </span>
+            <p className="text-pretty text-sm leading-relaxed text-mist-2">
+              <span className="font-medium text-chalk">The problem.</span> Hand an
+              agent twelve steps and it skips half of them — declaring a half-finished
+              thing done.
+            </p>
+          </div>
+        </Reveal>
+        <Reveal className="h-full">
+          <div className="flex h-full items-start gap-3 rounded-2xl border border-line bg-panel/40 p-5">
+            <span className="mt-0.5 inline-grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-mint/30 bg-mint/10 text-mint">
+              <Icon name="check" size={14} />
+            </span>
+            <p className="text-pretty text-sm leading-relaxed text-mist-2">
+              <span className="font-medium text-chalk">The solution.</span> Gated
+              steps, watched live. Fail a gate and the agent retries — it never skips.
+            </p>
+          </div>
         </Reveal>
       </section>
     </Page>
