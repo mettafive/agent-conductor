@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Arrival, StreamBeat } from "../lib/heartbeatStream";
-import { plainNote } from "../lib/heartbeat";
+import { plainNote, secondsSince } from "../lib/heartbeat";
+import { useNow } from "../lib/useNow";
 import { AnimatedHeart } from "./AnimatedHeart";
 import { TypewriterText } from "./TypewriterText";
 
 export type MonitorMode = "min" | "expanded" | "hidden";
 
 const MODE_KEY = "cb-monitor";
-const WF_COLORS = ["text-cyan", "text-iris", "text-mint", "text-amber", "text-rose"];
+const STALL_SECONDS = 90;
+const WF_COLORS = ["text-cyan", "text-mint", "text-amber", "text-rose", "text-mist-2"];
 
 function clock(iso: string): string {
   const d = new Date(iso);
@@ -22,7 +24,6 @@ function clock(iso: string): string {
 }
 
 export function loadMonitorMode(): MonitorMode {
-  // a ?monitor= override wins (handy for sharing a view), else the saved choice
   try {
     const q = new URLSearchParams(window.location.search).get("monitor");
     if (q === "min" || q === "expanded" || q === "hidden") return q;
@@ -38,6 +39,59 @@ export function loadMonitorMode(): MonitorMode {
   return "min";
 }
 
+/** Small mute toggle — the one audio control, lives in the bottom bar (§6.3). */
+function MuteButton({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      title={muted ? "Unmute sounds" : "Mute sounds"}
+      className="grid h-6 w-6 place-items-center rounded text-dim transition-colors hover:text-chalk"
+    >
+      {muted ? (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+          <path d="m23 9-6 6M17 9l6 6" />
+        </svg>
+      ) : (
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+          <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+/** A small amber dot that breathes when beats have gone quiet (§5.1). */
+function StallDot({ lastBeatIso }: { lastBeatIso?: string }) {
+  const now = useNow(1000);
+  const overdue = !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > STALL_SECONDS;
+  if (!overdue) return null;
+  return (
+    <span
+      title="beats have gone quiet — the agent may be working without checking in"
+      className="stall-breathe h-1.5 w-1.5 rounded-full bg-amber"
+    />
+  );
+}
+
+type Conn = "connecting" | "live" | "lost";
+
+/** A tiny rose dot, shown only when the SSE link drops (so the heart can't lie). */
+function ConnDot({ conn }: { conn?: Conn }) {
+  if (!conn || conn === "live") return null;
+  return (
+    <span
+      title={conn === "lost" ? "connection lost — reconnecting" : "connecting…"}
+      className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose"
+    />
+  );
+}
+
 interface Props {
   beats: StreamBeat[];
   arrival: Arrival | null;
@@ -45,15 +99,26 @@ interface Props {
   mode: MonitorMode;
   onMode: (m: MonitorMode) => void;
   lastBeatIso?: string;
+  muted: boolean;
+  onToggleMute: () => void;
+  conn?: Conn;
 }
 
-export function HeartbeatMonitor({ beats, arrival, order, mode, onMode, lastBeatIso }: Props) {
+export function HeartbeatMonitor({
+  beats,
+  arrival,
+  order,
+  mode,
+  onMode,
+  lastBeatIso,
+  muted,
+  onToggleMute,
+  conn,
+}: Props) {
   const wfColor = (name: string) => WF_COLORS[Math.max(0, order.indexOf(name)) % WF_COLORS.length];
   const multi = order.length > 1;
-  const latest = beats[beats.length - 1];
   const streamKey = arrival?.beat.key;
 
-  // persist mode
   useEffect(() => {
     try {
       localStorage.setItem(MODE_KEY, mode);
@@ -85,53 +150,52 @@ export function HeartbeatMonitor({ beats, arrival, order, mode, onMode, lastBeat
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-ink-2/90 px-3 py-2 shadow-lg backdrop-blur transition-colors hover:border-line-2"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={15} />
-        <span className="font-mono text-[10px] text-mist">monitor</span>
+        <StallDot lastBeatIso={lastBeatIso} />
+        <ConnDot conn={conn} />
       </motion.button>
     );
   }
 
   if (mode === "min") {
+    // The thin bottom bar: the heart, a stall dot, mute, and a way to expand —
+    // nothing else (Part 1.3). The heart is the only decorative element.
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className="shrink-0 border-t border-line bg-ink-2/80 backdrop-blur"
+        className="flex shrink-0 items-center gap-2.5 border-t border-line bg-ink-2/80 px-4 py-1.5 backdrop-blur"
       >
+        <AnimatedHeart lastBeatIso={lastBeatIso} size={14} />
+        <StallDot lastBeatIso={lastBeatIso} />
+        <ConnDot conn={conn} />
         <button
           onClick={() => onMode("expanded")}
-          className="flex w-full items-center gap-2.5 px-4 py-1.5 text-left"
           title="Expand heartbeat monitor (Ctrl+`)"
+          aria-label="Expand heartbeat monitor"
+          className="flex flex-1 items-center justify-end gap-2 text-dim transition-colors hover:text-chalk"
         >
-          <AnimatedHeart lastBeatIso={lastBeatIso} size={13} />
-          {latest ? (
-            <span className="flex min-w-0 flex-1 items-center gap-2 font-mono text-[11px]">
-              <span className="shrink-0 text-line-2">{clock(latest.at)}</span>
-              {multi && (
-                <span className={`shrink-0 ${wfColor(latest.workflow)}`}>{latest.workflow}</span>
-              )}
-              <span className="shrink-0 text-cyan/80">{latest.step}:</span>
-              <span className="min-w-0 flex-1 truncate text-mist-2">
-                {latest.key === streamKey ? (
-                  <TypewriterText text={plainNote(latest.note)} />
-                ) : (
-                  plainNote(latest.note)
-                )}
-              </span>
-              {latest.insight && <span className="shrink-0">💡</span>}
-            </span>
-          ) : (
-            <span className="flex-1 font-mono text-[11px] text-line-2">
-              waiting for the first heartbeat…
-            </span>
-          )}
-          <span className="shrink-0 font-mono text-[10px] text-mist">▲</span>
+          <span className="font-mono text-[10px]">▲</span>
         </button>
+        <MuteButton muted={muted} onToggle={onToggleMute} />
       </motion.div>
     );
   }
 
-  return <ExpandedMonitor beats={beats} order={order} streamKey={streamKey} onMode={onMode} wfColor={wfColor} multi={multi} lastBeatIso={lastBeatIso} />;
+  return (
+    <ExpandedMonitor
+      beats={beats}
+      order={order}
+      streamKey={streamKey}
+      onMode={onMode}
+      wfColor={wfColor}
+      multi={multi}
+      lastBeatIso={lastBeatIso}
+      muted={muted}
+      onToggleMute={onToggleMute}
+      conn={conn}
+    />
+  );
 }
 
 function ExpandedMonitor({
@@ -142,6 +206,9 @@ function ExpandedMonitor({
   wfColor,
   multi,
   lastBeatIso,
+  muted,
+  onToggleMute,
+  conn,
 }: {
   beats: StreamBeat[];
   order: string[];
@@ -150,6 +217,9 @@ function ExpandedMonitor({
   wfColor: (n: string) => string;
   multi: boolean;
   lastBeatIso?: string;
+  muted: boolean;
+  onToggleMute: () => void;
+  conn?: Conn;
 }) {
   const [filter, setFilter] = useState<string>("all");
   const [height, setHeight] = useState(280);
@@ -162,7 +232,6 @@ function ExpandedMonitor({
     filter === "all" ? true : filter === "insights" ? !!b.insight : b.workflow === filter,
   );
 
-  // auto-scroll to the newest line while pinned to the bottom
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && pinned.current) {
@@ -171,7 +240,6 @@ function ExpandedMonitor({
     }
   }, [shown.length, filter]);
 
-  // blinking cursor lives for 10s after the most recent beat
   useEffect(() => {
     if (!streamKey) return;
     setCursorOn(true);
@@ -179,9 +247,6 @@ function ExpandedMonitor({
     return () => clearTimeout(t);
   }, [streamKey]);
 
-  // Only touch React state when the pinned/at-bottom edge actually flips —
-  // calling setState on every scroll tick re-renders the whole log and is what
-  // made scrolling feel jagged.
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -223,30 +288,27 @@ function ExpandedMonitor({
       style={{ height }}
       className="relative flex shrink-0 flex-col border-t border-line bg-[#08080d] font-mono"
     >
-      {/* resize handle */}
       <div
         onPointerDown={startResize}
         className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize"
         title="Drag to resize"
       />
 
-      {/* header — click anywhere on the bar to collapse, like the chevron */}
       <div
         onClick={() => onMode("min")}
         title="Click to minimize (Ctrl+`)"
         className="group/bar flex cursor-pointer items-center gap-2 border-b border-line/70 px-3 py-1.5 transition-colors hover:bg-panel/40"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={13} />
+        <StallDot lastBeatIso={lastBeatIso} />
+        <ConnDot conn={conn} />
         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mist-2">
-          Heartbeat Monitor
+          Heartbeat
         </span>
-        <span className="text-[10px] text-line-2">{beats.length}</span>
-        <span className="ml-auto flex items-center gap-1.5 text-mist">
-          <span
-            aria-hidden
-            title="Minimize"
-            className="grid h-5 w-5 place-items-center rounded transition-colors group-hover/bar:text-chalk"
-          >
+        <span className="text-[10px] text-dim">{beats.length}</span>
+        <span className="ml-auto flex items-center gap-1.5 text-dim">
+          <MuteButton muted={muted} onToggle={onToggleMute} />
+          <span aria-hidden title="Minimize" className="grid h-5 w-5 place-items-center rounded transition-colors group-hover/bar:text-chalk">
             ▼
           </span>
           <button
@@ -263,11 +325,10 @@ function ExpandedMonitor({
         </span>
       </div>
 
-      {/* filter pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto border-b border-line/50 px-3 py-1.5">
         {FILTERS.map((f) => {
           const on = filter === f;
-          const label = f === "all" ? "All" : f === "insights" ? "💡 Insights" : f;
+          const label = f === "all" ? "All" : f === "insights" ? "Insights" : f;
           return (
             <button
               key={f}
@@ -277,7 +338,7 @@ function ExpandedMonitor({
               }}
               className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
                 on
-                  ? "border-iris/50 bg-iris/15 text-chalk"
+                  ? "border-cyan/50 bg-cyan/15 text-chalk"
                   : "border-line bg-panel/40 text-mist hover:text-chalk"
               }`}
             >
@@ -287,21 +348,19 @@ function ExpandedMonitor({
         })}
       </div>
 
-      {/* terminal log */}
       <div
         ref={scrollRef}
         onScroll={onScroll}
         className="board-scroll monitor-grain relative min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[11.5px] leading-relaxed"
       >
         {shown.length === 0 ? (
-          <div className="grid h-full place-items-center text-[11px] text-line-2">
+          <div className="grid h-full place-items-center text-[11px] text-dim">
             no heartbeats{filter === "all" ? " yet" : ` for “${filter}”`}
           </div>
         ) : (
           shown.map((b) => (
             <div key={b.key} className="flex items-start gap-2 py-px">
-              {/* prefixes are unselectable so a drag-copy grabs only the notes */}
-              <span className="shrink-0 select-none text-line-2">{clock(b.at)}</span>
+              <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
               {multi && (
                 <span className={`shrink-0 select-none ${wfColor(b.workflow)}`}>{b.workflow}</span>
               )}
@@ -316,14 +375,16 @@ function ExpandedMonitor({
                 )}
               </span>
               {b.finalBeat && (
-                <span
-                  className="shrink-0 select-none text-line-2"
-                  title="final beat — handoff to next step"
-                >
-                  ·→
+                <span className="shrink-0 select-none text-dim" title="final beat — handoff to next step">
+                  →
                 </span>
               )}
-              {b.insight && <span className="shrink-0 select-none">💡</span>}
+              {b.insight && (
+                <span
+                  className="mt-1.5 h-1.5 w-1.5 shrink-0 select-none rounded-full bg-amber"
+                  title="carries an insight"
+                />
+              )}
             </div>
           ))
         )}

@@ -231,6 +231,10 @@ export interface BoardModel {
   insightCount: number;
   suggestions: Suggestion[];
   runId?: string;
+  /** Human run name set at run start, e.g. "treatment-readability-run-4-2026-06-04T12-30" (§6.2). */
+  runName?: string;
+  /** Whether the Phase 0 self-improvement pass is enabled for this conductor (§6.1). Default true. */
+  autoImprove: boolean;
   startedAt?: string;
   endedAt?: string;
   overallStatus: string; // running | done | failed | idle
@@ -248,6 +252,8 @@ export interface BoardModel {
 
 export interface HistoryRun {
   run_id: string;
+  /** Human run name, e.g. "treatment-readability-run-4-2026-06-04T12-30" (§6.2). */
+  run_name?: string;
   filename: string;
   workflow: string;
   status: string; // done | failed

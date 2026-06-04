@@ -7,16 +7,29 @@
   --color-panel-2: #181826;
   --color-line: #232333;
   --color-line-2: #2c2c40;
-  --color-mist: #8a8aa3;
-  --color-mist-2: #b4b4cc;
-  --color-chalk: #e8e8f2;
 
-  --color-iris: #a78bfa;
-  --color-iris-deep: #7c5cff;
+  /* Text tiers (Part 2). primary → secondary → dim.
+     dim is intentionally low-contrast — it's only used for pending/inactive
+     states, never for content you're meant to read. */
+  --color-chalk: #e8e8ec; /* primary text */
+  --color-mist-2: #c2c2cf; /* between primary and secondary */
+  --color-mist: #9898a6; /* secondary text — labels, timestamps, metadata */
+  --color-dim: #5c5c6e; /* dim text — pending items, inactive states */
+
+  /* One accent only. `iris` is kept as an alias of the cyan accent so the
+     hundreds of existing `iris` utility classes all resolve to the single
+     accent colour — no purple anywhere. */
   --color-cyan: #22d3ee;
-  --color-mint: #34d399;
-  --color-amber: #fbbf24;
-  --color-rose: #fb7185;
+  --color-iris: #22d3ee;
+  --color-iris-deep: #0e7490;
+
+  /* Subtle status indicators — used as small dots/marks, not fields of colour. */
+  --color-mint: #34d399; /* done */
+  --color-amber: #fbbf24; /* gate / attention */
+  --color-rose: #fb7185; /* failed */
+
+  /* The one warm colour in the UI — the heart, and nothing else. */
+  --color-heart: #ff6b8a;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -34,7 +47,7 @@
     -webkit-font-smoothing: antialiased;
   }
   ::selection {
-    background: color-mix(in oklab, var(--color-iris) 35%, transparent);
+    background: color-mix(in oklab, var(--color-cyan) 30%, transparent);
     color: #fff;
   }
   ::-webkit-scrollbar {
@@ -65,11 +78,11 @@
   width: 55vw;
   height: 55vw;
   border-radius: 50%;
-  filter: blur(130px);
-  opacity: 0.16;
+  filter: blur(150px);
+  opacity: 0.05;
   background: var(--color-iris-deep);
-  top: -22vw;
-  left: 30vw;
+  top: -24vw;
+  left: 32vw;
 }
 
 @keyframes pulse-ring {
@@ -137,21 +150,22 @@
   animation: heart-strong 0.46s cubic-bezier(0.34, 1.56, 0.64, 1);
   transform-origin: center;
 }
-/* weakened: beats have gone quiet (90s+) — slower, dimmer, amber warning */
+/* weakened: beats have gone quiet (90s+) — slower and grey, not alarming.
+   The amber lives on the separate stall dot in the bottom bar (Part 5.1/5.2). */
 .heart-weak {
-  animation: heart-rest 2.1s ease-in-out infinite;
+  animation: heart-rest 2.4s ease-in-out infinite;
   transform-origin: center;
-  opacity: 0.5;
-  filter: drop-shadow(0 0 4px color-mix(in oklab, var(--color-amber) 75%, transparent));
+  opacity: 0.55;
 }
 
-/* freeball warning — insistent but not seizure-inducing */
-@keyframes freeball-flash {
-  0%, 100% { background-color: color-mix(in oklab, var(--color-rose) 12%, transparent); }
-  50%      { background-color: color-mix(in oklab, var(--color-rose) 22%, transparent); }
+/* stall indicator — a slow amber breath on the dot beside the heart when
+   beats go quiet. Subtle, not a screaming banner (Part 5.1). */
+@keyframes stall-breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
 }
-.freeball-flash {
-  animation: freeball-flash 1.6s ease-in-out infinite;
+.stall-breathe {
+  animation: stall-breathe 2.1s ease-in-out infinite;
 }
 
 /* teletype block cursor */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNow } from "../lib/useNow";
 import { secondsSince } from "../lib/heartbeat";
 
-const HEART_COLOR = "#FF4D6A";
+const HEART_COLOR = "var(--color-heart)"; // the one warm colour in the UI
 const STALL_SECONDS = 90;
 
 interface Props {
@@ -49,7 +49,7 @@ export function AnimatedHeart({ lastBeatIso, size = 14, title }: Props) {
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      style={{ color: overdue && !pulsing ? "var(--color-amber)" : HEART_COLOR }}
+      style={{ color: overdue && !pulsing ? "var(--color-dim)" : HEART_COLOR }}
       aria-label={title ?? "heartbeat"}
     >
       <title>{title ?? (overdue ? "beats have gone quiet" : "heartbeat")}</title>

@@ -4,6 +4,7 @@ import type { ConductorStep, HeartbeatEntry, IterationStep } from "../lib/types"
 import { useNow } from "../lib/useNow";
 import { subStepColumn } from "../lib/loop";
 import { renderNote } from "../lib/heartbeat";
+import { GateList } from "./GateList";
 import { HeartbeatTimeline } from "./HeartbeatTimeline";
 
 const ACCENT: Record<string, string> = {
@@ -131,8 +132,8 @@ export function IterationCard({
 
       {/* iteration tag */}
       <div className="mt-1.5 pl-7">
-        <span className="inline-flex items-center gap-1 rounded-md border border-iris/25 bg-iris/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-iris">
-          <span className="opacity-70">⟳</span>
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-cyan/25 bg-cyan/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-cyan">
+          <span className="h-1 w-1 rounded-full bg-cyan" />
           {item}
         </span>
       </div>
@@ -161,7 +162,7 @@ export function IterationCard({
             title="handed off"
             className="inline-flex items-center gap-1 rounded-md border border-cyan/30 bg-cyan/10 px-1.5 py-0.5 font-mono text-[10px] text-cyan"
           >
-            ·→ {finalBeat.handoff?.to ?? "handed off"}
+            → {finalBeat.handoff?.to ?? "handed off"}
           </span>
         )}
       </div>
@@ -174,7 +175,12 @@ export function IterationCard({
         >
           <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-cyan" />
           <span className="line-clamp-2">
-            {latest.insight && <span className="mr-0.5 not-italic">💡</span>}
+            {latest.insight && (
+              <span
+                className="mr-1 inline-block h-1.5 w-1.5 translate-y-px rounded-full bg-amber not-italic"
+                title="carries an insight"
+              />
+            )}
             {renderNote(latest.note)}
           </span>
         </div>
@@ -191,43 +197,15 @@ export function IterationCard({
             className="overflow-hidden"
           >
             {sub.criteria.length > 0 ? (
-              <div className="mt-2.5 border-t border-line pt-2 pl-7">
-                {sub.criteria.map((c, i) => (
-                  <div key={i} className="flex items-start gap-2 py-1">
-                    <span className="mt-0.5 w-3 shrink-0 text-center font-mono text-[11px]">
-                      {c.passed === true ? (
-                        <span className="text-mint">✓</span>
-                      ) : c.passed === false ? (
-                        <span className="text-rose">✕</span>
-                      ) : (
-                        <span className="text-line-2">○</span>
-                      )}
-                    </span>
-                    <span className={`rounded border px-1 py-px font-mono text-[9px] ${c.kind === "hard" ? "border-mint/25 text-mint" : "border-line-2 text-mist"}`}>
-                      {c.kind}
-                    </span>
-                    {c.verified ? (
-                      <span title="verified by the gate-runner" className="text-[10px] text-mint">🔒</span>
-                    ) : (
-                      c.passed === true && (
-                        <span title="attested by the agent" className="text-[10px] text-amber/80">✋</span>
-                      )
-                    )}
-                    <span className="flex-1 font-mono text-[11px] leading-snug text-mist-2">
-                      {c.kind === "hard" && c.name ? c.name : c.text}
-                      {c.kind === "hard" && typeof c.exitCode === "number" && (
-                        <span className="ml-1 text-mist">exit {c.exitCode}</span>
-                      )}
-                    </span>
-                  </div>
-                ))}
+              <div className="pl-7">
+                <GateList criteria={sub.criteria} />
               </div>
             ) : (
               (soft.length > 0 || hard.length > 0) && (
                 <div className="mt-2.5 space-y-0.5 border-t border-line pt-2 pl-7">
                   {soft.map((t, i) => (
                     <div key={`s${i}`} className="flex gap-1.5 text-[11px] leading-snug text-mist">
-                      <span className="text-iris">·</span>
+                      <span className="text-cyan">·</span>
                       <span className="flex-1">{t}</span>
                     </div>
                   ))}

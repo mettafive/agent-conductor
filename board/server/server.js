@@ -223,6 +223,7 @@ function archiveIfDone(historyDir, snapshot, archived) {
 
   const record = {
     run_id: runId,
+    run_name: status.run_name || null,
     workflow: status.workflow || "workflow",
     status: status.status,
     started_at: status.started_at || null,

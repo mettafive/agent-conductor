@@ -1,5 +1,6 @@
 import type { BoardStep } from "../lib/types";
 import { useNow } from "../lib/useNow";
+import { GateList } from "./GateList";
 import { HeartbeatTimeline } from "./HeartbeatTimeline";
 import { ApprovalCard, type Decision } from "./ApprovalCard";
 
@@ -53,7 +54,7 @@ export function StepDetail({
     <div className="mx-auto max-w-2xl px-6 py-8">
       <div className="rounded-2xl border border-line bg-panel/50 p-5">
         <div className="flex items-center gap-3">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-iris/15 font-mono text-xs text-iris">
+          <span className="grid h-7 w-7 place-items-center rounded-lg bg-cyan/15 font-mono text-xs text-cyan">
             {step.index + 1}
           </span>
           <span className="flex-1 font-mono text-base font-medium text-chalk">{step.id}</span>
@@ -92,46 +93,11 @@ export function StepDetail({
           )}
         </div>
 
-        {step.criteria.length > 0 && (
-          <div className="mt-4 border-t border-line pt-3">
-            <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-mist">gate</div>
-            {step.criteria.map((c, i) => (
-              <div key={i} className="flex items-start gap-2 py-1">
-                <span className="mt-0.5 w-3 text-center font-mono text-[11px]">
-                  {c.passed === true ? (
-                    <span className="text-mint">✓</span>
-                  ) : c.passed === false ? (
-                    <span className="text-rose">✕</span>
-                  ) : (
-                    <span className="text-line-2">○</span>
-                  )}
-                </span>
-                <span
-                  className={`rounded border px-1 py-px font-mono text-[9px] ${c.kind === "hard" ? "border-mint/25 text-mint" : "border-line-2 text-mist"}`}
-                >
-                  {c.kind}
-                </span>
-                {c.verified ? (
-                  <span title="verified by the gate-runner" className="text-[10px] text-mint">🔒</span>
-                ) : (
-                  c.passed === true && (
-                    <span title="attested by the agent" className="text-[10px] text-amber/80">✋</span>
-                  )
-                )}
-                <span className="flex-1 font-mono text-[11.5px] leading-snug text-mist-2">
-                  {c.kind === "hard" && c.name ? c.name : c.text}
-                  {c.kind === "hard" && typeof c.exitCode === "number" && (
-                    <span className="ml-1 text-mist">exit {c.exitCode}</span>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        <GateList criteria={step.criteria} />
 
         {finalBeat?.handoff && (
           <div className="mt-3 rounded-lg border border-cyan/25 bg-cyan/[0.06] px-3 py-2">
-            <div className="font-mono text-[10px] uppercase tracking-wide text-cyan">·→ handoff</div>
+            <div className="font-mono text-[10px] uppercase tracking-wide text-cyan">handoff</div>
             {finalBeat.handoff.to && (
               <p className="mt-1 font-mono text-[11px] text-chalk">to {finalBeat.handoff.to}</p>
             )}

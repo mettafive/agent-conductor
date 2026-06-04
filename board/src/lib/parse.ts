@@ -122,12 +122,20 @@ export interface ParsedConductor {
   description?: string;
   knowledge: KnowledgeEntry[];
   steps: ConductorStep[];
+  /** Phase 0 self-improvement pass enabled? Default true (§6.1). */
+  autoImprove: boolean;
 }
 
 /** Parse a conductor YAML string into ordered step structure. */
 export function parseConductor(src: string | null): ParsedConductor | null {
   if (!src) return null;
-  let doc: { name?: string; description?: string; knowledge?: unknown; steps?: RawStep[] };
+  let doc: {
+    name?: string;
+    description?: string;
+    knowledge?: unknown;
+    steps?: RawStep[];
+    auto_improve?: boolean;
+  };
   try {
     doc = (yaml.load(src) as typeof doc) ?? {};
   } catch {
@@ -140,5 +148,6 @@ export function parseConductor(src: string | null): ParsedConductor | null {
     description: doc.description,
     knowledge: parseKnowledge(doc.knowledge),
     steps,
+    autoImprove: doc.auto_improve !== false, // default on
   };
 }

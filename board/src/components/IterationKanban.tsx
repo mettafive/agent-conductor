@@ -55,7 +55,11 @@ export function IterationKanban({
             </svg>
           </button>
         )}
-        <span className="grid h-6 w-6 place-items-center rounded-md bg-iris/10 font-mono text-[11px] text-iris">⟳</span>
+        <span className="grid h-6 w-6 place-items-center rounded-md bg-cyan/10 text-cyan">
+          <svg width="13" height="13" viewBox="0 0 24 24">
+            <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M17 2l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 22l-4-4 4-4m14-1v2a4 4 0 0 1-4 4H3" />
+          </svg>
+        </span>
         <h2 className="font-mono text-lg font-medium text-chalk">{item}</h2>
         <span className="font-mono text-[11px] text-mist">
           {loopStep.id} · iteration

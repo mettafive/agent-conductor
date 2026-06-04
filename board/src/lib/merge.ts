@@ -296,7 +296,14 @@ export function buildModel(snap: Snapshot): BoardModel {
     ? parsed!.steps
     : stepsFromStatusOnly(statusSteps).filter((s) => !isImproveId(s.id));
 
-  const improveSteps = buildImproveSteps(statusSteps);
+  // §6.1: when auto_improve is off, the Phase 0 self-improvement pass is fully
+  // disabled — no improvement cards anywhere. The conductor's flag is the source
+  // of truth; status.json may also carry it (set by the writer at run start).
+  const statusAutoImprove = (status as { auto_improve?: boolean }).auto_improve;
+  const autoImprove =
+    statusAutoImprove !== undefined ? statusAutoImprove !== false : parsed?.autoImprove ?? true;
+
+  const improveSteps = autoImprove ? buildImproveSteps(statusSteps) : [];
 
   const workflowSteps: BoardStep[] = structure.map((s) => {
     const st = statusSteps[s.id] ?? {};
@@ -375,6 +382,8 @@ export function buildModel(snap: Snapshot): BoardModel {
     insightCount,
     suggestions,
     runId: status.run_id as string | undefined,
+    runName: status.run_name as string | undefined,
+    autoImprove,
     startedAt: status.started_at as string | undefined,
     endedAt: status.completed_at as string | undefined,
     overallStatus: (status.status as string) ?? (total ? "idle" : "idle"),

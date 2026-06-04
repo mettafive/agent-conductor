@@ -462,6 +462,8 @@ board watches.
   "workflow": "workflow-name",
   "goal": "Research, write, and ship a publish-ready report on the topic.",
   "run_id": "2026-06-03T09-00-00",
+  "run_name": "workflow-name-run-4-2026-06-03T09-00",
+  "auto_improve": true,
   "started_at": "2026-06-03T09:00:00Z",
   "status": "running",
   "current_step": "write-draft",
@@ -496,6 +498,8 @@ board watches.
 | Field          | Values                                  | Notes                                          |
 | -------------- | --------------------------------------- | ---------------------------------------------- |
 | `run_id`       | string                                  | Unique id for this run (recommended: timestamp). Lets the board archive and group past runs. |
+| `run_name` (top) | string                                | Human name for the run, set at run start: `{workflow}-run-{N}-{timestamp}` (e.g. `treatment-readability-run-4-2026-06-04T12-30`). Shown in the board's history list so runs are easy to tell apart. |
+| `auto_improve` (top) | boolean                           | Mirrors the conductor's `auto_improve` flag (default `true`). When `false`, the Phase 0 self-improvement pass is disabled — no improvement cards are injected and the board hides the improvement UI. See §10. |
 | `goal` (top)   | string                                  | The workflow's end goal — copied from the conductor's `description`. Shown on the board header. |
 | `status` (top) | `running` `done` `failed`               | Overall workflow state.                        |
 | `current_step` | step id                                 | The step in flight.                            |

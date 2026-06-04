@@ -60,7 +60,9 @@ export function ApprovalCard({
       className="rounded-xl border border-amber/40 bg-amber/[0.06] px-3 py-2.5"
     >
       <div className="flex items-center gap-2">
-        <span className="grid h-5 w-5 place-items-center rounded-md bg-amber/15 text-[11px]">⏳</span>
+        <span className="grid h-5 w-5 place-items-center rounded-md bg-amber/15 text-amber">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber" />
+        </span>
         <span className="flex-1 truncate font-mono text-[12.5px] text-chalk">{step.id}</span>
         <span className="rounded border border-amber/40 bg-amber/10 px-1.5 py-0.5 font-mono text-[9px] text-amber">
           {decided ? "decided" : "human"}
@@ -84,7 +86,7 @@ export function ApprovalCard({
               >
                 {decided ? (
                   <span className={dec === "approved" ? "text-mint" : "text-rose"}>
-                    {dec === "approved" ? "✓" : "✕"}
+                    {dec === "approved" ? "✓" : "✗"}
                   </span>
                 ) : (
                   <input
@@ -112,14 +114,14 @@ export function ApprovalCard({
             disabled={busy}
             className="rounded-lg bg-mint/15 px-3 py-1 text-xs font-medium text-mint transition-colors hover:bg-mint/25 disabled:opacity-40"
           >
-            ✅ {hasItems ? "Approve selected" : "Approve"}
+            {hasItems ? "Approve selected" : "Approve"}
           </button>
           <button
             onClick={rejectAll}
             disabled={busy}
             className="rounded-lg border border-rose/30 px-3 py-1 text-xs text-rose transition-colors hover:bg-rose/10 disabled:opacity-40"
           >
-            ❌ Reject{hasItems ? " all" : ""}
+            Reject{hasItems ? " all" : ""}
           </button>
         </div>
       ) : (

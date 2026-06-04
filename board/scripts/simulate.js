@@ -260,10 +260,20 @@ async function runLoop(step, state, idx) {
 async function run() {
   // timestamp run id, e.g. 2026-06-03T14-30-00 (matches the archive filename prefix)
   const runId = nowIso().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+  const wfName = doc.name || "workflow";
+  const nameSlug = String(wfName).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  let priorRuns = 0;
+  try {
+    priorRuns = fs.readdirSync(path.join(dir, "history")).filter((f) => f.endsWith(".json")).length;
+  } catch {
+    /* no history */
+  }
   const state = {
     conductor: "2.0.0",
-    workflow: doc.name || "workflow",
+    workflow: wfName,
     run_id: runId,
+    run_name: `${nameSlug}-run-${priorRuns + 1}-${runId.replace(/-\d{2}$/, "")}`,
+    auto_improve: doc.auto_improve !== false,
     _demo: true, // marks simulated data — the board shows a DEMO banner
     started_at: nowIso(),
     status: "running",

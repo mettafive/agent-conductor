@@ -5,7 +5,10 @@ import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
 import { isMuted, playFailure, playSuccess, playTick, setMuted } from "./lib/sounds";
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
-import { StatusBar } from "./components/StatusBar";
+import { useNow } from "./lib/useNow";
+import { clockSince, followStep, resolveActiveUnit } from "./lib/view";
+import { ContextHeader } from "./components/ContextHeader";
+import { ActiveCard } from "./components/ActiveCard";
 import { StepDetail } from "./components/StepDetail";
 import { SummaryView } from "./components/SummaryView";
 import { LoopOverview } from "./components/LoopOverview";
@@ -15,7 +18,7 @@ import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import { InsightsDashboard } from "./components/InsightsDashboard";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
-import type { BoardModel, RunRecord, Snapshot } from "./lib/types";
+import type { BoardModel, BoardStep, RunRecord, Snapshot } from "./lib/types";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -25,11 +28,12 @@ export function App() {
   const [selectedRun, setSelectedRun] = useState<string | null>(params.get("run"));
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(248);
+  const [sidebarWidth, setSidebarWidth] = useState(280); // Part 1.1 — wide enough to never truncate
   const [muted, setMutedState] = useState(isMuted());
-  const [pinned, setPinned] = useState<string[]>([]);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
-  const [selectedStep, setSelectedStep] = useState<string | null>(null); // sidebar focus
+  const [selectedStep, setSelectedStep] = useState<string | null>(null); // null = auto-follow live
+  const [showInsights, setShowInsights] = useState(false);
+  const now = useNow(1000);
 
   // live heartbeat stream across every workflow — drives the monitor, the heart,
   // and the tick sound. Arrivals are seeded on load so nothing false-fires.
@@ -49,11 +53,6 @@ export function App() {
 
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
-
-  // Insights now live in the conductor's knowledge section (the conductor IS the
-  // knowledge base). The ✨ badge counts the entries still in motion — anything
-  // not yet `applied` — so the dashboard surfaces what's learning, not noise.
-  const knowledgeInMotion = liveModel.knowledge.filter((k) => k.status !== "applied").length;
 
   // completion chimes — fire on any workflow's status transition (never on load)
   const prevStatuses = useRef<Record<string, string>>({});
@@ -99,22 +98,19 @@ export function App() {
     setSelectedWf(name);
     setSelectedRun(null);
     setSelectedStep(null);
+    setShowInsights(false);
   };
   const pickRun = (wf: string, runId: string) => {
     setSelectedWf(wf);
     setSelectedRun(runId);
     setSelectedStep(null);
+    setShowInsights(false);
   };
-  const togglePin = (name: string) =>
-    setPinned((p) => (p.includes(name) ? p.filter((n) => n !== name) : [...p, name]));
-
-  // Insights are now a persistent, browsable page (✨ in the status bar) rather
-  // than a popup that forces itself open and flashes by when the loop moves on.
-  // Proven patterns auto-apply server-side; the dashboard is informational and
-  // the open items still get manual apply/dismiss controls (§5.5/§5.6).
-  const [showInsights, setShowInsights] = useState(false);
-  const liveRunId = (liveSnap.status as { run_id?: string } | null)?.run_id;
-  void liveRunId;
+  const backToLive = () => {
+    setSelectedRun(null);
+    setSelectedStep(null);
+    setShowInsights(false);
+  };
 
   // human approval — write the decisions to status.json; the agent routes on them
   const applyApproval = async (
@@ -135,11 +131,7 @@ export function App() {
   };
 
   const viewing = selectedRun !== null;
-  const model: BoardModel | null = viewing
-    ? record
-      ? buildModel(record.snapshot)
-      : null
-    : liveModel;
+  const model: BoardModel | null = viewing ? (record ? buildModel(record.snapshot) : null) : liveModel;
 
   const liveStarted = !!(
     liveSnap.status &&
@@ -148,14 +140,26 @@ export function App() {
   );
   const showBoard = viewing ? !!record : liveStarted;
 
-  // Three-zone layout: the main area shows exactly ONE view at a time —
-  //   • a completion summary,
-  //   • one iteration's full kanban (sidebar selection "loopId::item"),
-  //   • a loop's overview of all iterations (a loop is the active step),
-  //   • a single non-loop step's detail.
-  // The sidebar is the only navigator; the main area never stacks kanbans.
-  // "loopId::item" selects an iteration — but the Phase 0 cards are also id'd
-  // with "::" (_improve::slug), so exclude those from iteration parsing.
+  // §6.1/§7: improvement runs silently. Only a STRUCTURAL change (add/remove/
+  // reorder step) that still needs a human surfaces as a card.
+  const structuralPending =
+    model?.autoImprove && !viewing
+      ? model.steps.find(
+          (s) =>
+            s.phase === "improve" &&
+            s.improve?.structural === true &&
+            s.column !== "done" &&
+            !s.approvalState?.decided,
+        )
+      : undefined;
+
+  // Auto-follow: with nothing selected on the live run, the main area tracks the
+  // active step (Part 3) — the view follows the action, no clicking needed.
+  const liveFollow = !viewing && selectedStep === null && !showInsights;
+  const follow = liveFollow ? followStep(liveModel) : null;
+
+  // Selected-step resolution (manual inspection / past runs). "loopId::item"
+  // selects an iteration; "_improve::*" ids are NOT iterations.
   const iterSel =
     selectedStep && selectedStep.includes("::") && !selectedStep.startsWith("_improve::")
       ? selectedStep.split("::")
@@ -165,10 +169,41 @@ export function App() {
     : selectedStep && model?.steps.some((s) => s.id === selectedStep)
       ? selectedStep
       : (model?.currentStep ?? null);
-  const activeStep =
-    model?.steps.find((s) => s.id === activeStepId) ?? model?.steps[0] ?? null;
+  const selectedStepObj = model?.steps.find((s) => s.id === activeStepId) ?? null;
+
   const showSummary =
-    !selectedStep && !!model && (model.overallStatus === "done" || model.overallStatus === "failed");
+    !showInsights &&
+    selectedStep === null &&
+    !!model &&
+    (model.overallStatus === "done" || model.overallStatus === "failed");
+
+  const header = buildHeader({
+    model,
+    viewing,
+    record,
+    liveFollow,
+    follow,
+    iterSel,
+    selectedStepObj,
+    structuralPending,
+    showInsights,
+    showSummary,
+    now,
+  });
+  const showBackToLive = selectedStep !== null || selectedRun !== null || showInsights;
+
+  // motion key — changes whenever the rendered view changes, giving the crossfade
+  const viewKey = showInsights
+    ? "insights"
+    : `${activeWf}:${selectedRun ?? "live"}:${
+        showSummary
+          ? "sum"
+          : structuralPending && liveFollow
+            ? `imp:${structuralPending.id}`
+            : liveFollow
+              ? `follow:${follow?.id ?? "none"}`
+              : (selectedStep ?? selectedStepObj?.id ?? "none")
+      }`;
 
   return (
     <>
@@ -182,101 +217,78 @@ export function App() {
             selectedRun={selectedRun}
             onPickWorkflow={pickWorkflow}
             onPickRun={pickRun}
-            onPin={togglePin}
             width={sidebarWidth}
             onResize={setSidebarWidth}
             activeStep={selectedStep ?? activeStepId}
             onSelectStep={setSelectedStep}
             viewingSnap={viewing ? record?.snapshot : null}
+            onOpenInsights={() => {
+              setShowInsights(true);
+              setSelectedStep(null);
+            }}
+            insightsOpen={showInsights}
           />
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <StatusBar
-            model={model ?? liveModel}
-            conn={conn}
-            viewing={viewing}
-            muted={muted}
-            onToggleMute={() => {
-              const next = !muted;
-              setMuted(next);
-              setMutedState(next);
-            }}
-            onBackToLive={() => setSelectedRun(null)}
-            onToggleSidebar={() => setSidebarOpen((o) => !o)}
-            optimizeCount={knowledgeInMotion}
-            optimizeOpen={showInsights}
-            onToggleOptimize={() => setShowInsights((o) => !o)}
-          />
-
-          {pinned.length > 0 && (
-            <TabBar
-              pinned={pinned}
-              workflows={workflows}
-              activeWf={activeWf}
-              onPick={pickWorkflow}
-              onUnpin={togglePin}
-            />
+          {model?.demo && (
+            <div className="flex items-center justify-center gap-2 border-b border-amber/25 bg-amber/10 px-5 py-1 font-mono text-[10px] uppercase tracking-[0.15em] text-amber">
+              Demo — simulated data
+            </div>
           )}
+
+          <ContextHeader
+            label={header.label}
+            timer={header.timer}
+            timerPrefix={header.timerPrefix}
+            onBackToLive={showBackToLive ? backToLive : undefined}
+            onToggleSidebar={() => setSidebarOpen((o) => !o)}
+          />
 
           {model?.error && (
             <div className="px-5 pt-4">
               <div className="rounded-lg border border-rose/30 bg-rose/10 px-4 py-2.5 font-mono text-xs text-rose">
-                ⚠ {model.error}
+                {model.error}
               </div>
             </div>
           )}
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
             {showInsights ? (
-              <motion.div
-                key="insights-dashboard"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                className="board-scroll h-full overflow-y-auto"
-              >
+              <ViewShell vkey="insights">
                 <InsightsDashboard
                   workflow={activeWf ?? "workflow"}
                   knowledge={(model ?? liveModel).knowledge}
                   runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
                 />
-              </motion.div>
+              </ViewShell>
             ) : viewing && !record ? (
               <div className="grid h-full place-items-center">
                 <span className="font-mono text-xs text-mist">loading run…</span>
               </div>
             ) : showBoard && model ? (
-              <motion.div
-                key={`${activeWf}:${selectedRun ?? "live"}:${showSummary ? "sum" : (selectedStep ?? activeStep?.id ?? "none")}`}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                className="board-scroll h-full overflow-y-auto"
-              >
+              <ViewShell vkey={viewKey} fill={liveFollow && !showSummary && !structuralPending}>
                 {showSummary ? (
-                  <SummaryView model={model} onOpenInsights={() => setShowInsights(true)} />
-                ) : activeStep?.phase === "improve" ? (
-                  <ImprovementCard step={activeStep} onApprove={viewing ? undefined : applyApproval} />
-                ) : iterSel && activeStep?.isLoop ? (
-                  <IterationKanban
-                    loopStep={activeStep}
-                    item={iterSel[1]}
-                    onBack={() => setSelectedStep(activeStep.id)}
-                  />
-                ) : activeStep?.isLoop ? (
-                  <LoopOverview
-                    loopStep={activeStep}
-                    onOpenIteration={(item) => setSelectedStep(`${activeStep.id}::${item}`)}
-                  />
-                ) : activeStep ? (
-                  <StepDetail step={activeStep} onApprove={viewing ? undefined : applyApproval} />
+                  <SummaryView model={model} />
+                ) : structuralPending && liveFollow ? (
+                  <ImprovementCard step={structuralPending} onApprove={applyApproval} />
+                ) : liveFollow ? (
+                  follow ? (
+                    <ActiveCard step={follow} />
+                  ) : (
+                    <Idle />
+                  )
                 ) : (
-                  <div className="grid h-full place-items-center">
-                    <span className="font-mono text-xs text-mist">select a step from the sidebar</span>
-                  </div>
+                  <SelectedView
+                    step={selectedStepObj}
+                    iterSel={iterSel}
+                    viewing={viewing}
+                    onApprove={applyApproval}
+                    onBackToOverview={(id) => setSelectedStep(id)}
+                    onOpenIteration={(loopId, item) => setSelectedStep(`${loopId}::${item}`)}
+                  />
                 )}
-              </motion.div>
+              </ViewShell>
             ) : (
               <WaitingState model={liveModel} statusPath={liveSnap.statusPath} />
             )}
@@ -289,6 +301,13 @@ export function App() {
             mode={monitorMode}
             onMode={setMonitorMode}
             lastBeatIso={globalLastBeat}
+            conn={conn}
+            muted={muted}
+            onToggleMute={() => {
+              const next = !muted;
+              setMuted(next);
+              setMutedState(next);
+            }}
           />
         </div>
       </div>
@@ -300,63 +319,161 @@ function statusOf(entry: WorkflowEntry | undefined): string | undefined {
   return (entry?.snap.status as { status?: string } | null)?.status;
 }
 
-const DOT: Record<string, string> = {
-  running: "bg-cyan animate-pulse",
-  done: "bg-mint",
-  failed: "bg-rose",
-};
-
-function TabBar({
-  pinned,
-  workflows,
-  activeWf,
-  onPick,
-  onUnpin,
+/** A crossfading shell so view changes transition smoothly (Part 3). */
+function ViewShell({
+  vkey,
+  fill,
+  children,
 }: {
-  pinned: string[];
-  workflows: Record<string, WorkflowEntry>;
-  activeWf: string | null;
-  onPick: (n: string) => void;
-  onUnpin: (n: string) => void;
+  vkey: string;
+  fill?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto border-b border-line bg-ink/60 px-3 py-1.5">
-      {pinned.map((name) => {
-        const status = workflows[name]?.snap.status as
-          | { status?: string; steps?: Record<string, { status?: string }> }
-          | null;
-        const steps = status?.steps ?? {};
-        const total = Object.keys(steps).length;
-        const done = Object.values(steps).filter((s) => s?.status === "done").length;
-        const active = activeWf === name;
-        return (
-          <div
-            key={name}
-            className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 ${
-              active ? "border-iris/40 bg-iris/10" : "border-line bg-panel/40"
-            }`}
-          >
-            <button onClick={() => onPick(name)} className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${DOT[status?.status ?? ""] ?? "bg-line-2"}`} />
-              <span className="font-mono text-xs text-chalk">{name}</span>
-              {total > 0 && (
-                <span className="font-mono text-[10px] text-mist">
-                  {done}/{total}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => onUnpin(name)}
-              title="Unpin"
-              className="text-mist hover:text-chalk"
-            >
-              ×
-            </button>
-          </div>
-        );
-      })}
+    <motion.div
+      key={vkey}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      className={fill ? "h-full" : "board-scroll h-full overflow-y-auto"}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** The detail surface when a step/iteration is selected, or a past run browsed. */
+function SelectedView({
+  step,
+  iterSel,
+  viewing,
+  onApprove,
+  onBackToOverview,
+  onOpenIteration,
+}: {
+  step: BoardStep | null;
+  iterSel: string[] | null;
+  viewing: boolean;
+  onApprove: (
+    stepId: string,
+    decisions: { label: string; decision: "approved" | "rejected" }[],
+  ) => Promise<{ ok: boolean }>;
+  onBackToOverview: (loopId: string) => void;
+  onOpenIteration: (loopId: string, item: string) => void;
+}) {
+  if (!step) {
+    return (
+      <div className="grid h-full place-items-center">
+        <span className="font-mono text-xs text-mist">select a step from the sidebar</span>
+      </div>
+    );
+  }
+  if (step.phase === "improve") {
+    return <ImprovementCard step={step} onApprove={viewing ? undefined : onApprove} />;
+  }
+  if (iterSel && step.isLoop) {
+    return <IterationKanban loopStep={step} item={iterSel[1]} onBack={() => onBackToOverview(step.id)} />;
+  }
+  if (step.isLoop) {
+    return <LoopOverview loopStep={step} onOpenIteration={(item) => onOpenIteration(step.id, item)} />;
+  }
+  return <StepDetail step={step} onApprove={viewing ? undefined : onApprove} />;
+}
+
+function Idle() {
+  return (
+    <div className="grid h-full place-items-center">
+      <span className="font-mono text-xs text-mist">preparing…</span>
     </div>
   );
+}
+
+/** Build the contextual header's label + timer for whatever view is showing. */
+function buildHeader({
+  model,
+  viewing,
+  record,
+  liveFollow,
+  follow,
+  iterSel,
+  selectedStepObj,
+  structuralPending,
+  showInsights,
+  showSummary,
+  now,
+}: {
+  model: BoardModel | null;
+  viewing: boolean;
+  record: RunRecord | null;
+  liveFollow: boolean;
+  follow: BoardStep | null;
+  iterSel: string[] | null;
+  selectedStepObj: BoardStep | null;
+  structuralPending?: BoardStep;
+  showInsights: boolean;
+  showSummary: boolean;
+  now: number;
+}): { label: string; timer?: string | null; timerPrefix?: string } {
+  const wf = model?.workflow ?? "workflow";
+
+  if (showInsights) return { label: `${wf} · knowledge` };
+
+  if (viewing) {
+    const runLabel = record?.run_name || fmtRunDate(record?.completed_at || record?.started_at) || wf;
+    const where = selectedStepObj ? selectedStepObj.id : "summary";
+    const dur = clockSince(record?.started_at ?? undefined, now, record?.completed_at ?? undefined);
+    return {
+      label: `${runLabel} · ${where}`,
+      timer: dur,
+      timerPrefix: dur ? (record?.status === "failed" ? "failed ·" : "completed ·") : undefined,
+    };
+  }
+
+  if (structuralPending && liveFollow) {
+    return { label: `improvement · ${structuralPending.improve?.title ?? structuralPending.id}` };
+  }
+
+  if (liveFollow) {
+    if (showSummary) {
+      const dur = clockSince(model?.startedAt, now, model?.endedAt);
+      return {
+        label: `${wf} — ${model?.overallStatus === "failed" ? "failed" : "complete"}`,
+        timer: dur,
+        timerPrefix: dur ? "ran" : undefined,
+      };
+    }
+    if (follow) {
+      const u = resolveActiveUnit(follow);
+      return { label: u.title, timer: u.running ? clockSince(u.startedAt, now) : null };
+    }
+    return { label: wf };
+  }
+
+  // selected step (live)
+  if (iterSel && selectedStepObj) {
+    return { label: `${selectedStepObj.id} · ${iterSel[1]}` };
+  }
+  if (selectedStepObj) {
+    const running = selectedStepObj.column === "running";
+    const dur = clockSince(
+      selectedStepObj.started_at,
+      now,
+      running ? undefined : selectedStepObj.completed_at,
+    );
+    return {
+      label: selectedStepObj.id,
+      timer: dur,
+      timerPrefix: dur && !running ? "took" : undefined,
+    };
+  }
+  return { label: wf };
+}
+
+function fmtRunDate(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
@@ -400,7 +517,7 @@ function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: st
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mint" />
           watching for changes
         </div>
-        <p className="mt-2 font-mono text-[11px] text-line-2">{statusPath}</p>
+        <p className="mt-2 font-mono text-[11px] text-dim">{statusPath}</p>
       </div>
     </div>
   );

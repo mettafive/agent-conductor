@@ -94,7 +94,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Pr
                   className="absolute -left-[15px] top-[3px] font-mono text-[10px] leading-none text-mint"
                   title={h.handoff?.to ? `handoff → ${h.handoff.to}` : "final beat"}
                 >
-                  ·→
+                  →
                 </span>
               ) : (
                 <span
@@ -108,11 +108,16 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop }: Pr
                 <Stamp iso={h.at} running={running} now={now} />
                 <span className="flex-1 text-[11px] leading-snug text-mist-2">
                   {h.iteration && filter === "all" && (
-                    <span className="mr-1 rounded bg-iris/10 px-1 font-mono text-[9px] text-iris">
+                    <span className="mr-1 rounded bg-cyan/10 px-1 font-mono text-[9px] text-cyan">
                       {h.iteration}
                     </span>
                   )}
-                  {h.insight && <span className="mr-1">💡</span>}
+                  {h.insight && (
+                    <span
+                      className="mr-1 inline-block h-1.5 w-1.5 translate-y-px rounded-full bg-amber"
+                      title="carries an insight"
+                    />
+                  )}
                   {renderNote(h.note)}
                   {h.insight && (
                     <span className="mt-0.5 block text-[10px] italic text-amber/90">

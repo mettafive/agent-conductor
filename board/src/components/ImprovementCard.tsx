@@ -56,8 +56,16 @@ export function ImprovementCard({
     <div className="mx-auto max-w-2xl px-6 py-8">
       <div className={`rounded-2xl border bg-panel/50 p-5 ${structural ? "border-amber/30" : "border-iris/25"}`}>
         <div className="flex items-center gap-3">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-iris/15 text-sm">
-            {isRead ? "📋" : isValidate ? "✓" : structural ? "⚑" : "⚡"}
+          <span
+            className={`grid h-7 w-7 place-items-center rounded-lg ${structural ? "bg-amber/15 text-amber" : "bg-cyan/15 text-cyan"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {structural ? (
+                <path d="M4 22V4m0 0 7 3 9-3v11l-9 3-7-3" />
+              ) : (
+                <path d="M12 3v3m0 12v3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M3 12h3m12 0h3M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1" />
+              )}
+            </svg>
           </span>
           <span className="flex-1 font-mono text-base font-medium text-chalk">
             {isRead
@@ -94,7 +102,7 @@ export function ImprovementCard({
             )}
             {structural && (
               <span className="rounded-md border border-amber/40 bg-amber/10 px-2 py-0.5 font-mono text-[10px] text-amber">
-                ⚠ needs approval
+                needs approval
               </span>
             )}
           </div>
@@ -129,9 +137,9 @@ export function ImprovementCard({
                 {g.passed === true ? (
                   <span className="text-mint">✓</span>
                 ) : g.passed === false ? (
-                  <span className="text-rose">✕</span>
+                  <span className="text-rose">✗</span>
                 ) : (
-                  <span className="text-line-2">○</span>
+                  <span className="text-dim">○</span>
                 )}
               </span>
               <span className="flex-1 font-mono text-[11.5px] leading-snug text-mist-2">{g.text}</span>
@@ -146,7 +154,7 @@ export function ImprovementCard({
               onClick={() => onApprove(step.id, [{ label: im?.title ?? step.id, decision: "approved" }])}
               className="rounded-lg border border-mint/40 bg-mint/10 px-3 py-1.5 font-mono text-[11px] text-mint transition-colors hover:bg-mint/15"
             >
-              ✅ Approve
+              Approve
             </button>
             <button
               onClick={() => onApprove(step.id, [{ label: im?.title ?? step.id, decision: "rejected" }])}

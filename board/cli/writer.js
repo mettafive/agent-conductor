@@ -338,72 +338,95 @@ export async function runStatusInit(args) {
   const runId =
     (typeof flag(args, ["--run-id"]) === "string" && flag(args, ["--run-id"])) ||
     now().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+  const wfName = doc.name || "workflow";
+
+  // §6.2 — every run gets a human name: {workflow}-run-{N}-{timestamp}. N is the
+  // count of archived runs + 1; the timestamp is the run id trimmed to minutes.
+  const nameSlug = String(wfName).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const historyDir = path.join(path.dirname(sp), "history");
+  let priorRuns = 0;
+  try {
+    priorRuns = fs.readdirSync(historyDir).filter((f) => f.endsWith(".json")).length;
+  } catch {
+    /* no history yet */
+  }
+  const tsShort = runId.replace(/-\d{2}$/, ""); // 2026-06-04T12-30-00 → 2026-06-04T12-30
+  const runName =
+    (typeof flag(args, ["--run-name"]) === "string" && flag(args, ["--run-name"])) ||
+    `${nameSlug}-run-${priorRuns + 1}-${tsShort}`;
+
+  // §6.1 — auto_improve (default on). When off, the Phase 0 self-improvement
+  // pass is fully disabled: no improvement cards injected at all.
+  const autoImprove = doc.auto_improve !== false;
+
   const steps = {};
-
-  // Phase 0 (§10.2): auto-inject improvement cards from PROVEN this-conductor
-  // knowledge BEFORE the workflow steps. Entries with current/proposed apply
-  // automatically; structural ones (new_step/remove_step/reorder) are flagged
-  // for human approval. A _validate card closes the phase.
-  const STRUCTURAL = new Set(["new_step", "remove_step", "reorder"]);
-  const knowledge = (Array.isArray(doc.knowledge) ? doc.knowledge : []).filter(
-    (k) => k && typeof k === "object" && k.title,
-  );
-  const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
-  const seen = new Set();
-
-  // _improve::read-knowledge leads the phase: read + categorize the knowledge.
-  if (knowledge.length > 0) {
-    const cat = (s) => knowledge.filter((k) => (k.status || "emerging") === s).length;
-    const cross = knowledge.filter((k) => (k.scope || "this-conductor") !== "this-conductor").length;
-    steps["_improve::read-knowledge"] = {
-      status: "pending",
-      gate: "pending",
-      attempt: 1,
-      improve: {
-        title: "Read knowledge",
-        kind: "read-knowledge",
-        note:
-          `${cat("proven")} proven · ${cat("emerging")} emerging · ${cat("applied")} applied · ` +
-          `${cross} cross-cutting`,
-      },
-    };
-  }
-
   let improvements = 0;
-  for (const k of knowledge) {
-    if ((k.status || "emerging") !== "proven") continue;
-    if ((k.scope || "this-conductor") !== "this-conductor") continue;
-    const structural = STRUCTURAL.has(k.type);
-    const textChange = k.current && k.proposed;
-    if (!structural && !textChange) continue; // proven but nothing actionable
-    let id = `_improve::${slug(k.title)}`;
-    while (seen.has(id)) id += "-x";
-    seen.add(id);
-    steps[id] = {
-      status: "pending",
-      gate: "pending",
-      attempt: 1,
-      improve: {
-        step: k.step,
-        title: k.title,
-        current: k.current,
-        proposed: k.proposed,
-        note: k.note,
-        observed: k.observed || 1,
-        scope: k.scope || "this-conductor",
-        structural,
-        kind: k.type || "instruction",
-      },
-    };
-    improvements += 1;
-  }
-  if (improvements > 0) {
-    steps["_improve::validate"] = {
-      status: "pending",
-      gate: "pending",
-      attempt: 1,
-      improve: { title: "Validate conductor", kind: "validate" },
-    };
+
+  if (autoImprove) {
+    // Phase 0 (§10.2): auto-inject improvement cards from PROVEN this-conductor
+    // knowledge BEFORE the workflow steps. Entries with current/proposed apply
+    // automatically; structural ones (new_step/remove_step/reorder) are flagged
+    // for human approval. A _validate card closes the phase.
+    const STRUCTURAL = new Set(["new_step", "remove_step", "reorder"]);
+    const knowledge = (Array.isArray(doc.knowledge) ? doc.knowledge : []).filter(
+      (k) => k && typeof k === "object" && k.title,
+    );
+    const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+    const seen = new Set();
+
+    // _improve::read-knowledge leads the phase: read + categorize the knowledge.
+    if (knowledge.length > 0) {
+      const cat = (s) => knowledge.filter((k) => (k.status || "emerging") === s).length;
+      const cross = knowledge.filter((k) => (k.scope || "this-conductor") !== "this-conductor").length;
+      steps["_improve::read-knowledge"] = {
+        status: "pending",
+        gate: "pending",
+        attempt: 1,
+        improve: {
+          title: "Read knowledge",
+          kind: "read-knowledge",
+          note:
+            `${cat("proven")} proven · ${cat("emerging")} emerging · ${cat("applied")} applied · ` +
+            `${cross} cross-cutting`,
+        },
+      };
+    }
+
+    for (const k of knowledge) {
+      if ((k.status || "emerging") !== "proven") continue;
+      if ((k.scope || "this-conductor") !== "this-conductor") continue;
+      const structural = STRUCTURAL.has(k.type);
+      const textChange = k.current && k.proposed;
+      if (!structural && !textChange) continue; // proven but nothing actionable
+      let id = `_improve::${slug(k.title)}`;
+      while (seen.has(id)) id += "-x";
+      seen.add(id);
+      steps[id] = {
+        status: "pending",
+        gate: "pending",
+        attempt: 1,
+        improve: {
+          step: k.step,
+          title: k.title,
+          current: k.current,
+          proposed: k.proposed,
+          note: k.note,
+          observed: k.observed || 1,
+          scope: k.scope || "this-conductor",
+          structural,
+          kind: k.type || "instruction",
+        },
+      };
+      improvements += 1;
+    }
+    if (improvements > 0) {
+      steps["_improve::validate"] = {
+        status: "pending",
+        gate: "pending",
+        attempt: 1,
+        improve: { title: "Validate conductor", kind: "validate" },
+      };
+    }
   }
 
   for (const st of doc.steps || []) {
@@ -414,8 +437,10 @@ export async function runStatusInit(args) {
         : { status: "pending", gate: "pending", attempt: 1 };
   }
   const status = {
-    workflow: doc.name || "workflow",
+    workflow: wfName,
     run_id: runId,
+    run_name: runName,
+    auto_improve: autoImprove,
     status: "running",
     goal: (doc.description || "").trim().replace(/\s+/g, " "),
     current_step: null,

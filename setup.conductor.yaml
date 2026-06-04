@@ -2,6 +2,12 @@ conductor: 1.0.0
 name: conductor-board-bootstrap
 description: Set up the board, convert a skill into a gated workflow, and execute it.
 
+# auto_improve (default: true) — runs the Phase 0 self-improvement pass before
+# step 1: proven knowledge is applied silently, structural changes ask for
+# approval. Set to false to disable it entirely (no improvement cards, simpler
+# board). The agent reads knowledge as context either way.
+auto_improve: true
+
 inputs:
   - skill_content
 
