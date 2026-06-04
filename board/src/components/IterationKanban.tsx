@@ -1,7 +1,9 @@
 import { AnimatePresence, LayoutGroup } from "framer-motion";
-import type { BoardStep, Column as Col } from "../lib/types";
+import type { BoardStep, Column as Col, DeveloperNote } from "../lib/types";
 import { subStepColumn } from "../lib/loop";
+import { useNow } from "../lib/useNow";
 import { IterationCard } from "./IterationCard";
+import { HeartbeatTimeline } from "./HeartbeatTimeline";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
 
@@ -20,11 +22,16 @@ export function IterationKanban({
   loopStep,
   item,
   onBack,
+  workflow,
+  notes,
 }: {
   loopStep: BoardStep;
   item: string;
   onBack?: () => void;
+  workflow?: string;
+  notes?: DeveloperNote[];
 }) {
+  const now = useNow(1000);
   const iter = loopStep.loop?.iterations.find((it) => it.item === item);
   const defById = new Map((loopStep.subSteps ?? []).map((d) => [d.id, d]));
   const beats = loopStep.heartbeat.filter((h) => h.iteration === item);
@@ -40,6 +47,7 @@ export function IterationKanban({
   }
 
   const anyFailed = iter.steps.some((s) => s.status === "failed");
+  const itemRunning = iter.steps.some((s) => subStepColumn(s) === "running");
   const cols: Col[] = anyFailed ? [...MAIN, "failed"] : MAIN;
   const gridCols = anyFailed ? "lg:grid-cols-5" : "lg:grid-cols-4";
 
@@ -101,6 +109,25 @@ export function IterationKanban({
           })}
         </div>
       </LayoutGroup>
+
+      {/* the iteration's narration — activity cards stack here, and the flow manager can leave
+          notes/directives, exactly as on a regular step. The kanban above is the structure
+          (sub-steps + gates); this is the heartbeat overview that coexists with it. */}
+      {beats.length > 0 && (
+        <div className="mx-auto mt-8 max-w-2xl">
+          <div className="px-1 text-[11px] uppercase tracking-wide text-dim">Activity &amp; notes</div>
+          <HeartbeatTimeline
+            entries={beats}
+            learnings={[]}
+            now={now}
+            running={itemRunning}
+            cardOverviews={loopStep.cardOverviews}
+            notes={notes}
+            workflow={workflow}
+            step={loopStep.id}
+          />
+        </div>
+      )}
     </div>
   );
 }

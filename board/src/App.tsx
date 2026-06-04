@@ -370,7 +370,7 @@ export function App() {
                     <ImprovementCard step={structuralPending} onApprove={applyApproval} />
                   ) : liveFollow ? (
                     followInLoop ? (
-                      <IterationKanban loopStep={follow!} item={followItem!} />
+                      <IterationKanban loopStep={follow!} item={followItem!} workflow={liveModel.workflow} notes={liveModel.developerNotes} />
                     ) : follow ? (
                       <ActiveCard step={follow} workflow={liveModel.workflow} notes={liveModel.developerNotes} />
                     ) : (
@@ -471,7 +471,15 @@ function SelectedView({
     return <ImprovementCard step={step} onApprove={viewing ? undefined : onApprove} />;
   }
   if (iterSel && step.isLoop) {
-    return <IterationKanban loopStep={step} item={iterSel[1]} onBack={() => onBackToOverview(step.id)} />;
+    return (
+      <IterationKanban
+        loopStep={step}
+        item={iterSel[1]}
+        onBack={() => onBackToOverview(step.id)}
+        workflow={workflow}
+        notes={notes}
+      />
+    );
   }
   if (step.isLoop) {
     return <LoopOverview loopStep={step} onOpenIteration={(item) => onOpenIteration(step.id, item)} />;
