@@ -5,7 +5,7 @@ const LINKS = [
   { key: "spec", label: "Spec", href: `${BASE}#/spec` },
   { key: "playground", label: "Playground", href: `${BASE}#/playground` },
   { key: "examples", label: "Examples", href: `${BASE}#/examples` },
-  { key: "guide", label: "Guide", href: `${BASE}kanban.html` },
+  { key: "guide", label: "Docs", href: `${BASE}kanban.html` },
 ];
 
 /**

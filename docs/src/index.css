@@ -41,6 +41,9 @@
   html {
     scroll-behavior: smooth;
     scroll-padding-top: 5rem;
+    /* always reserve the scrollbar so the centered nav doesn't shift between
+       pages of different heights (the "wiggle" when navigating). */
+    scrollbar-gutter: stable;
   }
   body {
     margin: 0;
