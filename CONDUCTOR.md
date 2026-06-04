@@ -67,6 +67,14 @@ vibe through setup.
 
 ## Heartbeats
 
+**The board shows only what you narrate — so narrate every phase that takes time, not just
+when a formal step begins.** That includes **orientation** (reading the runbook/spec, loading
+context), **research** (searching, reading sources), and **long implementation work** — open a
+card and beat it while you do them. Silent reading or thinking reads as a *stall* to the person
+watching, even though you're working. The very first thing a run should do is open a "setup /
+reading" card and heartbeat it, so the board lights up immediately instead of going dark while
+you orient.
+
 While executing, pulse a heartbeat to yourself **about every 30 seconds** (the default
 cadence; the board's Settings let the watcher pick 15s–5min, and it flags a stall after ~3
 missed beats) so you — and the human watching the board — stay oriented. Append
