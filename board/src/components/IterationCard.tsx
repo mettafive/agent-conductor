@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { ConductorStep, HeartbeatEntry, IterationStep } from "../lib/types";
+import type { ConductorStep, HeartbeatEntry, IterationStep, DeveloperNote } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { subStepColumn } from "../lib/loop";
 import { renderNote } from "../lib/heartbeat";
@@ -28,12 +28,16 @@ export function IterationCard({
   sub,
   def,
   beats,
+  workflow,
+  notes,
 }: {
   loopId: string;
   item: string;
   sub: IterationStep;
   def?: ConductorStep;
   beats: HeartbeatEntry[];
+  workflow?: string;
+  notes?: DeveloperNote[];
 }) {
   const [open, setOpen] = useState(false);
   const now = useNow(5000);
@@ -132,7 +136,15 @@ export function IterationCard({
               )
             )}
             {shown.length > 0 && (
-              <HeartbeatTimeline entries={shown} learnings={[]} now={now} running={col === "running"} />
+              <HeartbeatTimeline
+                entries={shown}
+                learnings={[]}
+                now={now}
+                running={col === "running"}
+                notes={notes}
+                workflow={workflow}
+                step={loopId}
+              />
             )}
           </motion.div>
         )}
