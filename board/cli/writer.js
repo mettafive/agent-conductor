@@ -319,10 +319,15 @@ export async function runLoop(args) {
     lp.status = "running";
     s.current_step = loopId;
   }
-  // recompute completed
-  lp.completed = Object.values(lp.iterations).filter((sub) =>
-    Object.values(sub).every((c) => c.status === "done"),
-  ).length;
+  // recompute completed. An iteration is complete only when it has materialized
+  // sub-step cells AND every one is done — a frontloaded-but-empty iteration ({})
+  // must NOT count (Object.values({}).every(...) is vacuously true, which would
+  // otherwise mark all not-yet-started iterations "complete" and flip the whole
+  // loop to done the instant the first iteration finishes).
+  lp.completed = Object.values(lp.iterations).filter((sub) => {
+    const cells = Object.values(sub);
+    return cells.length > 0 && cells.every((c) => c.status === "done");
+  }).length;
   if (lp.total && lp.completed >= lp.total) lp.status = "done";
   save(sp, s);
   return ok(`${loopId}/${item}/${subId} → ${status}`);

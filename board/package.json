@@ -21,6 +21,7 @@
     "preview": "vite preview",
     "start": "node bin/cli.js",
     "simulate": "node scripts/simulate.js",
+    "test:loops": "npx --yes tsx test/loops.smoke.ts",
     "prepublishOnly": "npm run build"
   },
   "engines": {

@@ -149,12 +149,21 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
   // Prefer a declared positive total (frontloaded scope), else the number of
   // iterations actually materialized — never report 0/N when items exist.
   const declaredTotal = typeof st.total === "number" && st.total > 0 ? st.total : 0;
+  // `completed` is derived from the iteration done-flags, which are computed against
+  // the conductor's FULL sub-step roster (subDefs) — the authoritative count. We do
+  // NOT trust st.completed when sub-step defs are known: the writer denormalizes
+  // st.completed from only the materialized cells, so a partial iteration (one
+  // sub-step done, the rest not yet written) is miscounted as complete. Fall back to
+  // st.completed only when there's no conductor to define the roster.
+  const derivedCompleted = iterations.filter((i) => i.done).length;
   return {
     total: Math.max(declaredTotal, items.length),
     completed:
-      typeof st.completed === "number"
-        ? st.completed
-        : iterations.filter((i) => i.done).length,
+      subDefs.length > 0
+        ? derivedCompleted
+        : typeof st.completed === "number"
+          ? st.completed
+          : derivedCompleted,
     currentItem: st.current_item,
     iterations,
   };
