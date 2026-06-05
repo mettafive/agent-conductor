@@ -395,6 +395,30 @@ export function App() {
             )}
           </div>
 
+          {liveModel &&
+            liveModel.overallStatus === "done" &&
+            liveModel.nextUp &&
+            (liveModel.nextUp.name || (liveModel.nextUp.remaining ?? 0) > 0) && (
+              <div className="flex items-center justify-between gap-3 border-t border-line/70 bg-panel/40 px-4 py-1.5 backdrop-blur">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.16em] text-mist">Up next</span>
+                  <span className="truncate text-[12px] text-mist-2">{liveModel.nextUp.name ?? "next batch"}</span>
+                  {(liveModel.nextUp.remaining ?? 0) > 0 && (
+                    <span className="shrink-0 text-[11px] text-dim">· {liveModel.nextUp.remaining} more</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    void fetch(`/api/workflow/${encodeURIComponent(liveModel.workflow)}/next`, { method: "POST" });
+                  }}
+                  title="Request the next batch"
+                  className="shrink-0 rounded-md border border-mint/40 bg-mint/10 px-2.5 py-1 font-mono text-[11px] text-mint transition-colors hover:bg-mint/20 active:scale-[0.97]"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+
           <HeartbeatMonitor
             beats={log}
             arrival={arrival}

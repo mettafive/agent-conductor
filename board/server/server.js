@@ -909,6 +909,25 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       });
       return;
     }
+    // "Up next" — the human asks to continue to the next queued batch. We can't spawn an agent from
+    // the board, so we record the request in status.json; the orchestrator/loop picks up next_requested.
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/next$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "not found" });
+      let status;
+      try {
+        status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+      } catch {
+        return json(res, 500, { error: "could not read status.json" });
+      }
+      status.next_requested = { at: new Date().toISOString() };
+      try {
+        fs.writeFileSync(wf.statusPath, JSON.stringify(status, null, 2));
+      } catch (e) {
+        return json(res, 500, { error: `write failed: ${e.message}` });
+      }
+      return json(res, 200, { ok: true });
+    }
     // developer notes / directives on activity cards — the flow-manager feedback loop.
     // Body actions: create {card, cardTitle, step, text, directive, scope}; edit {id, text, directive,
     // scope}; remove {id, action:"remove"}. Edits/removals are logged to the note's audit history,

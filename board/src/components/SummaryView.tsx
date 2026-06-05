@@ -135,22 +135,6 @@ export function SummaryView({ model }: { model: BoardModel }) {
           </ul>
         </Section>
       )}
-
-      {/* Up next — when the run pulled from a queue and more remain, surface the natural next step */}
-      {!failed && model.nextUp && (model.nextUp.name || (model.nextUp.remaining ?? 0) > 0) && (
-        <div className="mt-8 flex items-center justify-between rounded-lg border border-mint/30 bg-mint/[0.06] px-4 py-3">
-          <div className="min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-wide text-mint">Up next</div>
-            <div className="mt-0.5 truncate text-[13px] text-chalk">{model.nextUp.name ?? "next batch"}</div>
-            {(model.nextUp.remaining ?? 0) > 0 && (
-              <div className="text-[11px] text-mist">{model.nextUp.remaining} more in the queue</div>
-            )}
-          </div>
-          <span className="shrink-0 rounded-md border border-mint/40 bg-mint/10 px-3 py-1.5 font-mono text-[12px] text-mint">
-            Next →
-          </span>
-        </div>
-      )}
     </div>
   );
 }
