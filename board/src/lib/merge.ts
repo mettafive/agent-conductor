@@ -407,7 +407,12 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     runName: status.run_name as string | undefined,
     autoImprove,
     startedAt: status.started_at as string | undefined,
-    endedAt: status.completed_at as string | undefined,
+    // A finished run rarely records a top-level completed_at, which left the done-screen timer
+    // ticking to `now` forever. Freeze it: when the run is done/failed, fall back to the last
+    // heartbeat (when work actually stopped).
+    endedAt:
+      (status.completed_at as string | undefined) ??
+      (status.status === "done" || status.status === "failed" ? lastBeatAt : undefined),
     overallStatus: (status.status as string) ?? (total ? "idle" : "idle"),
     currentStep: status.current_step as string | undefined,
     steps,
