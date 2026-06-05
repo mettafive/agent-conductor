@@ -56,20 +56,55 @@ steps:
 
   - id: convert-to-conductor
     instruction: |
-      Convert the analysis into a conductor YAML. Follow the format in
-      spec/conductor-spec.md and the examples/ directory. Rules:
-      - every step gets at least one gate criterion
-      - hard gates (check:) for anything verifiable by command; soft gates for judgment
-      - conditions (type: condition) where the flow branches
-      - loops (type: loop) where steps repeat over a list
-      - chain data between steps with output: and requires:
-      Save the conductor to .conductor/conductor.yaml.
+      Convert the analysis into a conductor YAML. This is where the run's whole value is
+      won or lost: the gates ARE the skill made checkable, so author them to the bar in
+      CONDUCTOR.md ("What makes a good gate"). The skill is the benchmark — each gate is a
+      faithful translation of a step's GOAL, not a restatement of it. Rules:
+      - every step gets at least one gate criterion; conditions (type: condition) where the
+        flow branches; loops (type: loop) where steps repeat over a list; chain data with
+        output:/requires:.
+      - Hard gates (check:) for anything verifiable by command; soft gates only for genuine
+        judgment. Make hard gates check SUBSTANCE not surface, and cross-validate a step's
+        outputs against each other and against real data (DB, live web) — never in isolation.
+      - Name each gate after the skill step/goal it enforces, so the human can see which
+        requirement each gate guards (traceability).
+      Then RED-TEAM every hard gate (CONDUCTOR.md principle #6): write ONE known-BAD example
+      it must reject, run the gate's check against that example, and confirm it FAILS. A gate
+      you haven't watched fail on a bad example does not count — fix it until it reds.
+      Save the conductor to .conductor/conductor.yaml, and save a human-readable
+      .conductor/gate-review.md listing, per step: the skill goal it enforces, what the gate
+      rejects, and the red-team result (the bad example + confirmation the gate failed it).
     requires: [read-skill]
     gate:
       - name: "Conductor file created"
         check: "test -f .conductor/conductor.yaml"
       - name: "Conductor passes validation"
         check: "npx conductor-board validate .conductor/conductor.yaml"
+      - name: "Gate-review written (gates traced to skill goals + red-teamed)"
+        check: "test -f .conductor/gate-review.md"
+      - "Every hard gate was run against a known-bad example and FAILED it — a gate that can't reject its own violation is a lint, not a gate"
+
+  - id: confirm-gates
+    type: approval
+    instruction: |
+      Before ANY work runs, the user confirms the gates faithfully capture their skill —
+      this is the one checkpoint that guarantees the gates match intent. Present
+      .conductor/gate-review.md as an approval card: for each step, the skill goal, the gate
+      that guards it, and the red-team proof it rejects violations. Mark this step
+      awaiting_approval (gate pending_human) with an `approval` object whose items are the
+      gates (one per step/gate), then WAIT for the human's Approve/Reject on the board.
+      On reject: read the feedback, fix the flagged gate(s) in .conductor/conductor.yaml
+      (re-validate, re-red-team, update gate-review.md), and re-present. Do NOT start
+      execution until the gate set is approved — nothing after this point is skippable.
+    requires: [convert-to-conductor]
+    approval:
+      prompt: >
+        These gates are how your skill gets enforced on every run — each one is traced to a
+        skill goal and red-teamed against a known-bad example (see .conductor/gate-review.md).
+        Approve to start the run, or reject to have a gate fixed before anything executes.
+      actions:
+        approve: execute-workflow
+        reject: convert-to-conductor
 
   - id: execute-workflow
     instruction: |
@@ -107,7 +142,7 @@ steps:
       insights auto-apply in the next run's Phase 0. Browse them on the board's
       ✨ Insights page. Set the top-level status to "done" when the last step
       completes.
-    requires: [convert-to-conductor]
+    requires: [confirm-gates]
     gate:
       - name: "Status file exists"
         check: "test -f .conductor/status.json"

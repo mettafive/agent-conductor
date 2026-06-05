@@ -58,8 +58,15 @@ The setup conductor will:
 - **Verify your environment** (Node 18+, npx).
 - **Start the live board** — `npx conductor-board &` (auto-opens the browser,
   auto-detects a free port, and writes it to `.conductor/server.json`).
-- **Convert the user's skill** into a gated conductor workflow.
+- **Convert the user's skill** into a gated conductor workflow — authoring each gate to
+  the **"What makes a good gate"** bar (the skill is the benchmark: translate each step's
+  *goal* into a real, cross-validating check), and **red-team every hard gate** (prove it
+  fails a known-bad example) into `.conductor/gate-review.md`.
 - **Validate** the generated workflow (`npx conductor-board validate`).
+- **Confirm the gates with the user** — present each gate (its skill goal, what it rejects,
+  its red-team proof) as an **Approve/Reject** card. Execution can't start until the human
+  agrees the gates faithfully capture the skill; a rejection routes back to fix the gate.
+  (One-time, at authoring — every later run just *enforces* the approved gates.)
 - **Execute** it, updating `.conductor/status.json` so the board moves in real time.
 
 Each step is **hard-gated** — it can't proceed until the check passes, so you can't
