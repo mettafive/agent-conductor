@@ -50,15 +50,6 @@ function ConnDot({ conn }: { conn?: Conn }) {
   );
 }
 
-/** A small sparkle — marks a beat that captured a learning (an SVG, not an emoji). */
-function InsightIcon() {
-  return (
-    <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden className="shrink-0">
-      <path d="M12 2l1.7 6.1L20 10l-6.3 1.9L12 18l-1.7-6.1L4 10l6.3-1.9L12 2z" />
-    </svg>
-  );
-}
-
 interface Props {
   beats: StreamBeat[];
   arrival: Arrival | null;
@@ -379,7 +370,10 @@ function ExpandedMonitor({
         ) : (
           <div ref={contentRef}>
           {shown.map((b) => (
-            <div key={b.key} className="flex items-start gap-2 py-px">
+            <div
+              key={b.key}
+              className={`flex items-start gap-2 rounded py-px ${b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""}`}
+            >
               <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
               {multi && (
                 <span className={`shrink-0 select-none ${wfColor(b.workflow)}`}>{b.workflow}</span>
@@ -405,10 +399,9 @@ function ExpandedMonitor({
                     pinned.current = true;
                     setFilter("insights");
                   }}
-                  className="mt-px flex shrink-0 select-none items-center gap-0.5 rounded bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
+                  className="mt-px shrink-0 select-none rounded bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
                   title="captured a learning — click to browse it in the Insights tab"
                 >
-                  <InsightIcon />
                   insight
                 </button>
               )}
