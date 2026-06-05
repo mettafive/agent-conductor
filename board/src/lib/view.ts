@@ -77,6 +77,10 @@ export function followStep(model: BoardModel): BoardStep | null {
     workflow.find((s) => s.id === model.currentStep && s.heartbeat.length > 0) ??
     latestBeatStep(workflow) ??
     workflow.find((s) => s.id === model.currentStep) ??
+    // Phase 0 (the improve cards) is real pre-step-1 work — applying proven insights. Surface it
+    // too, so the board isn't dark while the agent reads + improves before the first workflow step.
+    model.steps.find((s) => s.phase === "improve" && s.column === "running") ??
+    latestBeatStep(model.steps) ??
     (model.overallStatus === "done" || model.overallStatus === "failed"
       ? (workflow[workflow.length - 1] ?? null)
       : null)
