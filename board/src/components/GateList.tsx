@@ -4,13 +4,15 @@ import { Icon } from "./Icon";
 import { Led } from "./Led";
 import { AppearIcon } from "./Appear";
 
-/** Pass / fail / not-yet mark — thin SVG icons that ease in, + a pending LED. */
-function Mark({ passed }: { passed?: boolean | null }) {
+/** Pass / fail / not-yet mark — thin SVG icons that ease in, + a pending LED.
+ *  `tone` lets the check inherit the surrounding pill colour (so an attested pass
+ *  reads amber, a verified pass reads mint) instead of forcing its own. */
+function Mark({ passed, size = 13, tone = false }: { passed?: boolean | null; size?: number; tone?: boolean }) {
   if (passed === true)
     return (
       <AppearIcon swap="pass">
-        <span className="text-mint">
-          <Icon name="check" size={13} />
+        <span className={tone ? "" : "text-mint"}>
+          <Icon name="check" size={size} />
         </span>
       </AppearIcon>
     );
@@ -18,7 +20,7 @@ function Mark({ passed }: { passed?: boolean | null }) {
     return (
       <AppearIcon swap="fail">
         <span className="text-rose">
-          <Icon name="cross" size={13} />
+          <Icon name="cross" size={size} />
         </span>
       </AppearIcon>
     );
@@ -48,40 +50,43 @@ export function GateList({
       {criteria.map((c, i) => {
         // On a settled (done) step, an unrecorded criterion is shown as passed, not pending.
         const passed = c.passed ?? (settled ? true : null);
+        // A passed criterion is either verified (gate-runner observed it) or merely attested by
+        // the agent. We keep that trust signal — but as a tint on the kind pill + a tooltip, never
+        // as a word competing with the criterion text for the horizontal line.
+        const attested = passed === true && !c.verified;
+        const pill =
+          c.kind === "hard"
+            ? attested
+              ? "border-amber/30 text-amber/90" // hard, but only attested — softer amber
+              : "border-mint/30 text-mint" // hard + verified
+            : "border-line-2 text-mist"; // soft (judgment) — neutral
         return (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
-          className="flex items-start gap-2 py-1"
-        >
-          <span className="mt-0.5 w-3 text-center font-mono text-[11px]">
-            <Mark passed={passed} />
-          </span>
-          <span
-            className={`rounded border px-1 py-px font-mono text-[9px] ${
-              c.kind === "hard" ? "border-mint/25 text-mint" : "border-line-2 text-mist"
-            }`}
+          <motion.div
+            key={i}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="py-1.5"
           >
-            {c.kind}
-          </span>
-          {c.verified ? (
-            <span title="verified by the gate-runner" className="font-mono text-[9px] text-mint">
-              verified
-            </span>
-          ) : passed === true ? (
-            <span title="attested by the agent" className="font-mono text-[9px] text-amber/80">
-              attested
-            </span>
-          ) : null}
-          <span className="flex-1 font-mono text-[11.5px] leading-snug text-mist-2">
-            {c.kind === "hard" && c.name ? c.name : c.text}
-            {c.kind === "hard" && typeof c.exitCode === "number" && (
-              <span className="ml-1 text-mist">exit {c.exitCode}</span>
-            )}
-          </span>
-        </motion.div>
+            {/* badge line — the mark lives INSIDE the kind pill, so nothing competes for the
+                criterion text's horizontal space. */}
+            <div className="flex items-center gap-1.5">
+              <span
+                title={c.verified ? "verified by the gate-runner" : attested ? "attested by the agent" : undefined}
+                className={`inline-flex items-center gap-1 rounded border px-1.5 py-px font-mono text-[9px] leading-none ${pill}`}
+              >
+                <Mark passed={passed} size={10} tone />
+                {c.kind}
+              </span>
+              {c.kind === "hard" && typeof c.exitCode === "number" && (
+                <span className="font-mono text-[9px] text-mist">exit {c.exitCode}</span>
+              )}
+            </div>
+            {/* criterion text — its own full-width line, never squeezed into a narrow column. */}
+            <div className="mt-1 font-mono text-[11.5px] leading-snug text-mist-2">
+              {c.kind === "hard" && c.name ? c.name : c.text}
+            </div>
+          </motion.div>
         );
       })}
     </div>

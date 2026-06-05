@@ -294,11 +294,24 @@ export function WorkflowSidebar({
               </div>
             </button>
 
-            {/* progress tree */}
+            {/* progress tree — ALWAYS shown. Viewing a finished run expands that run's branches
+                inline below (in "Finished runs"); it must not replace the live navigator. While a
+                finished run is selected the live tree goes passive (no highlight); clicking a live
+                step snaps back to the live run. */}
             <div className="mt-4">
-              {selectedRun === null && (
-                <StepTree snap={workflows[activeWf].snap} activeStep={activeStep} following={following} onSelectStep={onSelectStep} />
-              )}
+              <StepTree
+                snap={workflows[activeWf].snap}
+                activeStep={selectedRun === null ? activeStep : null}
+                following={selectedRun === null ? following : false}
+                onSelectStep={
+                  selectedRun === null
+                    ? onSelectStep
+                    : (id) => {
+                        onPickWorkflow(activeWf); // leave the finished-run view, back to live
+                        onSelectStep?.(id);
+                      }
+                }
+              />
             </div>
 
             {/* other workflows — compact switcher, only when there's more than one */}

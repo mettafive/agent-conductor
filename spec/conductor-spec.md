@@ -1,12 +1,14 @@
 # The Conductor Spec
 
-**Version `2.2.0`** · the self-improvement loop (§9.6) — structured `knowledge:`
-entries in the conductor file (the conductor IS the knowledge base), an
-auto-injected **Phase 0** improvement pass, and `emerging → proven → applied`
-escalation. Builds on 2.1.0 (insight `scope` §9.5, `parallel: auto` and the loop
-scope beat §4.3) and 2.0.0 (human approval §4.4, the board-sync pre-check §8.1,
-finalBeat handoffs §6.5). Backwards-compatible with 1.x/2.x conductors — every
-addition is optional. (1.1.0 added [loops](#43-loops).)
+**Version `2.3.0`** · **coverage** (§2.0.1) — surfacing every named work-unit is now
+*enforced*, not trusted: `read-skill` emits a machine-readable work-unit ledger and
+`conductor-board coverage` fails authoring when any phase has no card (with a `validate`
+backstop for hand-authored conductors). Builds on 2.2.0 (the self-improvement loop §9.6 —
+structured `knowledge:` entries, the Phase 0 improvement pass, `emerging → proven → applied`
+escalation), 2.1.0 (insight `scope` §9.5, `parallel: auto` and the loop scope beat §4.3) and
+2.0.0 (human approval §4.4, the board-sync pre-check §8.1, finalBeat handoffs §6.5).
+Backwards-compatible with 1.x/2.x conductors — every addition is optional. (1.1.0 added
+[loops](#43-loops).)
 
 A conductor is a single YAML file that turns a loose pile of instructions into a
 **gated workflow**. Each step must pass its gate before the next one unlocks. The
@@ -116,6 +118,58 @@ because it reads as skipped work. Surface every **named work-unit** (gate test *
 visibility test passes); keep mechanical micro-actions *inside* a card. There are **no
 count limits and no time limits**: a good card is defined by the two tests, not by how long
 it takes or how many there are.
+
+### 2.0.1 Coverage — surfacing is *enforced*, not trusted
+
+The substep-divider rule is the #1 thing authors get wrong, and prose guidance alone has
+shipped the bug — a *paid* phase (a DataForSEO recon) folded into a sibling card's prose,
+so the board looked complete while hiding real work and the user kept asking *"where is the
+SEO step?"*. So coverage is an **independent, mechanical check**, never a self-attestation
+the author writes about their own board (a coverage gate that passed because the agent
+*said* "I surfaced everything" would violate the no-self-attestation rule — §3.2,
+CONDUCTOR.md #9).
+
+Two artifacts make it checkable:
+
+1. **The work-unit ledger.** When a skill is converted to a conductor (the `setup`
+   bootstrap's `read-skill` step), the agent writes a machine-readable ledger of every
+   named work-unit into `.conductor/skill-analysis.md`, one line each:
+
+   ```
+   ## work-units
+   - id: buy-dataforseo-recon   kind: divider
+   - id: claim-batch            kind: gateable
+   - id: polish-page            kind: gateable   loop: per-page
+   - id: index-submit           kind: divider
+   ```
+
+   `kind: gateable` = has a real must-pass condition; `kind: divider` = visibility-only.
+   The id **must** become the step/sub-step id in the conductor.
+
+2. **`conductor-board coverage`** set-differences the ledger against every card in the
+   conductor (loop sub-steps included) and **fails, naming any work-unit with no card**:
+
+   ```
+   ✗ coverage: 1 of 9 work-unit(s) have NO card — a named phase was folded into another step.
+       ✗ buy-dataforseo-recon  (divider — give it a gate-less / board-sync-only card)
+   ```
+
+   It is wired as a **hard gate** in the bootstrap's `convert-to-conductor` step, so a
+   board that hides a phase cannot be authored in the first place.
+
+**Backstop for hand-authored conductors** (no ledger): `conductor-board validate` emits a
+warning when one step's instruction bundles **2+ distinct tool commands** — the structural
+smell of two phases folded into one card:
+
+```
+⚠ step "pick-batch" bundles 2 distinct commands (`prefetch-popular`, `next`) —
+  if these are distinct phases, give each its own card (docs/authoring-a-good-board.md §1)
+```
+
+The **decomposition** of a skill into work-units stays agent judgment — regex can't read a
+skill, and would false-positive on domain vocab. `coverage` only verifies the conductor
+honors the agent's *own* explicit ledger: a mechanical, independent observation, exactly
+the bar every other gate is held to.
 
 ### 2.1 A standard gated step
 
@@ -968,6 +1022,21 @@ That's the whole spec. Hand the file to an agent and watch the board light up.
 ---
 
 ## 11. Changelog
+
+**2.3.0**
+
+- **Coverage enforcement** (§2.0.1) — the "surface every work-unit" rule is now mechanically
+  enforced. `read-skill` writes a machine-readable **work-unit ledger** (`- id: x  kind:
+  gateable|divider`) into `.conductor/skill-analysis.md`; `conductor-board coverage`
+  set-differences it against the conductor's cards (loop sub-steps included) and fails,
+  naming any folded phase. Wired as a **hard gate** in the bootstrap's `convert-to-conductor`
+  step, replacing the old self-attested coverage claim (which violated the no-self-attestation
+  rule).
+- **`validate` folded-phase backstop** — warns (never errors) when one step's instruction
+  bundles 2+ distinct tool commands, catching hand-authored conductors that have no ledger.
+
+Additive over 2.2.0 — the ledger + `coverage` only run during `setup`-style authoring; existing
+conductors validate and run unchanged.
 
 **2.2.0**
 
