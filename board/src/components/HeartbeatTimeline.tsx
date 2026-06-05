@@ -13,7 +13,7 @@ function absTime(iso: string): string {
 
 function Stamp({ iso, running, now }: { iso: string; running: boolean; now: number }) {
   return (
-    <span className="shrink-0 font-mono text-[9px] text-line-2" title={iso}>
+    <span className="shrink-0 font-mono text-[9px] text-mist" title={iso}>
       {running ? relativeTime(iso, now) : absTime(iso)}
     </span>
   );
@@ -192,20 +192,19 @@ function GroupBlock({
         {group.hasFinal ? "→" : String(number).padStart(2, "0")}
       </span>
 
-      {/* meta row — context + state + time (kept off the title's line so the title never
-          gets squeezed into a narrow column) */}
+      {/* header — title shares one row with the state + time. The title truncates (never
+          word-wraps), so it stays a clean single line even in a narrow column. */}
       <div className="flex items-center gap-2">
         {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium leading-snug text-chalk">
+          {renderNote(group.title)}
+        </span>
         {group.insightCount > 0 && (
           <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-amber" title="carries an insight" />
         )}
-        <span className="flex-1" />
         {active && <span className="shrink-0 font-mono text-[9px] tracking-wide text-mint">● live</span>}
         <Stamp iso={group.endedAt} running={running} now={now} />
       </div>
-
-      {/* card NAME — its own full-width line */}
-      <div className="mt-1 text-[12.5px] font-medium leading-snug text-chalk">{renderNote(group.title)}</div>
 
       {/* body — the summary, or the heartbeat-row stream */}
       {asSummary ? (
