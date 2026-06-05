@@ -54,6 +54,21 @@ export async function runCheck(args) {
   const step = status.steps?.[stepId];
   if (!step) return fail(`status.json has no step "${stepId}". Write the step before gating it.`);
 
+  // Phase 0 guard: a workflow step can't pass its board-sync gate while any injected Phase 0
+  // improvement card is still unresolved. You must apply/defer the proven insights (and resolve
+  // _improve::validate) before advancing the workflow — Phase 0 is not skippable.
+  if (!stepId.startsWith("_improve")) {
+    const openImprove = Object.entries(status.steps)
+      .filter(([id, s]) => id.startsWith("_improve") && s && s.status !== "done")
+      .map(([id]) => id);
+    if (openImprove.length) {
+      return fail(
+        `Phase 0 not complete — ${openImprove.length} improvement card(s) still open: ${openImprove.join(", ")}. ` +
+          `Apply or defer each proven insight before any workflow step's gate can pass.`,
+      );
+    }
+  }
+
   if (status.current_step !== stepId) {
     return fail(
       `current_step is "${status.current_step ?? "—"}", not "${stepId}". Mark this step running on the board before its gate.`,
