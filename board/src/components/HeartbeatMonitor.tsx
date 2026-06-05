@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Arrival, StreamBeat } from "../lib/heartbeatStream";
 import { plainNote, secondsSince } from "../lib/heartbeat";
@@ -271,6 +271,23 @@ function ExpandedMonitor({
 
   const jumpToLatest = () => scrollToBottom(true); // smooth glide so the eye can follow the scroll
 
+  // Keep the bottom row fully in view as it grows — a multi-line beat (or text still streaming in)
+  // would otherwise get clipped at the container edge. Observe the list and re-pin to the bottom
+  // while pinned, so the last row always clears.
+  const roRef = useRef<ResizeObserver | null>(null);
+  const contentRef = useCallback((node: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (node) {
+      const ro = new ResizeObserver(() => {
+        const el = scrollRef.current;
+        if (el && pinned.current) el.scrollTop = el.scrollHeight;
+      });
+      ro.observe(node);
+      roRef.current = ro;
+    }
+  }, []);
+
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
     const startY = e.clientY;
@@ -357,14 +374,15 @@ function ExpandedMonitor({
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="board-scroll relative min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[13px] leading-relaxed"
+        className="board-scroll relative min-h-0 flex-1 overflow-y-auto px-3 pt-2 pb-4 text-[13px] leading-relaxed"
       >
         {shown.length === 0 ? (
           <div className="grid h-full place-items-center text-[11px] text-dim">
             no heartbeats{filter === "all" ? " yet" : ` for “${filter}”`}
           </div>
         ) : (
-          shown.map((b) => (
+          <div ref={contentRef}>
+          {shown.map((b) => (
             <div key={b.key} className="flex items-start gap-2 py-px">
               <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
               {multi && (
@@ -392,11 +410,13 @@ function ExpandedMonitor({
                 />
               )}
             </div>
-          ))
-        )}
-        {cursorOn && shown.length > 0 && (
-          <div className="px-0 text-cyan">
-            <span className="tw-cursor">▌</span>
+          ))}
+          {cursorOn && (
+            <div className="px-0 text-cyan">
+              <span className="tw-cursor">▌</span>
+            </div>
+          )}
+          <div className="h-2" />
           </div>
         )}
       </div>

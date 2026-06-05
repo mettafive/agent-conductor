@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNow } from "../lib/useNow";
 import { secondsSince } from "../lib/heartbeat";
 
-const HEART_COLOR = "var(--color-heart)"; // the one warm colour in the UI
 const STALL_SECONDS = 90;
 
 interface Props {
@@ -16,10 +15,10 @@ interface Props {
 }
 
 /**
- * A warm, beating heart. It rests at ~60bpm, throws a strong pulse whenever a
- * new beat arrives (detected as `lastBeatIso` changing), and visibly weakens —
- * slower, dimmer, amber-glowed — once beats go quiet for 90s. The one element
- * on the board that's deliberately human, not "developer tool".
+ * A beating heart — same icon throughout, only its colour carries state: GREEN
+ * while it's beating, AMBER once beats go quiet for 90s. It rests at ~60bpm,
+ * throws a strong pulse whenever a new beat arrives (`lastBeatIso` changing), and
+ * slows when quiet. The one element on the board that's deliberately human.
  */
 export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = STALL_SECONDS }: Props) {
   const now = useNow(1000);
@@ -51,7 +50,7 @@ export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = ST
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      style={{ color: overdue && !pulsing ? "var(--color-dim)" : HEART_COLOR }}
+      style={{ color: overdue ? "var(--color-amber)" : "var(--color-mint)" }}
       aria-label={title ?? "heartbeat"}
     >
       <title>{title ?? (overdue ? "beats have gone quiet" : "heartbeat")}</title>

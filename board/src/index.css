@@ -159,11 +159,11 @@
   animation: heart-strong 0.42s ease-out;
   transform-origin: center;
 }
-/* weakened: beats have gone quiet (90s+) — slower and grey */
+/* weakened: beats have gone quiet (90s+) — slower; amber stays legible as a warning */
 .heart-weak {
   animation: heart-rest 2.4s ease-in-out infinite;
   transform-origin: center;
-  opacity: 0.55;
+  opacity: 0.85;
 }
 
 /* stall indicator — a slow amber breath on the dot beside the heart */
