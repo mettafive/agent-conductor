@@ -157,6 +157,10 @@ export function App() {
     setSelectedStep(null);
   };
   const backToLive = () => {
+    // Snap to the workflow that's actually LIVE (running), not whatever's selected — otherwise
+    // "back to live" leaves you parked on a finished run while a different workflow is the live one.
+    const running = order.find((n) => statusOf(workflows[n]) === "running");
+    setSelectedWf(running ?? null);
     setSelectedRun(null);
     setSelectedStep(null);
     // drop DOM focus too, or the previously-clicked step row keeps its focus outline (looks "still selected")
