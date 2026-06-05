@@ -88,9 +88,15 @@ turn a skill into gated steps, author each gate to this bar:
 3. **No self-widening loopholes.** A gate's threshold must not be relaxable by a
    side-effect of the work it's checking (e.g. a word-count floor that loosens just
    because the edit added a sources section). The thing being judged can't move the bar.
-4. **Catch fabrication.** Every fact, number, price or claim in the output must trace to
-   a ground truth — the input, a cited source, or the database. An invented figure that
-   "looks right" is the most dangerous thing a gate can wave through.
+4. **Flag *blatant* fabrication — but don't forbid the agent from adding things, and don't
+   pretend to be a hallucination-proofer.** A capable model's *value* is contributing correct,
+   useful information the input didn't have — a gate that blocks every new fact punishes exactly
+   that and reduces the agent to a word-shuffler. So gate on **grounding, not novelty**: a new,
+   well-sourced claim should pass; only an *unsupported* one gets flagged. Full
+   hallucination-detection is out of scope (it's a judgment, not a check) — but a cheap basic
+   guard that catches the *blatant* cases (a figure or claim that appears from nowhere with
+   nothing behind it) is worth keeping, as long as you don't oversell it as proof of truth. The
+   real grounding call belongs to a reviewer/judge, not a string-match.
 5. **Hard where it matters.** The must-haves are **failures**, not "aspirational
    warnings." A warning the agent can ignore is not a gate. Reserve soft/warn for taste.
 6. **Prove it catches its own violation (required).** A gate you haven't watched FAIL on
