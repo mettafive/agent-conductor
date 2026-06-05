@@ -310,7 +310,7 @@ function ExpandedMonitor({
         <StallDot lastBeatIso={lastBeatIso} stallSeconds={stallSeconds} />
         <ConnDot conn={conn} />
         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mist-2">
-          Heartbeat
+          Heartbeats
         </span>
         <span className="text-[10px] text-dim">{beats.length}</span>
         <span className="ml-auto flex items-center gap-1.5 text-dim">
