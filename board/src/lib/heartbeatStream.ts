@@ -140,7 +140,12 @@ export function useHeartbeatStream(
 
   useEffect(() => {
     if (seen.current === null) {
-      // first load — seed silently and prime the buffer with what's already here
+      // Wait for the initial data before baselining. On a refresh the beats load async, so the
+      // first render has beats=[]; if we seeded that empty set, the real beats arriving next would
+      // all look "fresh" and the latest would re-type on every refresh. Baseline the first
+      // NON-empty load instead, so already-present beats never animate.
+      if (beats.length === 0) return;
+      // first real load — seed silently and prime the buffer with what's already here
       seen.current = new Set(beats.map((b) => b.key));
       setLog(beats.slice(-MAX_LOG));
       return;
