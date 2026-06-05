@@ -45,9 +45,12 @@ steps:
 
       {skill_content}
 
-      Break it down into: the discrete sequential steps; decision points where
-      the flow could branch; repeated operations that need loops; and which
-      checks are verifiable by a shell command vs which need judgment.
+      Break it down into: the discrete sequential steps; decision points where the flow could
+      branch; **repeated operations that run a procedure ONCE PER ITEM over a list — these
+      BECOME `type: loop` steps, so name the LIST and the PER-ITEM sub-steps explicitly**
+      (e.g. "for each clinic: research → write → gate → ship"); and which checks are verifiable
+      by a shell command vs which need judgment. Flag every loop candidate loudly — the convert
+      step must turn each into a loop, never a flat step.
       Save your analysis to .conductor/skill-analysis.md.
     requires: [start-board]
     gate:
@@ -61,8 +64,24 @@ steps:
       CONDUCTOR.md ("What makes a good gate"). The skill is the benchmark — each gate is a
       faithful translation of a step's GOAL, not a restatement of it. Rules:
       - every step gets at least one gate criterion; conditions (type: condition) where the
-        flow branches; loops (type: loop) where steps repeat over a list; chain data with
-        output:/requires:.
+        flow branches; chain data with output:/requires:.
+      - **LOOPS — the board's whole visual payoff, so this is NON-NEGOTIABLE.** Any work the
+        skill does ONCE PER ITEM over a list — "for each page / clinic / file…", "claim N and
+        process each", "repeat for every X", any batch (read-skill already flagged these as
+        "repeated operations") — MUST be a `type: loop` over that list, with the per-item
+        procedure as its `steps:` sub-steps. NEVER a single flat step the agent hand-walks.
+        Shape:
+            - id: <name>
+              type: loop
+              over: <list variable>     # e.g. clinic_list  (set by an earlier step's output:)
+              as: <item>                # e.g. clinic
+              steps:                     # the PER-ITEM sub-steps, EACH with its own gate(s)
+                - id: <sub-1>
+                  …
+        The board renders a loop as a kanban with ONE CARD PER ITEM — that per-item story is the
+        entire reason the tool exists. Flattening a batch into one step is the #1 way to destroy
+        the visualization. Rule of thumb: if the analysis names a list AND a procedure run on each
+        member, it IS a loop — author it as one.
       - Hard gates (check:) for anything verifiable by command; soft gates only for genuine
         judgment. Make hard gates check SUBSTANCE not surface, and cross-validate a step's
         outputs against each other and against real data (DB, live web) — never in isolation.
@@ -83,6 +102,7 @@ steps:
       - name: "Gate-review written (gates traced to skill goals + red-teamed)"
         check: "test -f .conductor/gate-review.md"
       - "Every hard gate was run against a known-bad example and FAILED it — a gate that can't reject its own violation is a lint, not a gate"
+      - "Every per-item-over-a-list operation in the skill-analysis became a `type: loop` (with the per-item procedure as its sub-steps) — NOT a flattened single step. The board's per-item kanban is the whole point; I checked the analysis's repeated operations against the conductor and each is a loop"
 
   - id: confirm-gates
     type: approval
