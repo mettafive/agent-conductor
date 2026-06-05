@@ -208,8 +208,23 @@ function ExpandedMonitor({
   const [height, setHeight] = useState(280);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const driftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [cursorOn, setCursorOn] = useState(false);
+
+  // Glide (or snap) to the latest and re-pin. Smooth for explicit jumps — the button, the
+  // drift-home timer, opening — so the eye can follow the scroll; snapped for per-beat streaming.
+  const scrollToBottom = (smooth: boolean) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    pinned.current = true;
+    setShowJump(false);
+    if (driftTimer.current) {
+      clearTimeout(driftTimer.current);
+      driftTimer.current = null;
+    }
+  };
 
   const shown = beats.filter((b) =>
     filter === "all" ? true : filter === "insights" ? !!b.insight : b.workflow === filter,
@@ -230,6 +245,16 @@ function ExpandedMonitor({
     return () => clearTimeout(t);
   }, [streamKey]);
 
+  // Opening the terminal (this component mounts on open) lands you at the latest. Clean up the
+  // drift-home timer on close/unmount.
+  useEffect(() => {
+    scrollToBottom(false);
+    return () => {
+      if (driftTimer.current) clearTimeout(driftTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -238,14 +263,13 @@ function ExpandedMonitor({
       pinned.current = atBottom;
       setShowJump(!atBottom);
     }
+    // Drift self-heals: 60s scrolled-up-and-idle → glide back to the latest, so you never come
+    // back to a stale position and have to re-orient. Any scroll resets the 60s clock.
+    if (driftTimer.current) clearTimeout(driftTimer.current);
+    driftTimer.current = atBottom ? null : setTimeout(() => scrollToBottom(true), 60_000);
   };
 
-  const jumpToLatest = () => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    pinned.current = true;
-    setShowJump(false);
-  };
+  const jumpToLatest = () => scrollToBottom(true); // smooth glide so the eye can follow the scroll
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
