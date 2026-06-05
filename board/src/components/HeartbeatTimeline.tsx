@@ -175,6 +175,7 @@ function GroupBlock({
 
   return (
     <div
+      title={iter ? `iteration: ${iter}` : undefined}
       className={`relative rounded-lg border bg-panel/40 px-3 py-2.5 ${
         active ? "border-mint/30" : "border-line"
       }`}
@@ -192,18 +193,20 @@ function GroupBlock({
         {group.hasFinal ? "→" : String(number).padStart(2, "0")}
       </span>
 
-      {/* header — title shares one row with the state + time. The title truncates (never
-          word-wraps), so it stays a clean single line even in a narrow column. */}
-      <div className="flex items-center gap-2">
-        {iter && <span className="shrink-0 rounded bg-line-2/60 px-1 font-mono text-[9px] text-mist">{iter}</span>}
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium leading-snug text-chalk">
+      {/* header — the title gets the room (wraps to 2 lines, never truncates to "Cli…"); the
+          state + time sit compact, top-right, so they never crowd the name. The iteration is on
+          the card's hover title, not a chip that competes for width. */}
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk line-clamp-2">
           {renderNote(group.title)}
         </span>
-        {group.insightCount > 0 && (
-          <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-amber" title="carries an insight" />
-        )}
-        {active && <span className="shrink-0 font-mono text-[9px] tracking-wide text-mint">● live</span>}
-        <Stamp iso={group.endedAt} running={running} now={now} />
+        <span className="mt-px flex shrink-0 items-center gap-1.5">
+          {group.insightCount > 0 && (
+            <span className="h-1.5 w-1.5 rounded-full bg-amber" title="carries an insight" />
+          )}
+          {active && <span className="font-mono text-[9px] tracking-wide text-mint">● live</span>}
+          <Stamp iso={group.endedAt} running={running} now={now} />
+        </span>
       </div>
 
       {/* body — the summary, or the heartbeat-row stream */}
@@ -212,8 +215,13 @@ function GroupBlock({
       ) : rows.length > 0 ? (
         <div className="mt-2 space-y-1 border-l border-line pl-2.5">
           {shownRows.map((h, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <Stamp iso={h.at} running={running} now={now} />
+            <div key={i} className="flex items-start gap-1.5">
+              <span
+                className="mt-px shrink-0 rounded bg-line-2/40 px-1 font-mono text-[8.5px] leading-[1.5] text-dim"
+                title={h.at}
+              >
+                {absTime(h.at)}
+              </span>
               <span className="flex-1 text-[11px] leading-snug text-mist-2">
                 {renderNote(h.note)}
                 {h.insight && <span className="mt-0.5 block text-[9.5px] italic text-amber/90">↳ {h.insight.seed}</span>}

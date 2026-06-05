@@ -39,7 +39,6 @@ export function IterationCard({
   workflow?: string;
   notes?: DeveloperNote[];
 }) {
-  const [open, setOpen] = useState(false);
   const now = useNow(5000);
   const col = subStepColumn(sub);
   const soft = def?.soft ?? [];
@@ -53,6 +52,8 @@ export function IterationCard({
   const gateTotal = sub.criteria.length;
   const dur = fmtDur(sub.started_at, sub.completed_at);
   const hasDetail = shown.length > 0 || soft.length + hard.length > 0 || gateTotal > 0;
+  // the live (running) iteration opens by default — following = see its beats, no extra click.
+  const [open, setOpen] = useState(() => col === "running" && hasDetail);
 
   // pulse the card once when a fresh heartbeat lands inside it
   const [pulse, setPulse] = useState(false);
