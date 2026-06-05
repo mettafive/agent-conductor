@@ -65,6 +65,43 @@ The setup conductor will:
 Each step is **hard-gated** — it can't proceed until the check passes, so you can't
 vibe through setup.
 
+## What makes a good gate — author to this bar
+
+A gate is only worth the run if it would actually **fail bad work**. The common failure
+is to write a gate as a *lint* — it confirms the output didn't crash and has the right
+shape, then passes anything that renders. That's not a gate; it's a formatter. When you
+turn a skill into gated steps, author each gate to this bar:
+
+1. **Check substance, not surface.** "Is it correct / faithful / complete," not "did it
+   render without breaking." Output can be perfectly well-formed and completely wrong.
+2. **Cross-validate the dimensions against each other — never in isolation.** If the
+   skill produces a price, a body, and a source, the gate checks that the FAQ price
+   matches the body matches the database, and that the source backs the claim it sits
+   beside. Independent per-field checks miss every inconsistency *between* fields.
+3. **No self-widening loopholes.** A gate's threshold must not be relaxable by a
+   side-effect of the work it's checking (e.g. a word-count floor that loosens just
+   because the edit added a sources section). The thing being judged can't move the bar.
+4. **Catch fabrication.** Every fact, number, price or claim in the output must trace to
+   a ground truth — the input, a cited source, or the database. An invented figure that
+   "looks right" is the most dangerous thing a gate can wave through.
+5. **Hard where it matters.** The must-haves are **failures**, not "aspirational
+   warnings." A warning the agent can ignore is not a gate. Reserve soft/warn for taste.
+6. **Prove it catches its own violation (required).** A gate you haven't watched FAIL on
+   a crafted violation is assumed broken. Before you trust it, feed it the exact thing
+   it's meant to stop and confirm it reds — ship the gate with that red-team line, the
+   way you ship a test with a failing case.
+7. **Be honest about your limits, then delegate with context.** Mechanical checks can't
+   judge prose quality, tone, or whether a source is *relevant*. Don't pretend they can:
+   run the mechanical layer hard, hand the judgment dimensions to a reviewer (an
+   LLM-judge packet or a human) **with the data they need**, and label the mechanical
+   pass as what it is — *necessary, not sufficient.*
+8. **Ground checks in real data, not the agent's own output.** Verify prices against the
+   database, links against the live web — never against the page the agent just wrote.
+
+A green gate should mean "faithful, accurate, sourced," not "didn't crash." If yours only
+guarantees the latter, it's a lint wearing a gate's badge — rewrite it into one that would
+actually stop the worst output the skill can produce.
+
 ## Heartbeats
 
 **The board shows only what you narrate — so narrate every phase that takes time, not just
