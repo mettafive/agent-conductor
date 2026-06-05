@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: email-triage
+description: >
+  Route each email to the right queue with a reason grounded in the email content.
+
+steps:
+  - id: ingest-emails
+    instruction: |
+      Ingest the emails + the routing rules (queues + their trigger criteria) into the grounding bundle.
+    output: emails
+    gate:
+      - check: "npx conductor-board check ingest-emails"
+      - name: "Emails + routing rules loaded"
+        check: "node verify.mjs route-valid --out fixtures/email-triage/email-triage.out.json --ground fixtures/email-triage/email-triage.ground.json"
+
+  - id: email-triage-loop
+    type: loop
+    over: emails
+    as: email
+    requires: [ingest-emails]
+    steps:
+      - id: route-email
+        instruction: |
+          Route <email> to a queue.
+        gate:
+          - check: "npx conductor-board check route-email"
+          - name: "Destination queue is a real defined queue"
+            check: "node verify.mjs route-valid --out fixtures/email-triage/<item>.out.json --ground fixtures/email-triage/<item>.ground.json"
+          - name: "Routing reason cites content actually in the email"
+            check: "node verify.mjs route-grounded --out fixtures/email-triage/<item>.out.json --ground fixtures/email-triage/<item>.ground.json"
+          - "Ambiguous emails went to the safest queue, not a confident wrong one."
+
+  - id: email-triage-finish
+    instruction: |
+      Confirm every email routed with a grounded reason.
+    requires: [email-triage-loop]
+    gate:
+      - check: "npx conductor-board check email-triage-finish"
+      - name: "All emails triaged"
+        check: "node verify.mjs coverage-complete --out fixtures/email-triage/email-triage.out.json --ground fixtures/email-triage/email-triage.ground.json"

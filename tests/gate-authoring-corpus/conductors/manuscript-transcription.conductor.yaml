@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: manuscript-transcription
+description: >
+  Transcribe each folio; every expanded abbreviation and uncertain reading is marked and matches the imaged glyphs.
+
+steps:
+  - id: load-folios
+    instruction: |
+      Load folio images + the scribal-abbreviation reference (sigla -> expansion) into the grounding bundle.
+    output: folios
+    gate:
+      - check: "npx conductor-board check load-folios"
+      - name: "Folio images + abbrev reference captured"
+        check: "node verify.mjs expansion-grounded --out fixtures/manuscript-transcription/manuscript-transcription.out.json --ground fixtures/manuscript-transcription/manuscript-transcription.ground.json"
+
+  - id: manuscript-transcription-loop
+    type: loop
+    over: folios
+    as: folio
+    requires: [load-folios]
+    steps:
+      - id: transcribe-folio
+        instruction: |
+          Transcribe <folio>.
+        gate:
+          - check: "npx conductor-board check transcribe-folio"
+          - name: "Every abbreviation expansion matches the reference"
+            check: "node verify.mjs expansion-grounded --out fixtures/manuscript-transcription/<item>.out.json --ground fixtures/manuscript-transcription/<item>.ground.json"
+          - name: "Uncertain readings are explicitly flagged"
+            check: "node verify.mjs uncertainty-marked --out fixtures/manuscript-transcription/<item>.out.json --ground fixtures/manuscript-transcription/<item>.ground.json"
+          - "Line breaks, abbreviation density, and orthography reflect the actual folio, not normalized modern spelling."
+
+  - id: manuscript-transcription-finish
+    instruction: |
+      Confirm every folio transcribed, expansions + uncertainty marked.
+    requires: [manuscript-transcription-loop]
+    gate:
+      - check: "npx conductor-board check manuscript-transcription-finish"
+      - name: "All folios transcribed"
+        check: "node verify.mjs coverage-complete --out fixtures/manuscript-transcription/manuscript-transcription.out.json --ground fixtures/manuscript-transcription/manuscript-transcription.ground.json"

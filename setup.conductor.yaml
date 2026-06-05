@@ -85,6 +85,25 @@ steps:
       - Hard gates (check:) for anything verifiable by command; soft gates only for genuine
         judgment. Make hard gates check SUBSTANCE not surface, and cross-validate a step's
         outputs against each other and against real data (DB, live web) — never in isolation.
+      - **NO SELF-ATTESTATION (CONDUCTOR.md principle #9 — the #1 way a "grounded" gate is still
+        vacuous).** A gate must never pass by reading a value the agent wrote ABOUT ITS OWN WORK
+        (`testsPass: true`, `rollbackProven: true`, `liveHealth: "green"`, a `recomputed` figure the
+        agent placed beside its own claim). The agent would just write the passing word. For every
+        hard gate apply the litmus: *could the agent make this pass by changing a word in its own
+        output, without changing the actual work?* If yes, move the source of truth to an
+        INDEPENDENT observation the gate makes itself — re-run the suite and read the exit code,
+        apply the fix and build, dry-run the restore, recompute the stat from the raw rows, probe
+        the live endpoint. (Recomputing from *different parts of the output that must agree* —
+        line-items vs their stated total — is fine; that's internal consistency, not self-grading.)
+      - **Author every gate from the domain-independent skeleton (CONDUCTOR.md), so the logic
+        generalizes to skills you don't know** (tarot, heraldry, perfume, birdsong): "`<what the
+        agent produced>` is consistent with `<an independent reference the skill names>` under
+        `<the skill's own rule>`." NAME the reference and the rule from the skill itself — if you
+        can't, you haven't grasped the intent yet. An exotic domain is NOT an excuse for a soft
+        "looks plausible" gate; it means the reference is a lookup table (canonical meanings, IFRA
+        limits, the regional species list, the tincture classes) the discover/grounding step loads
+        FIRST, exactly as daily-enrichment loads the clinic's crawled price evidence before any
+        price gate runs.
       - Name each gate after the skill step/goal it enforces, so the human can see which
         requirement each gate guards (traceability).
       Then RED-TEAM every hard gate (CONDUCTOR.md principle #6): write ONE known-BAD example
@@ -102,6 +121,8 @@ steps:
       - name: "Gate-review written (gates traced to skill goals + red-teamed)"
         check: "test -f .conductor/gate-review.md"
       - "Every hard gate was run against a known-bad example and FAILED it — a gate that can't reject its own violation is a lint, not a gate"
+      - "NO self-attestation: for each hard gate I applied the litmus 'could the agent pass this by changing a word in its OWN output without changing the work?' — every gate's source of truth is an independent observation (re-run/build/probe/recompute) or a named external reference loaded into the grounding bundle, never a self-reported boolean the agent wrote about its own result"
+      - "Generalization check: each gate names the independent reference + the skill's own rule it enforces (the domain-independent skeleton); no gate fell back to a soft 'looks plausible' merely because the domain was unfamiliar"
       - "Every per-item-over-a-list operation in the skill-analysis became a `type: loop` (with the per-item procedure as its sub-steps) — NOT a flattened single step. The board's per-item kanban is the whole point; I checked the analysis's repeated operations against the conductor and each is a loop"
 
   - id: confirm-gates

@@ -1,0 +1,1050 @@
+{
+  "authoring": "naive",
+  "summary": {
+    "total": 45,
+    "valid": 45,
+    "loopC": 45,
+    "intentC": 0,
+    "groundC": 0,
+    "perfect": 0,
+    "obscurePerfect": 0,
+    "obscureTotal": 10
+  },
+  "results": [
+    {
+      "id": "data-migration",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "content-rewrite",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "research-synthesis",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "code-review",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "batch-api-sync",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "report-generation",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "web-scraping",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "test-authoring",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "refactor",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "deploy-pipeline",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "dataset-labeling",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "email-triage",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "log-analysis",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "image-classification",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "invoice-processing",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "translation-pass",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "seo-audit",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "dependency-upgrade",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "changelog-generation",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "survey-analysis",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "pdf-data-extraction",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "accessibility-audit",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "data-cleaning",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "ab-test-readout",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "ticket-deduplication",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "config-validation",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "sql-optimization",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "doc-generation",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "sentiment-analysis",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "video-transcription",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "price-monitoring",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "license-compliance",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "backup-verification",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "form-data-entry",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "knowledge-base-update",
+      "common": true,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "tarot-spread",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "bonsai-judging",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "manuscript-transcription",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "fantasy-trade-eval",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "perfume-blend",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "birdsong-id",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "tea-ceremony",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": false,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "escape-room-puzzle",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "dialect-transcription",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    },
+    {
+      "id": "heraldry-blazon",
+      "common": false,
+      "valid": true,
+      "loopOk": true,
+      "expectLoop": true,
+      "rules": [
+        "exists"
+      ],
+      "vacuous": [
+        {
+          "rule": "exists",
+          "goodExit": 0,
+          "badExit": 0,
+          "vacuousOnPurpose": true
+        }
+      ],
+      "proven": [],
+      "hasGroundedGate": false,
+      "errors": [],
+      "score": 2,
+      "intentAligned": false
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+conductor: 2.0.0
+name: knowledge-base-update
+description: >
+  Update each KB article to current product reality; no stale claims remain.
+
+steps:
+  - id: load-kb
+    instruction: |
+      Load KB articles + a snapshot of current product reality (features/flags/endpoints) into the grounding bundle.
+    output: kb_articles
+    gate:
+      - check: "npx conductor-board check load-kb"
+      - name: "Current reality + articles captured"
+        check: "node verify.mjs no-stale-claims --out fixtures/knowledge-base-update/knowledge-base-update.out.json --ground fixtures/knowledge-base-update/knowledge-base-update.ground.json"
+
+  - id: knowledge-base-update-loop
+    type: loop
+    over: kb_articles
+    as: kb
+    requires: [load-kb]
+    steps:
+      - id: update-kb
+        instruction: |
+          Update <kb>.
+        gate:
+          - check: "npx conductor-board check update-kb"
+          - name: "No claim contradicts current product reality"
+            check: "node verify.mjs no-stale-claims --out fixtures/knowledge-base-update/<item>.out.json --ground fixtures/knowledge-base-update/<item>.ground.json"
+          - "Examples + screenshots reflect the current UI, not just the prose."
+
+  - id: knowledge-base-update-finish
+    instruction: |
+      Confirm every article current, no stale claims.
+    requires: [knowledge-base-update-loop]
+    gate:
+      - check: "npx conductor-board check knowledge-base-update-finish"
+      - name: "All articles updated"
+        check: "node verify.mjs coverage-complete --out fixtures/knowledge-base-update/knowledge-base-update.out.json --ground fixtures/knowledge-base-update/knowledge-base-update.ground.json"

@@ -1,0 +1,38 @@
+conductor: 2.0.0
+name: pdf-data-extraction
+description: >
+  Extract a structured table from each PDF; cells match the source page.
+
+steps:
+  - id: load-pdfs
+    instruction: |
+      Load each PDF's extracted page text into the grounding bundle (cells are checked against it).
+    output: pdfs
+    gate:
+      - check: "npx conductor-board check load-pdfs"
+      - name: "PDF text captured"
+        check: "node verify.mjs cells-on-page --out fixtures/pdf-data-extraction/pdf-data-extraction.out.json --ground fixtures/pdf-data-extraction/pdf-data-extraction.ground.json"
+
+  - id: pdf-data-extraction-loop
+    type: loop
+    over: pdfs
+    as: pdf
+    requires: [load-pdfs]
+    steps:
+      - id: extract-table
+        instruction: |
+          Extract <pdf>'s table.
+        gate:
+          - check: "npx conductor-board check extract-table"
+          - name: "Every non-derived cell appears in the page text"
+            check: "node verify.mjs cells-on-page --out fixtures/pdf-data-extraction/<item>.out.json --ground fixtures/pdf-data-extraction/<item>.ground.json"
+          - "Row/column alignment matches the document; merged cells handled, not flattened wrong."
+
+  - id: pdf-data-extraction-finish
+    instruction: |
+      Confirm every PDF table extracted + grounded.
+    requires: [pdf-data-extraction-loop]
+    gate:
+      - check: "npx conductor-board check pdf-data-extraction-finish"
+      - name: "All PDFs covered"
+        check: "node verify.mjs coverage-complete --out fixtures/pdf-data-extraction/pdf-data-extraction.out.json --ground fixtures/pdf-data-extraction/pdf-data-extraction.ground.json"

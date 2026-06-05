@@ -1,0 +1,22 @@
+conductor: 2.0.0
+name: report-generation
+description: >
+  Generate a report whose every number traces to the underlying dataset query.
+
+steps:
+  - id: run-queries
+    instruction: |
+      Run the source queries and snapshot their results into the grounding bundle.
+    gate:
+      - check: "npx conductor-board check run-queries"
+      - name: "Query results snapshotted"
+        check: "node verify.mjs numbers-trace --out fixtures/report-generation/report-generation.out.json --ground fixtures/report-generation/report-generation.ground.json"
+  - id: write-report
+    instruction: |
+      Write the report.
+    requires: [run-queries]
+    gate:
+      - check: "npx conductor-board check write-report"
+      - name: "Every figure in the report equals a query result"
+        check: "node verify.mjs numbers-trace --out fixtures/report-generation/report-generation.out.json --ground fixtures/report-generation/report-generation.ground.json"
+      - "The narrative's causal claims are supported by the data, not just the headline numbers — no story the data doesn't tell."

@@ -1,0 +1,39 @@
+conductor: 2.0.0
+name: research-synthesis
+description: >
+  Synthesize a cited answer where every claim traces to a fetched source.
+
+steps:
+  - id: fetch-sources
+    instruction: |
+      Decompose the question into sub-claims and fetch real sources for each into the grounding bundle
+      (the source text every later citation must trace to).
+    output: subclaims
+    gate:
+      - check: "npx conductor-board check fetch-sources"
+      - name: "Real source text fetched per sub-claim"
+        check: "node verify.mjs source-backed --out fixtures/research-synthesis/research-synthesis.out.json --ground fixtures/research-synthesis/research-synthesis.ground.json"
+
+  - id: research-synthesis-loop
+    type: loop
+    over: subclaims
+    as: claim
+    requires: [fetch-sources]
+    steps:
+      - id: write-claim
+        instruction: |
+          Write <claim>'s answer with its citation.
+        gate:
+          - check: "npx conductor-board check write-claim"
+          - name: "Claim is supported by its cited source's actual text"
+            check: "node verify.mjs source-backed --out fixtures/research-synthesis/<item>.out.json --ground fixtures/research-synthesis/<item>.ground.json"
+          - "The cited source is actually RELEVANT and authoritative for this specific claim (not a tangential page that merely contains the keyword)."
+
+  - id: research-synthesis-finish
+    instruction: |
+      Assemble the cited answer; confirm no uncited claim slipped in.
+    requires: [research-synthesis-loop]
+    gate:
+      - check: "npx conductor-board check research-synthesis-finish"
+      - name: "Zero uncited claims in the final answer"
+        check: "node verify.mjs coverage-complete --out fixtures/research-synthesis/research-synthesis.out.json --ground fixtures/research-synthesis/research-synthesis.ground.json"

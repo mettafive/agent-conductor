@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: dependency-upgrade
+description: >
+  Upgrade each dependency without breaking the build or introducing known CVEs.
+
+steps:
+  - id: list-deps
+    instruction: |
+      List deps to upgrade; snapshot current versions + a green build baseline into the grounding bundle.
+    output: deps
+    gate:
+      - check: "npx conductor-board check list-deps"
+      - name: "Baseline build + versions captured"
+        check: "node verify.mjs build-green-after --out fixtures/dependency-upgrade/dependency-upgrade.out.json --ground fixtures/dependency-upgrade/dependency-upgrade.ground.json"
+
+  - id: dependency-upgrade-loop
+    type: loop
+    over: deps
+    as: dep
+    requires: [list-deps]
+    steps:
+      - id: upgrade-dep
+        instruction: |
+          Upgrade <dep>.
+        gate:
+          - check: "npx conductor-board check upgrade-dep"
+          - name: "Build still passes after upgrade"
+            check: "node verify.mjs build-green-after --out fixtures/dependency-upgrade/<item>.out.json --ground fixtures/dependency-upgrade/<item>.ground.json"
+          - name: "Upgraded version has no known CVE in the advisory DB"
+            check: "node verify.mjs no-known-cve --out fixtures/dependency-upgrade/<item>.out.json --ground fixtures/dependency-upgrade/<item>.ground.json"
+          - "Major-version jumps were reviewed for migration notes, not auto-bumped blindly."
+
+  - id: dependency-upgrade-finish
+    instruction: |
+      Confirm all deps upgraded, build green, no CVEs.
+    requires: [dependency-upgrade-loop]
+    gate:
+      - check: "npx conductor-board check dependency-upgrade-finish"
+      - name: "All deps handled"
+        check: "node verify.mjs coverage-complete --out fixtures/dependency-upgrade/dependency-upgrade.out.json --ground fixtures/dependency-upgrade/dependency-upgrade.ground.json"

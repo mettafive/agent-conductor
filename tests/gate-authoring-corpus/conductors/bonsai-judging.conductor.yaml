@@ -1,0 +1,41 @@
+conductor: 2.0.0
+name: bonsai-judging
+description: >
+  Score each bonsai entry on rubric criteria; scores reflect the entry's measured traits and sum correctly.
+
+steps:
+  - id: load-entries
+    instruction: |
+      Load entries with their MEASURED traits (nebari spread, taper, ramification, pot harmony…) and the
+      rubric (criteria + max points each) into the grounding bundle.
+    output: entries
+    gate:
+      - check: "npx conductor-board check load-entries"
+      - name: "Traits + rubric captured"
+        check: "node verify.mjs score-sums --out fixtures/bonsai-judging/bonsai-judging.out.json --ground fixtures/bonsai-judging/bonsai-judging.ground.json"
+
+  - id: bonsai-judging-loop
+    type: loop
+    over: entries
+    as: entry
+    requires: [load-entries]
+    steps:
+      - id: score-entry
+        instruction: |
+          Score <entry>.
+        gate:
+          - check: "npx conductor-board check score-entry"
+          - name: "Per-criterion scores sum to the reported total"
+            check: "node verify.mjs score-sums --out fixtures/bonsai-judging/<item>.out.json --ground fixtures/bonsai-judging/<item>.ground.json"
+          - name: "Each criterion score is justified by a measured trait"
+            check: "node verify.mjs score-grounded --out fixtures/bonsai-judging/<item>.out.json --ground fixtures/bonsai-judging/<item>.ground.json"
+          - "Comparable entries scored consistently; comments justify deductions a competitor could learn from."
+
+  - id: bonsai-judging-finish
+    instruction: |
+      Confirm every entry scored, summed, grounded.
+    requires: [bonsai-judging-loop]
+    gate:
+      - check: "npx conductor-board check bonsai-judging-finish"
+      - name: "All entries judged"
+        check: "node verify.mjs coverage-complete --out fixtures/bonsai-judging/bonsai-judging.out.json --ground fixtures/bonsai-judging/bonsai-judging.ground.json"

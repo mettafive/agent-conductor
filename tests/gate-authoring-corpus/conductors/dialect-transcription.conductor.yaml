@@ -1,0 +1,41 @@
+conductor: 2.0.0
+name: dialect-transcription
+description: >
+  Transcribe each dialect recording with IPA + orthography preserving non-standard features faithfully.
+
+steps:
+  - id: load-dialect
+    instruction: |
+      Load recordings + the dialect feature inventory (the non-standard phonological/lexical markers to preserve)
+      into the grounding bundle.
+    output: recordings
+    gate:
+      - check: "npx conductor-board check load-dialect"
+      - name: "Audio + feature inventory captured"
+        check: "node verify.mjs features-preserved --out fixtures/dialect-transcription/dialect-transcription.out.json --ground fixtures/dialect-transcription/dialect-transcription.ground.json"
+
+  - id: dialect-transcription-loop
+    type: loop
+    over: recordings
+    as: recording
+    requires: [load-dialect]
+    steps:
+      - id: transcribe-dialect
+        instruction: |
+          Transcribe <recording>.
+        gate:
+          - check: "npx conductor-board check transcribe-dialect"
+          - name: "Non-standard dialect features are preserved, not normalized"
+            check: "node verify.mjs features-preserved --out fixtures/dialect-transcription/<item>.out.json --ground fixtures/dialect-transcription/<item>.ground.json"
+          - name: "IPA is valid where used"
+            check: "node verify.mjs ipa-valid --out fixtures/dialect-transcription/<item>.out.json --ground fixtures/dialect-transcription/<item>.ground.json"
+          - "Prosody/hesitation conventions applied consistently, useful to a linguist."
+
+  - id: dialect-transcription-finish
+    instruction: |
+      Confirm every recording transcribed, features preserved.
+    requires: [dialect-transcription-loop]
+    gate:
+      - check: "npx conductor-board check dialect-transcription-finish"
+      - name: "All recordings transcribed"
+        check: "node verify.mjs coverage-complete --out fixtures/dialect-transcription/dialect-transcription.out.json --ground fixtures/dialect-transcription/dialect-transcription.ground.json"

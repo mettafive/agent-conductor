@@ -110,10 +110,54 @@ turn a skill into gated steps, author each gate to this bar:
    pass as what it is — *necessary, not sufficient.*
 8. **Ground checks in real data, not the agent's own output.** Verify prices against the
    database, links against the live web — never against the page the agent just wrote.
+9. **No self-attestation — the agent must not be allowed to grade its own homework.** This is
+   the most common way a "grounded" gate is still vacuous: it reads a value the agent *wrote about
+   its own work* and trusts it. A gate that checks `rollbackProven: true`, `testsPass: true`,
+   `liveHealth: "green"`, or a `recomputed` figure the agent placed next to its own claim is **not
+   grounded** — the agent simply writes the passing value, and nothing ever reds. The fix is always
+   the same shape: **the gate must compute/observe the truth itself, independently, and compare the
+   agent's claim against THAT.** Concretely:
+     - "tests pass after the refactor" → the gate *re-runs the suite* and reads the exit code (not a
+       `testsPass` flag the agent set).
+     - "the fix compiles" → the gate *applies the fix and builds* (not a `fixBuilds: true`).
+     - "rollback works" → the gate *dry-run-restores the prior version* (not a `rollbackProven`).
+     - "the stat is 61%" → the gate *recomputes from the raw rows* (not a `recomputed` field the
+       agent supplied).
+     - "health is green" → the gate *probes the live endpoint* (not a `liveHealth` string).
+   Litmus test for every hard gate: **could the agent make this gate pass by writing a different
+   word in its own output, without changing the actual work?** If yes, it's a self-attestation —
+   move the source of truth to an independent observation the gate makes. (A check that recomputes
+   purely from *different parts of the output that must be mutually consistent* — line items summing
+   to their own stated total, percentages summing to 100 — is fine: that's an internal-consistency
+   check, not a self-graded boolean.)
+
+### The general shape of a good gate (domain-independent — works for the obscure ones too)
+
+You will be handed skills in domains you don't know (tarot spreads, heraldry blazons, perfume
+blends, birdsong IDs). **Do not pattern-match a familiar domain or punt because it's exotic.**
+Every good gate, in every domain, has the same skeleton — fill it in from the skill itself:
+
+> **`<the thing the agent produced>` is consistent with `<an independent reference the skill names>`
+> under `<the skill's own rule>`.**
+
+The reference and the rule are *always* in the skill — name them, don't import outside knowledge:
+
+| skill says… | independent reference | the rule |
+|---|---|---|
+| "interpret each tarot position" | the canonical card-meaning table + the spread layout | interpretation reflects the card's meaning AND the position's role |
+| "validate each blazon" | the tincture classes + heraldic vocabulary | no colour-on-colour; every term is in the vocabulary |
+| "formulate each perfume blend" | the IFRA-limit table | no ingredient exceeds its limit; %s sum to 100 |
+| "ID each birdsong" | the regional species list + extracted acoustic features | the species is regionally plausible AND cited features are present |
+
+If you can't name the reference and the rule, you haven't understood the skill's INTENT yet —
+re-read it until you can, because that pair *is* the gate. An exotic domain is never an excuse for
+a soft "looks plausible" gate; it just means the reference is a lookup table you load into the
+grounding bundle first (the discover step's job), exactly like daily-enrichment loads the clinic's
+crawled price evidence before any price gate can check against it.
 
 A green gate should mean "faithful, accurate, sourced," not "didn't crash." If yours only
-guarantees the latter, it's a lint wearing a gate's badge — rewrite it into one that would
-actually stop the worst output the skill can produce.
+guarantees the latter — or only that the agent *claimed* it's fine — it's a lint wearing a gate's
+badge. Rewrite it into one that would actually stop the worst output the skill can produce.
 
 ## Heartbeats
 

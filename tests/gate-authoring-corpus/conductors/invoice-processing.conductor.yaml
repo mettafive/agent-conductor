@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: invoice-processing
+description: >
+  Extract invoice fields; totals reconcile (line items sum to total) and match the document.
+
+steps:
+  - id: load-invoices
+    instruction: |
+      Load the invoice documents into the grounding bundle (the source the extracted fields are checked against).
+    output: invoices
+    gate:
+      - check: "npx conductor-board check load-invoices"
+      - name: "Invoice docs captured"
+        check: "node verify.mjs total-reconciles --out fixtures/invoice-processing/invoice-processing.out.json --ground fixtures/invoice-processing/invoice-processing.ground.json"
+
+  - id: invoice-processing-loop
+    type: loop
+    over: invoices
+    as: invoice
+    requires: [load-invoices]
+    steps:
+      - id: extract-invoice
+        instruction: |
+          Extract <invoice>'s fields.
+        gate:
+          - check: "npx conductor-board check extract-invoice"
+          - name: "Line items sum to the stated total"
+            check: "node verify.mjs total-reconciles --out fixtures/invoice-processing/<item>.out.json --ground fixtures/invoice-processing/<item>.ground.json"
+          - name: "Extracted total matches the document"
+            check: "node verify.mjs total-on-doc --out fixtures/invoice-processing/<item>.out.json --ground fixtures/invoice-processing/<item>.ground.json"
+          - "Currency, tax lines, and dates were read correctly (not just the headline total)."
+
+  - id: invoice-processing-finish
+    instruction: |
+      Confirm every invoice extracted + reconciled.
+    requires: [invoice-processing-loop]
+    gate:
+      - check: "npx conductor-board check invoice-processing-finish"
+      - name: "All invoices processed"
+        check: "node verify.mjs coverage-complete --out fixtures/invoice-processing/invoice-processing.out.json --ground fixtures/invoice-processing/invoice-processing.ground.json"

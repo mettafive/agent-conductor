@@ -1,0 +1,38 @@
+conductor: 2.0.0
+name: doc-generation
+description: >
+  Generate API docs from each module; signatures match the actual code.
+
+steps:
+  - id: parse-modules
+    instruction: |
+      Parse each module's real exported signatures into the grounding bundle.
+    output: modules
+    gate:
+      - check: "npx conductor-board check parse-modules"
+      - name: "Real signatures captured"
+        check: "node verify.mjs sig-matches --out fixtures/doc-generation/doc-generation.out.json --ground fixtures/doc-generation/doc-generation.ground.json"
+
+  - id: doc-generation-loop
+    type: loop
+    over: modules
+    as: module
+    requires: [parse-modules]
+    steps:
+      - id: doc-module
+        instruction: |
+          Generate docs for <module>.
+        gate:
+          - check: "npx conductor-board check doc-module"
+          - name: "Documented signatures match the real code"
+            check: "node verify.mjs sig-matches --out fixtures/doc-generation/<item>.out.json --ground fixtures/doc-generation/<item>.ground.json"
+          - "Each function has a real description + example, not just a restated signature."
+
+  - id: doc-generation-finish
+    instruction: |
+      Confirm every module documented + accurate.
+    requires: [doc-generation-loop]
+    gate:
+      - check: "npx conductor-board check doc-generation-finish"
+      - name: "All modules documented"
+        check: "node verify.mjs coverage-complete --out fixtures/doc-generation/doc-generation.out.json --ground fixtures/doc-generation/doc-generation.ground.json"

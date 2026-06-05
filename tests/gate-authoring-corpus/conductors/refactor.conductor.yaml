@@ -1,0 +1,41 @@
+conductor: 2.0.0
+name: refactor
+description: >
+  Restructure code without changing observable behavior; tests still green.
+
+steps:
+  - id: snapshot-behavior
+    instruction: |
+      Snapshot the public API surface + a passing test run for each module into the grounding bundle
+      (the behaviour the refactor must preserve).
+    output: modules
+    gate:
+      - check: "npx conductor-board check snapshot-behavior"
+      - name: "Behaviour baseline captured per module"
+        check: "node verify.mjs behavior-preserved --out fixtures/refactor/refactor.out.json --ground fixtures/refactor/refactor.ground.json"
+
+  - id: refactor-loop
+    type: loop
+    over: modules
+    as: module
+    requires: [snapshot-behavior]
+    steps:
+      - id: refactor-module
+        instruction: |
+          Refactor <module>.
+        gate:
+          - check: "npx conductor-board check refactor-module"
+          - name: "Tests still pass after refactor (behaviour preserved)"
+            check: "node verify.mjs behavior-preserved --out fixtures/refactor/<item>.out.json --ground fixtures/refactor/<item>.ground.json"
+          - name: "Public API surface unchanged (or change is intended+noted)"
+            check: "node verify.mjs api-stable --out fixtures/refactor/<item>.out.json --ground fixtures/refactor/<item>.ground.json"
+          - "The structure is genuinely simpler (less duplication/coupling), not just moved around."
+
+  - id: refactor-finish
+    instruction: |
+      Confirm full suite green, no API drift.
+    requires: [refactor-loop]
+    gate:
+      - check: "npx conductor-board check refactor-finish"
+      - name: "All modules behaviour-preserved"
+        check: "node verify.mjs coverage-complete --out fixtures/refactor/refactor.out.json --ground fixtures/refactor/refactor.ground.json"
