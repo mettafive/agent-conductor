@@ -451,6 +451,7 @@ export function BoardGuide() {
                   ["No self-widening loopholes", "A threshold must not be relaxable by a side-effect of the work it's judging. The thing being judged can't move the bar."],
                   ["Catch blatant fabrication", "A cheap guard flags a figure or claim that appears from nowhere with nothing behind it — without pretending to be a full hallucination-proofer."],
                   ["Gate on grounding, not novelty", "A new, well-sourced fact should pass; only an unsupported one gets flagged. Blocking every new fact punishes exactly what a capable agent is for."],
+                  ["Never let the agent grade itself", "A gate must not read a flag the agent wrote about its own work — checking testsPass: true is the agent grading its own homework. Re-run the tests, hit the live endpoint, recompute the number yourself."],
                   ["Prove it catches its own violation", "A gate you haven't watched FAIL on a crafted violation is assumed broken — ship every gate with a red-team line, the way you ship a test with a failing case."],
                 ].map(([k, v]) => (
                   <li key={k} className="flex gap-2">
