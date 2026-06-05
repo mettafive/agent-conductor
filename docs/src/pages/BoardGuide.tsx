@@ -4,6 +4,7 @@ import { useScrollSpy } from "../lib/useScrollSpy";
 import { useReveal } from "../lib/useReveal";
 import { Nav } from "../components/Nav";
 import { FooterNav } from "../components/FooterNav";
+import { Icon } from "../components/Icon";
 
 const HOME = import.meta.env.BASE_URL; // "/agent-conductor/"
 const GH = "https://github.com/mettafive/agent-conductor";
@@ -49,6 +50,21 @@ const FINALBEAT_JSON = `{
     "produced": "sources.json"
   }
 }`;
+
+const DIRECTIVES_CMDS = `# Phase 0 — read the developer's steering directives
+npx conductor-board directives --open
+
+# then, for EACH one, exactly one of:
+npx conductor-board resolve <cardId> \\
+  --applied "added an early-exit gate when the price table is empty"
+npx conductor-board resolve <cardId> \\
+  --deferred "needs the user's input on which source to trust"`;
+
+const CADENCE_NOTE = `# heartbeat about every 30s while a step runs (default)
+npx conductor-board heartbeat write "Drafting section 2…"
+
+# the watcher can pick a cadence from 15s to 5 min in Settings;
+# the board flags a stall after ~3 missed beats.`;
 
 const MULTI_TREE = `.conductor/
 ├── daily-price/
@@ -101,9 +117,15 @@ const TOC = [
   ["card", "Anatomy of a card"],
   ["surfaces", "Two surfaces"],
   ["getting-started", "Getting started"],
+  ["good-gates", "What makes a good gate"],
+  ["gate-approval", "Authored & approved"],
+  ["no-skip", "Nothing gets skipped"],
+  ["activity-cards", "Activity cards"],
+  ["directives", "Directives & steering"],
   ["monitor", "Heartbeat monitor"],
   ["multiple", "Multiple workflows"],
   ["history", "History & replay"],
+  ["done-screen", "The done screen"],
   ["improve", "Self-improvement"],
 ];
 
@@ -258,8 +280,11 @@ export function BoardGuide() {
                       ["Step", "A unit of work in the workflow — rendered as a card. Has an instruction and a gate."],
                       ["Gate", "The criteria a step must pass before the next unlocks. Soft (self-validated) or hard (a shell check that must exit 0)."],
                       ["Column", "A lane representing a step's state: Pending, Running, Gate Check, Done (and Failed)."],
-                      ["Heartbeat", "A timestamped note the agent appends to a step at least once a minute, so you can see its thinking."],
+                      ["Heartbeat", "A timestamped note the agent appends as it works — by default about every 30s (15s–5min, configurable) — so you can see its thinking."],
+                      ["Activity card", "A group of heartbeats sharing one intent on one target. The agent declares each one; it gets a title, a live status, and a comment box."],
                       ["finalBeat", "The closing heartbeat of a step — a summary plus a handoff that carries context to the next step."],
+                      ["Directive", "A comment you leave on a card. It becomes a steering instruction the next run's Phase 0 must apply or defer — never gloss."],
+                      ["Phase 0", "The self-improvement pass before step 1: applies proven insights and resolves directives. Can't be skipped."],
                       ["Run", "One execution of a workflow, identified by run_id. Completed runs are archived to history."],
                       ["Insight → Suggestion", "A heartbeat can flag an improvement; after the run, those become suggestions you apply back to the conductor."],
                     ].map(([term, def], i) => (
@@ -334,6 +359,8 @@ export function BoardGuide() {
                     {[
                       "Watch steps move across the columns live.",
                       "Expand a card to read its heartbeats and gates.",
+                      "Approve the gates before the first run.",
+                      "Comment on a card to steer the next run.",
                       "Open the heartbeat monitor to follow every beat in one stream.",
                       "Switch between running workflows in the sidebar.",
                       "Browse history and freeze any past run to its final state.",
@@ -352,10 +379,12 @@ export function BoardGuide() {
                   <p className="mt-2 text-sm leading-relaxed text-mist-2">What the agent writes:</p>
                   <ul className="mt-2 space-y-1.5 text-sm text-mist-2">
                     {[
+                      "Author each gate to the good-gate bar; red-team every hard one.",
                       "Save the workflow to .conductor/conductor.yaml.",
                       "Create .conductor/status.json with every step pending.",
                       "Mark each step running → done, updating gate state.",
-                      "Append a heartbeat at least once a minute.",
+                      "Heartbeat about every 30s, grouped into activity cards.",
+                      "Resolve every open directive — apply or defer.",
                       "Close each step with a finalBeat handoff.",
                       "Retry on a failed gate — never skip.",
                       "Before status: done, write 3–5 suggestions.",
@@ -404,6 +433,149 @@ export function BoardGuide() {
               </div>
             </section>
 
+            {/* GOOD GATES */}
+            <section className="space-y-4">
+              <H2 id="good-gates" kicker="The standard">What makes a good gate</H2>
+              <P>
+                A gate is only worth the run if it would actually{" "}
+                <strong className="text-chalk">fail bad work</strong>. The common
+                failure is a gate written as a <em>lint</em> — it confirms the output
+                didn't crash and has the right shape, then passes anything that
+                renders. That's not a gate; it's a formatter. When a skill is turned
+                into gated steps, each gate is authored to this bar:
+              </P>
+              <ul className="space-y-2.5 text-sm text-mist-2">
+                {[
+                  ["Substance, not surface", "“Is it correct, faithful, complete?” — not “did it render?” Output can be perfectly well-formed and completely wrong."],
+                  ["Cross-validate the dimensions", "Check the fields against each other, never in isolation: the FAQ price matches the body matches the database, and the source backs the claim beside it."],
+                  ["No self-widening loopholes", "A threshold must not be relaxable by a side-effect of the work it's judging. The thing being judged can't move the bar."],
+                  ["Catch blatant fabrication", "A cheap guard flags a figure or claim that appears from nowhere with nothing behind it — without pretending to be a full hallucination-proofer."],
+                  ["Gate on grounding, not novelty", "A new, well-sourced fact should pass; only an unsupported one gets flagged. Blocking every new fact punishes exactly what a capable agent is for."],
+                  ["Prove it catches its own violation", "A gate you haven't watched FAIL on a crafted violation is assumed broken — ship every gate with a red-team line, the way you ship a test with a failing case."],
+                ].map(([k, v]) => (
+                  <li key={k} className="flex gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-iris" />
+                    <span><strong className="text-chalk">{k}</strong> — {v}</span>
+                  </li>
+                ))}
+              </ul>
+              <P>
+                A green gate should mean{" "}
+                <strong className="text-chalk">"faithful, accurate, sourced,"</strong>{" "}
+                not "didn't crash." The full standard — including grounding checks in
+                real data and honestly delegating the judgment dimensions to a
+                reviewer — lives in{" "}
+                <a href={`${GH}/blob/main/CONDUCTOR.md`} target="_blank" rel="noreferrer" className="text-cyan underline-offset-2 hover:underline">CONDUCTOR.md ↗</a>.
+              </P>
+            </section>
+
+            {/* GATE APPROVAL */}
+            <section className="space-y-4">
+              <H2 id="gate-approval" kicker="Before any run">Authored, red-teamed, human-approved</H2>
+              <P>
+                Gates don't go live on trust. Turning a skill into a conductor is a
+                one-time setup flow, and{" "}
+                <strong className="text-chalk">nothing executes on an unproven gate</strong>:
+              </P>
+              <ol className="space-y-4">
+                {[
+                  ["A skill becomes gates", <>Each step's <em>goal</em> is translated into a real, cross-validating check authored to the standard above — not a shape check.</>],
+                  ["Each hard gate is red-teamed", <>The gate is fed a known-bad example and must be watched to <strong className="text-chalk">fail</strong> it. The proof is recorded to <Code>.conductor/gate-review.md</Code>.</>],
+                  ["You approve they match intent", <>Every gate is presented as an <strong className="text-chalk">Approve / Reject</strong> card — its skill goal, what it rejects, its red-team proof. Execution can't start until you agree the gates faithfully capture the skill; a rejection routes back to fix the gate.</>],
+                  ["Only then does it run", <>Every later run just <em>enforces</em> the approved gates. The authoring + approval is one-time, at the start.</>],
+                ].map(([title, body], i) => (
+                  <li key={i} className="flex gap-4">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-iris/30 bg-iris/10 font-mono text-sm text-iris">
+                      {i + 1}
+                    </span>
+                    <div>
+                      <div className="font-medium text-chalk">{title}</div>
+                      <p className="mt-1 text-sm leading-relaxed text-mist-2">{body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            {/* NO SKIP */}
+            <section className="space-y-4">
+              <H2 id="no-skip" kicker="Coverage is structural">Nothing gets skipped</H2>
+              <P>
+                The whole point of the board is that an agent can't quietly drop work.
+                Three guarantees make that structural rather than aspirational:
+              </P>
+              <div className="space-y-3">
+                {[
+                  ["A loop can't close with work left undone", "Every iteration is frontloaded as pending the moment it's scoped, so the plan is visible before any card moves. A loop-coverage guard refuses to advance while any iteration is still incomplete — and lists the ones missed. A frontloaded item left pending is a skipped page, not a finished loop."],
+                  ["Phase 0 can't be skipped", "The self-improvement pass runs before step 1: its improvement and directive cards must resolve before any workflow gate can pass. The board follows it so it isn't dark before the work starts."],
+                  ["A failed gate forces fix-and-retry", "A gate that can't be satisfied sends the card back into Running. The agent fixes and re-attempts — it never skips ahead. Failed appears only as a side column when something truly stops."],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-xl border border-line bg-panel/30 p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-mint"><Icon name="check" size={14} /></span>
+                      <span className="font-mono text-sm font-medium text-chalk">{k}</span>
+                    </div>
+                    <p className="mt-1.5 text-sm leading-relaxed text-mist-2">{v}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* ACTIVITY CARDS */}
+            <section className="space-y-4">
+              <H2 id="activity-cards" kicker="A run reads as a story">Heartbeats group into activity cards</H2>
+              <P>
+                Raw heartbeats are a firehose. So the board groups them into{" "}
+                <strong className="text-chalk">activity cards</strong> — and the agent
+                declares where each one begins. A card is{" "}
+                <strong className="text-chalk">one intent on one target</strong>: a
+                single kind of action (researching, writing, verifying, fixing,
+                shipping) aimed at a single thing (a page, a file, a check). It opens
+                when the intent or the target changes, stays open while the
+                play-by-play serves it, and closes when either shifts or the step hands
+                off.
+              </P>
+              <P>
+                The agent opens a card with <Code>--card</Code>, where the note is the
+                card's title — its one-line statement of intent. The board renders each
+                card with that title as the hero, the latest detail as its live status,
+                the rest collapsed, and a comment box. When a card closes a parallel
+                summarizer writes a one-line overview of what it accomplished, shown by
+                default with a toggle to the raw beats. The live activity card opens by
+                default so the board is never blank.
+              </P>
+            </section>
+
+            {/* DIRECTIVES */}
+            <section className="space-y-4">
+              <H2 id="directives" kicker="The flow-manager loop">You steer the run with directives</H2>
+              <P>
+                The board isn't just a window — it's a steering wheel.{" "}
+                <strong className="text-chalk">Leave a comment on a card</strong> and it
+                becomes a <strong className="text-chalk">directive</strong>: a human
+                instruction that outranks the agent's own insights. The next run's
+                Phase 0 reads every open directive and, for{" "}
+                <strong className="text-chalk">each one</strong>, must do exactly one of
+                two things — never silently gloss it:
+              </P>
+              <ul className="space-y-2 text-sm text-mist-2">
+                <li className="flex gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-mint" />
+                  <span><strong className="text-chalk">Apply it</strong> — make the change it asks for, then record how with <Code>resolve --applied</Code>.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
+                  <span><strong className="text-chalk">Defer it</strong> — only with a real reason (it conflicts with a hard rule, or needs your input), recorded with <Code>resolve --deferred</Code>.</span>
+                </li>
+              </ul>
+              <P>
+                Each directive comes back applied-with-how or deferred-with-why, visible
+                on its own card. That's the flow-manager loop: you watch a run, drop a
+                note where it matters, and the next lap honors it explicitly.
+              </P>
+              <CodeBlock code={DIRECTIVES_CMDS} filename="steer the run" lang="bash" />
+            </section>
+
             {/* MONITOR */}
             <section className="space-y-4">
               <H2 id="monitor" kicker="Self-regulation">The heartbeat monitor</H2>
@@ -420,14 +592,22 @@ export function BoardGuide() {
                 with <Code>Ctrl + `</Code>.
               </P>
               <P>
-                A small heart keeps the rhythm — it pulses on each new beat and{" "}
-                <strong className="text-chalk">weakens</strong> (slower, dimmer, an
-                amber glow) if no beat lands for 90 seconds, so a stalled agent is
-                visible at a glance. The 90s timer resets on{" "}
-                <em>every</em> beat, finalBeats included — so the cooldown starts
-                fresh after each step's handoff, giving the agent natural
-                transition time.
+                A small heart keeps the rhythm. It's{" "}
+                <strong className="text-mint">green while beating</strong> — pulsing on
+                each new beat — and turns{" "}
+                <strong className="text-amber">amber when it goes quiet</strong>, so a
+                stalled agent is visible at a glance. The stall timer resets on{" "}
+                <em>every</em> beat, finalBeats included, so the cooldown starts fresh
+                after each step's handoff and the agent gets natural transition time.
               </P>
+              <P>
+                The cadence is <strong className="text-chalk">configurable</strong>:
+                the agent beats about every <strong className="text-chalk">30 seconds</strong>{" "}
+                by default, and the watcher can pick anything from{" "}
+                <strong className="text-chalk">15 seconds to 5 minutes</strong> in
+                Settings. The board flags a stall after roughly three missed beats.
+              </P>
+              <CodeBlock code={CADENCE_NOTE} filename="heartbeat cadence" lang="bash" />
             </section>
 
             {/* MULTIPLE */}
@@ -458,6 +638,34 @@ export function BoardGuide() {
               </P>
             </section>
 
+            {/* DONE SCREEN */}
+            <section className="space-y-4">
+              <H2 id="done-screen" kicker="When a run ends">A distilled done screen</H2>
+              <P>
+                A finished run doesn't dump its data at you. The completion screen is{" "}
+                <strong className="text-chalk">distilled</strong> — built to be read,
+                with the detail one click away:
+              </P>
+              <ul className="space-y-2 text-sm text-mist-2">
+                {[
+                  ["Produced, first", "What actually shipped leads the screen — the artifacts, pages, or PRs the run produced, before anything else."],
+                  ["A tight per-step recap", "One line per step of what it accomplished, not a status table."],
+                  ["Learnings as a digest", "Grouped into New this run, Applied at start, and Open — each expandable to the evidence behind it."],
+                  ["Up next", "When the work came from a queue, a handoff prompt names the next run and how many remain, so you can keep going."],
+                ].map(([k, v]) => (
+                  <li key={k} className="flex gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-iris" />
+                    <span><strong className="text-chalk">{k}</strong> — {v}</span>
+                  </li>
+                ))}
+              </ul>
+              <P>
+                The run timer freezes when the run ends, and the <strong className="text-chalk">Up next</strong>{" "}
+                handoff sits as a sticky bar atop the heartbeat terminal — a continued
+                run reuses the same board and skips straight to the next batch.
+              </P>
+            </section>
+
             {/* IMPROVE */}
             <section className="space-y-4">
               <H2 id="improve" kicker="The loop closes">A workflow that improves itself</H2>
@@ -471,6 +679,14 @@ export function BoardGuide() {
                 diff and a one-click <strong className="text-chalk">Apply</strong>{" "}
                 that edits the conductor (with a backup and a re-validation pass).
                 The workflow gets better every time it runs.
+              </P>
+              <P>
+                Proven insights are applied automatically in{" "}
+                <strong className="text-chalk">Phase 0</strong> — a self-improvement
+                pass that runs before step 1, rewrites the steps the insight names,
+                then re-validates. Phase 0 can't be skipped: its cards must resolve
+                before any workflow gate passes, and the board follows it so it isn't
+                dark before the work begins.
               </P>
               <P>
                 Each step also ends with a <strong className="text-chalk">finalBeat</strong> —

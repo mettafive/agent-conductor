@@ -30,7 +30,8 @@ export function Home() {
           Conduct your agents.
         </h1>
         <p className="mt-4 max-w-xl text-pretty text-lg leading-relaxed text-mist-2">
-          Gated steps any agent can follow — and a live board that watches it work.
+          Real gates any agent must pass — and a live board you read like a story
+          and steer as it works.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -58,7 +59,7 @@ export function Home() {
       </section>
 
       {/* simpler problem / solution, right under the hero */}
-      <section className="grid gap-4 pb-10 md:grid-cols-2">
+      <section className="grid gap-4 pb-6 md:grid-cols-2">
         <Reveal className="h-full">
           <div className="flex h-full items-start gap-3 rounded-2xl border border-line bg-panel/40 p-5">
             <span className="mt-1 shrink-0 text-rose">
@@ -77,11 +78,44 @@ export function Home() {
               <Icon name="check" size={15} />
             </span>
             <p className="text-pretty text-sm leading-relaxed text-mist-2">
-              <span className="font-medium text-chalk">The solution.</span> Gated
-              steps, watched live. Fail a gate and the agent retries — it never skips.
+              <span className="font-medium text-chalk">The solution.</span> Real
+              gates, watched live. Fail a gate and the agent retries — it never skips.
             </p>
           </div>
         </Reveal>
+      </section>
+
+      {/* what the gates and the board actually guarantee */}
+      <section className="grid gap-4 pb-10 md:grid-cols-3">
+        {[
+          {
+            icon: "check" as const,
+            title: "Real gates, not lint",
+            body: "A gate checks substance, not surface — cross-validating fields against each other and grounding claims in real data. Every gate is red-teamed and human-approved before the first run.",
+          },
+          {
+            icon: "loop" as const,
+            title: "Nothing gets skipped",
+            body: "A loop can't close while any planned iteration is incomplete; the self-improvement pass can't be skipped; a failed gate forces fix-and-retry. Coverage is structural.",
+          },
+          {
+            icon: "clock" as const,
+            title: "A run you steer",
+            body: "Heartbeats group into activity cards you read like a story. Leave a comment on a card and it becomes a directive the next run must apply — or defer with a reason. Never silently glossed.",
+          },
+        ].map((f) => (
+          <Reveal key={f.title} className="h-full">
+            <div className="flex h-full flex-col gap-2 rounded-2xl border border-line bg-panel/40 p-5">
+              <span className="flex items-center gap-2 text-chalk">
+                <span className="text-mist">
+                  <Icon name={f.icon} size={15} />
+                </span>
+                <span className="text-sm font-medium">{f.title}</span>
+              </span>
+              <p className="text-pretty text-sm leading-relaxed text-mist-2">{f.body}</p>
+            </div>
+          </Reveal>
+        ))}
       </section>
     </Page>
   );

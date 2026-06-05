@@ -36,7 +36,7 @@ export function FlowDiagram({ yaml, className }: Props) {
           nodes={parsed.nodes}
           edges={parsed.edges}
           nodeTypes={nodeTypes}
-          defaultEdgeOptions={{ type: "smoothstep" }}
+          defaultEdgeOptions={{ type: "bezier" }}
           fitView
           fitViewOptions={{ padding: 0.25 }}
           proOptions={{ hideAttribution: true }}

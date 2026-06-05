@@ -44,7 +44,7 @@ export function BoardPage() {
         <LiveBoard />
       </Reveal>
       <p className="mt-6 text-center font-mono text-xs text-mist">
-        a live demo — the real board, running.
+        Not a screenshot — the real board, live in the page. Have a poke around.
       </p>
 
       {/* LED color language */}
