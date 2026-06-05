@@ -278,6 +278,18 @@ export async function runLoopScope(args) {
   const [loopId, ...items] = positionals(args);
   if (!loopId || items.length === 0)
     return fail("usage: conductor-board loop-scope <loopId> <item1> <item2> … [--note \"...\"]");
+  // Guard: a single item containing whitespace is almost always a mistakenly-quoted LIST —
+  // `loop-scope <loop> "a b c"` instead of `loop-scope <loop> a b c` — which would scope the loop
+  // as ONE weird iteration named after the whole list. Warn loudly (but proceed, so a genuinely
+  // multi-word single item still works) so it's caught before the board renders the wrong shape.
+  if (items.length === 1) {
+    const toks = items[0].trim().split(/\s+/);
+    if (toks.length >= 2) {
+      console.error(red(`⚠ loop-scope got ONE item with ${toks.length} space-separated tokens — did you mean ${toks.length} separate iterations?`));
+      console.error(dim(`    pass each as its own argument:  loop-scope ${loopId} ${toks.slice(0, 3).join(" ")} …  (NOT one quoted string)`));
+      console.error(dim(`    proceeding as a SINGLE iteration — re-run with separate args if that's wrong.`));
+    }
+  }
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
