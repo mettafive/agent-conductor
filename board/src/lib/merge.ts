@@ -405,6 +405,7 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     developerNotes,
     runId: status.run_id as string | undefined,
     runName: status.run_name as string | undefined,
+    nextUp: (status.next_up as { name?: string; remaining?: number } | undefined) ?? undefined,
     autoImprove,
     startedAt: status.started_at as string | undefined,
     // A finished run rarely records a top-level completed_at, which left the done-screen timer

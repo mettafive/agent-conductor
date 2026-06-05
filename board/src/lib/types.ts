@@ -280,6 +280,9 @@ export interface BoardModel {
   runId?: string;
   /** Human run name set at run start, e.g. "treatment-readability-run-4-2026-06-04T12-30" (§6.2). */
   runName?: string;
+  /** Set at run start when the work is pulled from a queue: what the NEXT run would be + how many
+   *  items remain after this one. Drives the done-screen "Up next" / NEXT affordance. */
+  nextUp?: { name?: string; remaining?: number };
   /** Whether the Phase 0 self-improvement pass is enabled for this conductor (§6.1). Default true. */
   autoImprove: boolean;
   startedAt?: string;

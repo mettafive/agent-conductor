@@ -242,12 +242,24 @@ deferred. (A plain note — not promoted to a directive — is context only; rea
 **Phase 1+ — Execute.** Run the workflow steps as defined — gates, heartbeats,
 finalBeats, breathing beats.
 
+**Queue-driven runs — declare what's next, and get faster each lap.** If this run claims its work
+from a queue/backlog, write `next_up: { "name": "<next run's name>", "remaining": <count after
+this batch> }` into `status.json` at the **start** — the done screen turns it into an **Up next**
+prompt so the human can keep going. And on a *continued* run (you just finished a batch and the
+context is still warm), **don't re-read the whole runbook** — you already have it: reuse the
+running board, skip straight to claiming + working. Setup time should shrink each lap, not repeat.
+
 **Run end — Learn.** Before `status: done`, append what you learned to the
 conductor's `knowledge:` section with `conductor-board suggest`:
 
 - **`--scope` is required** — `this-conductor` (auto-appliable) | `upstream` |
   `template` | `tooling` | `corpus`. The highest-leverage learnings are usually
   cross-cutting; without a scope they leak into chat and vanish.
+- **Frame every learning as "how should the next run change?"** A learning is not an observation —
+  it's a *directive to your future self*. Write the title as the change to make, not the thing you
+  noticed: not *"prices are sometimes fabricated"* but *"gate every kr figure against
+  discovered_prices before trusting it."* If it doesn't tell the next run what to **do
+  differently**, it isn't a learning yet.
 - **Capture depth, not a bumper sticker.** A bare title isn't actionable — the next run, and
   the human reading the done screen, need the *why* and the *change*. Always add **`--note`**
   with the evidence (what you saw, where, how often — e.g. *"jordbruksverket TypeError'd
