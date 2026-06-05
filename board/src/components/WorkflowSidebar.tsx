@@ -203,6 +203,11 @@ interface Props {
   onPickRun: (wf: string, runId: string) => void;
   width: number;
   onResize: (w: number) => void;
+  /** Collapse the drawer — the toggle lives at the drawer's own top-right, not in the top bar. */
+  onCollapse?: () => void;
+  /** True while the user is dragging the resize handle, so the parent can suppress the
+   *  open/close width animation (which would otherwise fight the live drag). */
+  onResizeActive?: (active: boolean) => void;
   activeStep?: string | null;
   following?: boolean;
   onSelectStep?: (id: string | null) => void;
@@ -218,6 +223,8 @@ export function WorkflowSidebar({
   onPickRun,
   width,
   onResize,
+  onCollapse,
+  onResizeActive,
   activeStep,
   following,
   onSelectStep,
@@ -227,8 +234,10 @@ export function WorkflowSidebar({
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
+    onResizeActive?.(true);
     const move = (ev: PointerEvent) => onResize(Math.max(248, Math.min(600, ev.clientX)));
     const up = () => {
+      onResizeActive?.(false);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -273,7 +282,20 @@ export function WorkflowSidebar({
       style={{ width }}
       className="relative flex h-full shrink-0 flex-col border-r border-line bg-panel/60"
     >
-      <div className="flex-1 overflow-y-auto board-scroll px-4 py-4">
+      {/* Drawer collapse — top-right, the conventional place for a drawer's own toggle. */}
+      {onCollapse && (
+        <div className="flex shrink-0 items-center justify-end px-2 pt-2">
+          <button
+            onClick={onCollapse}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+            className="grid h-7 w-7 place-items-center rounded-md text-mist transition-colors hover:bg-panel-2 hover:text-chalk"
+          >
+            <Icon name="arrowLeft" size={16} />
+          </button>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto board-scroll px-4 pb-4 pt-1">
         {activeWf && liveModel ? (
           <>
             {/* active workflow — name + status · elapsed (clickable: jump to live) */}
@@ -410,7 +432,7 @@ export function WorkflowSidebar({
 
       <div
         onPointerDown={startDrag}
-        className="absolute inset-y-0 -right-1 w-2 cursor-col-resize"
+        className="absolute inset-y-0 right-0 w-2 cursor-col-resize"
         title="Drag to resize"
       />
     </aside>

@@ -57,6 +57,9 @@ export function App() {
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
+  // True only while the resize handle is being dragged — suppresses the open/close width
+  // animation so a live drag tracks the pointer instead of easing toward each new width.
+  const [resizing, setResizing] = useState(false);
   const [ticksOn, setTicksOn] = useState(!isTicksMuted());
   const [chimesOn, setChimesOn] = useState(!isChimesMuted());
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
@@ -315,7 +318,17 @@ export function App() {
         onBackToLive={backToLive}
       />
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {sidebarOpen && (
+        {/* The sidebar is a real drawer: its width animates between full and 0 so opening and
+            closing reads as a slide, not a jump. The inner aside keeps its fixed width and is
+            clipped by overflow-hidden, so the content doesn't reflow mid-animation. While the
+            user is dragging the resize handle the animation is disabled (duration 0). */}
+        <motion.div
+          initial={false}
+          animate={{ width: sidebarOpen ? sidebarWidth : 0 }}
+          transition={{ duration: resizing ? 0 : 0.28, ease: [0.4, 0, 0.2, 1] }}
+          className="h-full shrink-0 overflow-hidden"
+          inert={sidebarOpen ? undefined : true}
+        >
           <WorkflowSidebar
             workflows={workflows}
             order={order}
@@ -325,12 +338,14 @@ export function App() {
             onPickRun={pickRun}
             width={sidebarWidth}
             onResize={setSidebarWidth}
+            onCollapse={() => setSidebarOpen(false)}
+            onResizeActive={setResizing}
             activeStep={selectedStep ?? liveHighlight}
             following={liveFollow}
             onSelectStep={setSelectedStep}
             viewingSnap={viewing ? record?.snapshot : null}
           />
-        )}
+        </motion.div>
 
         <div className="flex min-w-0 flex-1 flex-col">
           {model?.demo && (
