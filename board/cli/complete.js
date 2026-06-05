@@ -99,6 +99,32 @@ export async function runComplete(args) {
     }
   }
 
+  // Loop-coverage guard: a loop step can't be completed while any frontloaded iteration is
+  // still incomplete — this catches skipped pages (an item left pending or only partly done),
+  // so you can never silently lose loop coverage. (§ "Loops": do every iteration, in order.)
+  if (!loopPath && step.type === "loop") {
+    try {
+      const status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
+      const iters = (status.steps && status.steps[stepId] && status.steps[stepId].iterations) || {};
+      const subIds = (step.steps || []).map((s) => s && s.id).filter(Boolean);
+      const incomplete = [];
+      for (const [item, subs] of Object.entries(iters)) {
+        const missing = subIds.filter((sid) => !(subs && subs[sid] && subs[sid].status === "done"));
+        if (missing.length) incomplete.push(`${item} (missing: ${missing.join(", ")})`);
+      }
+      if (incomplete.length) {
+        console.error(
+          red(`\n  ✕ Loop "${stepId}" has ${incomplete.length} incomplete iteration(s) — finish them before completing the loop:`),
+        );
+        for (const i of incomplete) console.error(red(`      - ${i}`));
+        console.error(dim("    Every frontloaded iteration must finish all its sub-steps; none may be skipped or reordered away."));
+        return false;
+      }
+    } catch {
+      /* if status is unreadable, fall through to the normal gate flow */
+    }
+  }
+
   const soft = [];
   const hard = [];
   for (const g of step.gate || []) {

@@ -255,6 +255,13 @@ them, `clean --keep 20 --prune-heartbeats` trims history and archives old beats.
   item's sub-steps in the status `iterations` map as you go, and end each iteration
   with a finalBeat. `parallel: true` runs items at once; `parallel: auto` lets you
   decide at runtime (scout the first iteration, then parallelize the rest).
+- **Do every frontloaded iteration, in order, before the loop closes — never skip
+  one.** For a sequential loop, work the items in the order you scoped them, finishing
+  each (all its sub-steps) before starting the next; do not jump ahead or drop one. A
+  frontloaded item left `pending` is a *skipped page*, not a completed loop — and
+  `complete <loopId>` refuses to advance while any iteration is still incomplete (it
+  lists the ones you missed), so you can't silently lose coverage. Before leaving the
+  loop, confirm the iteration count done == the count you frontloaded.
 - **Approval** (`type: approval`) pauses for a human. Mark the step
   `awaiting_approval` (gate `pending_human`) with an `approval` object, then wait —
   the board shows an Approve/Reject card and writes the human's decisions back into
