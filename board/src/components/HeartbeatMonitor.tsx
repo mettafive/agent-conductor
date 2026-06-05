@@ -82,7 +82,8 @@ function insightFor(b: StreamBeat, knowledge?: KnowledgeEntry[]): ShownInsight {
 }
 
 /** A clean modal for one insight — title, the captured note, the current→proposed change, and
- *  provenance. Opened by clicking a beat's "insight" tag; closes on backdrop click, ✕, or Esc. */
+ *  provenance. Opened by clicking a beat's "insight" tag; closes on backdrop click, ✕, or Esc.
+ *  Every interaction stops propagation, so opening/closing it never re-routes the board beneath. */
 function InsightModal({ insight, onClose }: { insight: ShownInsight; onClose: () => void }) {
   useEffect(() => {
     // capture-phase + stopImmediate so Esc closes the modal without also firing "back to live"
@@ -95,44 +96,53 @@ function InsightModal({ insight, onClose }: { insight: ShownInsight; onClose: ()
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
+  const close = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClose();
+  };
   const meta = [insight.scope, insight.step, insight.observed ? `seen ${insight.observed}×` : null]
     .filter(Boolean)
     .join(" · ");
   const bare = !insight.note && !insight.current && !insight.proposed;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-6 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-full max-w-lg rounded-xl border border-amber/30 bg-panel p-5 shadow-2xl"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.14 }}
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/75 p-6 font-sans backdrop-blur-sm"
+      onClick={close}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.97, y: 6 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+        className="relative w-full max-w-md rounded-2xl border border-line bg-panel p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
-          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-amber">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber" /> insight
-          </span>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="text-[13px] leading-none text-dim transition-colors hover:text-chalk"
-          >
-            ✕
-          </button>
+        <button
+          onClick={close}
+          aria-label="Close"
+          className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full text-[12px] text-dim transition-colors hover:bg-line-2/50 hover:text-chalk"
+        >
+          ✕
+        </button>
+        <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber">Insight</div>
+        <h3 className="mt-1.5 pr-6 text-[15px] font-medium leading-snug text-chalk">{insight.title}</h3>
+        <div className="mt-3 max-h-[50vh] space-y-3 overflow-y-auto">
+          {insight.note && <p className="text-[12.5px] leading-relaxed text-mist-2">{insight.note}</p>}
+          {(insight.current || insight.proposed) && (
+            <div className="space-y-1 rounded-lg border border-line bg-ink-2/40 p-3 font-mono text-[11px] leading-snug">
+              {insight.current && <div className="text-rose/80">− {insight.current}</div>}
+              {insight.proposed && <div className="text-mint/80">+ {insight.proposed}</div>}
+            </div>
+          )}
+          {bare && (
+            <p className="text-[12px] italic leading-snug text-dim">No further detail was captured for this insight.</p>
+          )}
         </div>
-        <h3 className="mt-2 text-[14px] font-medium leading-snug text-chalk">{insight.title}</h3>
-        {insight.note && <p className="mt-2 text-[12.5px] leading-relaxed text-mist-2">{insight.note}</p>}
-        {(insight.current || insight.proposed) && (
-          <div className="mt-3 space-y-0.5 rounded-lg border border-line bg-ink-2/50 p-2.5 font-mono text-[11px] leading-snug">
-            {insight.current && <div className="text-rose/80">− {insight.current}</div>}
-            {insight.proposed && <div className="text-mint/80">+ {insight.proposed}</div>}
-          </div>
-        )}
-        {bare && (
-          <p className="mt-2 text-[12px] italic leading-snug text-dim">
-            No further detail was captured for this insight.
-          </p>
-        )}
-        {meta && <div className="mt-3 font-mono text-[10px] text-dim">{meta}</div>}
-      </div>
-    </div>
+        {meta && <div className="mt-4 border-t border-line pt-3 font-mono text-[10px] text-dim">{meta}</div>}
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -308,7 +318,7 @@ function ExpandedMonitor({
   };
 
   const shown = beats.filter((b) =>
-    filter === "all" ? true : filter === "insights" ? !!b.insight : b.workflow === filter,
+    filter === "all" ? true : b.workflow === filter,
   );
 
   useLayoutEffect(() => {
@@ -383,7 +393,7 @@ function ExpandedMonitor({
     window.addEventListener("pointerup", up);
   };
 
-  const FILTERS = ["all", ...order, "insights"];
+  const FILTERS = ["all", ...order];
 
   return (
     <motion.div
@@ -431,7 +441,7 @@ function ExpandedMonitor({
       <div className="flex items-center gap-1.5 overflow-x-auto border-b border-line/50 px-3 py-1.5">
         {FILTERS.map((f) => {
           const on = filter === f;
-          const label = f === "all" ? "All" : f === "insights" ? "Insights" : f;
+          const label = f === "all" ? "All" : f;
           return (
             <button
               key={f}
@@ -488,7 +498,10 @@ function ExpandedMonitor({
               )}
               {b.insight && (
                 <button
-                  onClick={() => setModalInsight(insightFor(b, knowledge))}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setModalInsight(insightFor(b, knowledge));
+                  }}
                   className="mt-px shrink-0 select-none rounded bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
                   title="captured a learning — click to see it"
                 >
