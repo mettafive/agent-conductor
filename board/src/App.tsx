@@ -433,6 +433,7 @@ export function App() {
             conn={conn}
             stallSeconds={stallSecondsFor(heartbeatInterval)}
             done={liveModel.overallStatus === "done" || liveModel.overallStatus === "failed"}
+            knowledge={(model ?? liveModel).knowledge}
           />
         </div>
       </div>

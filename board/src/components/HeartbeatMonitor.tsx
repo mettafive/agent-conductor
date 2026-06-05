@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Arrival, StreamBeat } from "../lib/heartbeatStream";
+import type { KnowledgeEntry } from "../lib/types";
 import { plainNote } from "../lib/heartbeat";
 import { AnimatedHeart } from "./AnimatedHeart";
 import { TypewriterText } from "./TypewriterText";
@@ -50,6 +52,90 @@ function ConnDot({ conn }: { conn?: Conn }) {
   );
 }
 
+/** The full captured detail of one insight, normalized from a beat + the knowledge store. */
+type ShownInsight = {
+  title: string;
+  note?: string;
+  current?: string;
+  proposed?: string;
+  scope?: string;
+  step?: string;
+  observed?: number;
+};
+
+/** Resolve a beat's insight to its full detail: prefer the matching knowledge entry (which carries
+ *  the note + current→proposed change), falling back to the beat's own insight payload. */
+function insightFor(b: StreamBeat, knowledge?: KnowledgeEntry[]): ShownInsight {
+  const seed = b.insight?.seed ?? plainNote(b.note);
+  const k =
+    knowledge?.find((e) => e.title === seed) ??
+    (seed ? knowledge?.find((e) => e.title?.startsWith(seed.slice(0, 24))) : undefined);
+  return {
+    title: k?.title ?? seed,
+    note: k?.note,
+    current: k?.current,
+    proposed: k?.proposed,
+    scope: k?.scope ?? b.insight?.scope,
+    step: k?.step ?? b.insight?.step,
+    observed: k?.observed,
+  };
+}
+
+/** A clean modal for one insight — title, the captured note, the current→proposed change, and
+ *  provenance. Opened by clicking a beat's "insight" tag; closes on backdrop click, ✕, or Esc. */
+function InsightModal({ insight, onClose }: { insight: ShownInsight; onClose: () => void }) {
+  useEffect(() => {
+    // capture-phase + stopImmediate so Esc closes the modal without also firing "back to live"
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  const meta = [insight.scope, insight.step, insight.observed ? `seen ${insight.observed}×` : null]
+    .filter(Boolean)
+    .join(" · ");
+  const bare = !insight.note && !insight.current && !insight.proposed;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-6 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-xl border border-amber/30 bg-panel p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-amber">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber" /> insight
+          </span>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-[13px] leading-none text-dim transition-colors hover:text-chalk"
+          >
+            ✕
+          </button>
+        </div>
+        <h3 className="mt-2 text-[14px] font-medium leading-snug text-chalk">{insight.title}</h3>
+        {insight.note && <p className="mt-2 text-[12.5px] leading-relaxed text-mist-2">{insight.note}</p>}
+        {(insight.current || insight.proposed) && (
+          <div className="mt-3 space-y-0.5 rounded-lg border border-line bg-ink-2/50 p-2.5 font-mono text-[11px] leading-snug">
+            {insight.current && <div className="text-rose/80">− {insight.current}</div>}
+            {insight.proposed && <div className="text-mint/80">+ {insight.proposed}</div>}
+          </div>
+        )}
+        {bare && (
+          <p className="mt-2 text-[12px] italic leading-snug text-dim">
+            No further detail was captured for this insight.
+          </p>
+        )}
+        {meta && <div className="mt-3 font-mono text-[10px] text-dim">{meta}</div>}
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   beats: StreamBeat[];
   arrival: Arrival | null;
@@ -62,6 +148,8 @@ interface Props {
   stallSeconds?: number;
   /** the live run is finished — settle the heart instead of flashing amber */
   done?: boolean;
+  /** the knowledge store — lets an insight beat open its full captured detail in a modal */
+  knowledge?: KnowledgeEntry[];
 }
 
 export function HeartbeatMonitor({
@@ -74,6 +162,7 @@ export function HeartbeatMonitor({
   conn,
   stallSeconds,
   done,
+  knowledge,
 }: Props) {
   const wfColor = (name: string) => WF_COLORS[Math.max(0, order.indexOf(name)) % WF_COLORS.length];
   const multi = order.length > 1;
@@ -165,6 +254,7 @@ export function HeartbeatMonitor({
       conn={conn}
       stallSeconds={stallSeconds}
       done={done}
+      knowledge={knowledge}
     />
   );
 }
@@ -180,6 +270,7 @@ function ExpandedMonitor({
   conn,
   stallSeconds,
   done,
+  knowledge,
 }: {
   beats: StreamBeat[];
   order: string[];
@@ -191,8 +282,10 @@ function ExpandedMonitor({
   conn?: Conn;
   stallSeconds?: number;
   done?: boolean;
+  knowledge?: KnowledgeEntry[];
 }) {
   const [filter, setFilter] = useState<string>("all");
+  const [modalInsight, setModalInsight] = useState<ShownInsight | null>(null);
   const [height, setHeight] = useState(280);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -395,12 +488,9 @@ function ExpandedMonitor({
               )}
               {b.insight && (
                 <button
-                  onClick={() => {
-                    pinned.current = true;
-                    setFilter("insights");
-                  }}
+                  onClick={() => setModalInsight(insightFor(b, knowledge))}
                   className="mt-px shrink-0 select-none rounded bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
-                  title="captured a learning — click to browse it in the Insights tab"
+                  title="captured a learning — click to see it"
                 >
                   insight
                 </button>
@@ -431,6 +521,11 @@ function ExpandedMonitor({
           </motion.button>
         )}
       </AnimatePresence>
+      {modalInsight &&
+        createPortal(
+          <InsightModal insight={modalInsight} onClose={() => setModalInsight(null)} />,
+          document.body,
+        )}
     </motion.div>
   );
 }
