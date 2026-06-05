@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: knot-tying-guide
+description: >
+  knot tying guide — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-knots
+    instruction: |
+      Scope the knots to process. Frontload every knot as a pending iteration.
+    output: knots
+    gate:
+      - check: "npx conductor-board check scope-knots"
+      - "Every knot captured before any work begins"
+
+  - id: knot-tying-guide-loop
+    type: loop
+    over: knots
+    as: knot
+    requires: [scope-knots]
+    steps:
+      - id: describe-use
+        instruction: |
+          describe use: describe use, purpose.
+        gate:
+          - check: "npx conductor-board check describe-use"
+          - name: "describe use is correct"
+            check: "node verify-unit.mjs describe-use --out out/describe-use.json"
+      - id: write-steps
+        instruction: |
+          write steps: write steps, tying sequence.
+        gate:
+          - check: "npx conductor-board check write-steps"
+          - name: "write steps is correct"
+            check: "node verify-unit.mjs write-steps --out out/write-steps.json"
+      - id: strength-note
+        instruction: |
+          strength note: strength, breaking load.
+        gate:
+          - check: "npx conductor-board check strength-note"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: add-diagram
+        instruction: |
+          add diagram: add diagram, illustration.
+        gate:
+          - check: "npx conductor-board check add-diagram"
+          - name: "add diagram is correct"
+            check: "node verify-unit.mjs add-diagram --out out/add-diagram.json"

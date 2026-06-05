@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: cuneiform-edit
+description: >
+  cuneiform edit — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-tablets
+    instruction: |
+      Scope the tablets to process. Frontload every tablet as a pending iteration.
+    output: tablets
+    gate:
+      - check: "npx conductor-board check scope-tablets"
+      - "Every tablet captured before any work begins"
+
+  - id: cuneiform-edit-loop
+    type: loop
+    over: tablets
+    as: tablet
+    requires: [scope-tablets]
+    steps:
+      - id: transliterate
+        instruction: |
+          transliterate: transliterate, sign reading.
+        gate:
+          - check: "npx conductor-board check transliterate"
+          - name: "transliterate is correct"
+            check: "node verify-unit.mjs transliterate --out out/transliterate.json"
+      - id: normalize-akkadian
+        instruction: |
+          normalize akkadian: normalize, grammatical.
+        gate:
+          - check: "npx conductor-board check normalize-akkadian"
+          - name: "normalize akkadian is correct"
+            check: "node verify-unit.mjs normalize-akkadian --out out/normalize-akkadian.json"
+      - id: mark-breaks
+        instruction: |
+          mark breaks: mark breaks, lacuna.
+        gate:
+          - check: "npx conductor-board check mark-breaks"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: sign-list-ref
+        instruction: |
+          sign list ref: sign list, borger.
+        gate:
+          - check: "npx conductor-board check sign-list-ref"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: publish-edition
+        instruction: |
+          publish edition: publish edition, translation.
+        gate:
+          - check: "npx conductor-board check publish-edition"
+          - name: "publish edition is correct"
+            check: "node verify-unit.mjs publish-edition --out out/publish-edition.json"

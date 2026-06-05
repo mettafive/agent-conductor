@@ -1,0 +1,43 @@
+conductor: 2.0.0
+name: incident-response
+description: >
+  incident response — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: triage
+    instruction: |
+      triage: triage, assess severity.
+    gate:
+      - check: "npx conductor-board check triage"
+      - name: "triage is correct"
+        check: "node verify-unit.mjs triage --out out/triage.json"
+  - id: mitigate
+    instruction: |
+      mitigate: mitigate, stop bleeding.
+    requires: [triage]
+    gate:
+      - check: "npx conductor-board check mitigate"
+      - name: "mitigate is correct"
+        check: "node verify-unit.mjs mitigate --out out/mitigate.json"
+  - id: root-cause
+    instruction: |
+      root cause: root cause, rca.
+    requires: [mitigate]
+    gate:
+      - check: "npx conductor-board check root-cause"
+      - name: "root cause is correct"
+        check: "node verify-unit.mjs root-cause --out out/root-cause.json"
+  - id: write-postmortem
+    instruction: |
+      write postmortem: postmortem, writeup.
+    requires: [root-cause]
+    gate:
+      - check: "npx conductor-board check write-postmortem"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: action-items
+    instruction: |
+      action items: action items, follow-ups.
+    requires: [write-postmortem]
+    gate:
+      - check: "npx conductor-board check action-items"
+      # divider step: no substantive gate — exists purely so the board shows this phase

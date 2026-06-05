@@ -1,0 +1,36 @@
+conductor: 2.0.0
+name: lighthouse-log
+description: >
+  lighthouse log — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: check-lamp
+    instruction: |
+      check lamp: check lamp, lantern.
+    gate:
+      - check: "npx conductor-board check check-lamp"
+      - name: "check lamp is correct"
+        check: "node verify-unit.mjs check-lamp --out out/check-lamp.json"
+  - id: clean-optic
+    instruction: |
+      clean optic: clean optic, fresnel.
+    requires: [check-lamp]
+    gate:
+      - check: "npx conductor-board check clean-optic"
+      - name: "clean optic is correct"
+        check: "node verify-unit.mjs clean-optic --out out/clean-optic.json"
+  - id: fog-signal-test
+    instruction: |
+      fog signal test: fog signal, horn.
+    requires: [clean-optic]
+    gate:
+      - check: "npx conductor-board check fog-signal-test"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: log-watch
+    instruction: |
+      log watch: log watch, keeper journal.
+    requires: [fog-signal-test]
+    gate:
+      - check: "npx conductor-board check log-watch"
+      - name: "log watch is correct"
+        check: "node verify-unit.mjs log-watch --out out/log-watch.json"

@@ -45,26 +45,53 @@ steps:
 
       {skill_content}
 
-      Break it down into: the discrete sequential steps; decision points where the flow could
-      branch; **repeated operations that run a procedure ONCE PER ITEM over a list — these
-      BECOME `type: loop` steps, so name the LIST and the PER-ITEM sub-steps explicitly**
-      (e.g. "for each clinic: research → write → gate → ship"); and which checks are verifiable
-      by a shell command vs which need judgment. Flag every loop candidate loudly — the convert
-      step must turn each into a loop, never a flat step.
-      Save your analysis to .conductor/skill-analysis.md.
+      Break it down into:
+      - **EVERY distinct, user-recognizable work-unit the skill names — this is the master list.**
+        Go phase by phase and write down each one the user would scan the board for: "keyword
+        research", "SEO polish", "add diagrams", "checksum", "calibration frames", "prove truth".
+        **A work-unit is a candidate step whether or not it needs a gate** — flag each as
+        `gateable` (has a real must-pass condition) or `divider` (visibility-only: the user wants
+        to SEE it happened, but there's no hard check). The convert step must give EACH its own
+        visual step/sub-step; a `divider` becomes a gate-less or soft-attested step, never folded
+        into a sibling's prose. **The #1 failure is folding a named phase (a real SEO/keyword/polish
+        pass) into another step's instructions so it never gets a card — the user then thinks it was
+        skipped. List it as its own work-unit now so that can't happen.**
+      - the discrete sequential steps and decision points where the flow could branch;
+      - **repeated operations that run a procedure ONCE PER ITEM over a list — these BECOME
+        `type: loop` steps, so name the LIST and the PER-ITEM sub-steps explicitly** (e.g. "for each
+        clinic: research → keyword-research → write → SEO-polish → save → ship" — note the dividers
+        are their own sub-steps); and which checks are verifiable by a shell command vs which need
+        judgment.
+      Flag every loop candidate AND every divider work-unit loudly — the convert step must turn each
+      loop into a loop (never a flat step) and each named work-unit into its own card (never folded).
+      Save your analysis to .conductor/skill-analysis.md — include the explicit work-unit list,
+      each tagged gateable|divider.
     requires: [start-board]
     gate:
       - name: "Analysis saved"
         check: "test -f .conductor/skill-analysis.md"
+      - "The analysis lists EVERY distinct work-unit the skill names (not just the gateable ones), each tagged gateable|divider — so the convert step can give each its own card. I did not let any named phase (e.g. an SEO/keyword/polish pass) survive only as a sentence inside another work-unit"
 
   - id: convert-to-conductor
     instruction: |
       Convert the analysis into a conductor YAML. This is where the run's whole value is
-      won or lost: the gates ARE the skill made checkable, so author them to the bar in
-      CONDUCTOR.md ("What makes a good gate"). The skill is the benchmark — each gate is a
-      faithful translation of a step's GOAL, not a restatement of it. Rules:
-      - every step gets at least one gate criterion; conditions (type: condition) where the
-        flow branches; chain data with output:/requires:.
+      won or lost on TWO orthogonal axes: VISIBILITY (every named work-unit gets a card) and
+      GATE QUALITY (each gate actually fails bad work). Author to BOTH bars in CONDUCTOR.md —
+      "What makes a (visual) step" AND "What makes a good gate". The skill is the benchmark. Rules:
+      - **GRANULAR VISIBILITY IS THE DEFAULT — surface every named work-unit as its own step
+        ("What makes a (visual) step" / the "substep divider").** Walk the read-skill work-unit list
+        and give EACH entry its own visual step/sub-step — *whether or not it needs a gate*. A
+        `divider` work-unit (visibility-only: "keyword research", "SEO polish", "add diagrams",
+        "checksum", "calibration frames", "prove truth") becomes its OWN gate-less or soft-attested
+        card — the board-sync `check:` is enough; do NOT invent a hard check just to justify it
+        (that's over-gating), and NEVER fold it into a sibling step's instruction prose. The
+        motivating failure: an SEO/keyword pass folded into research-clinic/write-fields got no card
+        and the user thought it was skipped. The board must read as a COMPLETE STORY — if the user
+        named it, it is a step. (Still surface *named phases*, not mechanical micro-actions like
+        "save"/"format" — those stay inside a card; spec §2.0.)
+      - every step gets at least one gate criterion (for a pure divider, the board-sync `check:`
+        alone is a legitimate, complete gate — visibility, not gating); conditions (type: condition)
+        where the flow branches; chain data with output:/requires:.
       - **LOOPS — the board's whole visual payoff, so this is NON-NEGOTIABLE.** Any work the
         skill does ONCE PER ITEM over a list — "for each page / clinic / file…", "claim N and
         process each", "repeat for every X", any batch (read-skill already flagged these as
@@ -124,6 +151,7 @@ steps:
       - "NO self-attestation: for each hard gate I applied the litmus 'could the agent pass this by changing a word in its OWN output without changing the work?' — every gate's source of truth is an independent observation (re-run/build/probe/recompute) or a named external reference loaded into the grounding bundle, never a self-reported boolean the agent wrote about its own result"
       - "Generalization check: each gate names the independent reference + the skill's own rule it enforces (the domain-independent skeleton); no gate fell back to a soft 'looks plausible' merely because the domain was unfamiliar"
       - "Every per-item-over-a-list operation in the skill-analysis became a `type: loop` (with the per-item procedure as its sub-steps) — NOT a flattened single step. The board's per-item kanban is the whole point; I checked the analysis's repeated operations against the conductor and each is a loop"
+      - "VISUAL-STEP COVERAGE: every distinct work-unit in the read-skill list (gateable AND divider) has its OWN step/sub-step in the conductor. I walked the work-unit list against the steps and confirmed NONE was folded into another step's instruction prose — including the visibility-only dividers (SEO/keyword/polish/checksum-style phases). A divider with only a board-sync `check:` (or a soft attestation) is CORRECT and complete — I did not over-gate it, and I did not hide it. The board reads as a complete story of the work the user named"
 
   - id: confirm-gates
     type: approval

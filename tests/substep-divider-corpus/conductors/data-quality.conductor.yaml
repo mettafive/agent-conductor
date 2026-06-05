@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: data-quality
+description: >
+  data quality — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-datasets
+    instruction: |
+      Scope the datasets to process. Frontload every dataset as a pending iteration.
+    output: datasets
+    gate:
+      - check: "npx conductor-board check scope-datasets"
+      - "Every dataset captured before any work begins"
+
+  - id: data-quality-loop
+    type: loop
+    over: datasets
+    as: dataset
+    requires: [scope-datasets]
+    steps:
+      - id: profile-data
+        instruction: |
+          profile data: profile, describe dataset.
+        gate:
+          - check: "npx conductor-board check profile-data"
+          - name: "profile data is correct"
+            check: "node verify-unit.mjs profile-data --out out/profile-data.json"
+      - id: run-checks
+        instruction: |
+          run checks: run checks, quality rules.
+        gate:
+          - check: "npx conductor-board check run-checks"
+          - name: "run checks is correct"
+            check: "node verify-unit.mjs run-checks --out out/run-checks.json"
+      - id: anomaly-flag
+        instruction: |
+          anomaly flag: anomaly, outlier.
+        gate:
+          - check: "npx conductor-board check anomaly-flag"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: report-quality
+        instruction: |
+          report quality: report, scorecard.
+        gate:
+          - check: "npx conductor-board check report-quality"
+          - name: "report quality is correct"
+            check: "node verify-unit.mjs report-quality --out out/report-quality.json"

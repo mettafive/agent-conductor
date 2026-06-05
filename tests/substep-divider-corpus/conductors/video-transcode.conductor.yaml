@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: video-transcode
+description: >
+  video transcode — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-clips
+    instruction: |
+      Scope the clips to process. Frontload every clip as a pending iteration.
+    output: clips
+    gate:
+      - check: "npx conductor-board check scope-clips"
+      - "Every clip captured before any work begins"
+
+  - id: video-transcode-loop
+    type: loop
+    over: clips
+    as: clip
+    requires: [scope-clips]
+    steps:
+      - id: probe
+        instruction: |
+          probe: probe, inspect clip.
+        gate:
+          - check: "npx conductor-board check probe"
+          - name: "probe is correct"
+            check: "node verify-unit.mjs probe --out out/probe.json"
+      - id: transcode
+        instruction: |
+          transcode: transcode, encode.
+        gate:
+          - check: "npx conductor-board check transcode"
+          - name: "transcode is correct"
+            check: "node verify-unit.mjs transcode --out out/transcode.json"
+      - id: thumbnail
+        instruction: |
+          thumbnail: thumbnail, poster frame.
+        gate:
+          - check: "npx conductor-board check thumbnail"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: subtitle
+        instruction: |
+          subtitle: subtitle, caption track.
+        gate:
+          - check: "npx conductor-board check subtitle"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: store-asset
+        instruction: |
+          store asset: store, save asset.
+        gate:
+          - check: "npx conductor-board check store-asset"
+          - name: "store asset is correct"
+            check: "node verify-unit.mjs store-asset --out out/store-asset.json"

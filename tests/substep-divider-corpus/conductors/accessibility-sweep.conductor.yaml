@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: accessibility-sweep
+description: >
+  accessibility sweep — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-views
+    instruction: |
+      Scope the views to process. Frontload every view as a pending iteration.
+    output: views
+    gate:
+      - check: "npx conductor-board check scope-views"
+      - "Every view captured before any work begins"
+
+  - id: accessibility-sweep-loop
+    type: loop
+    over: views
+    as: view
+    requires: [scope-views]
+    steps:
+      - id: render-view
+        instruction: |
+          render view: render, load view.
+        gate:
+          - check: "npx conductor-board check render-view"
+          - name: "render view is correct"
+            check: "node verify-unit.mjs render-view --out out/render-view.json"
+      - id: audit-wcag
+        instruction: |
+          audit wcag: audit, wcag.
+        gate:
+          - check: "npx conductor-board check audit-wcag"
+          - name: "audit wcag is correct"
+            check: "node verify-unit.mjs audit-wcag --out out/audit-wcag.json"
+      - id: contrast-check
+        instruction: |
+          contrast check: contrast, color ratio.
+        gate:
+          - check: "npx conductor-board check contrast-check"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: aria-check
+        instruction: |
+          aria check: aria, screen reader.
+        gate:
+          - check: "npx conductor-board check aria-check"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: file-issues
+        instruction: |
+          file issues: file issues, log violations.
+        gate:
+          - check: "npx conductor-board check file-issues"
+          - name: "file issues is correct"
+            check: "node verify-unit.mjs file-issues --out out/file-issues.json"

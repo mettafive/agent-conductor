@@ -58,10 +58,13 @@ The setup conductor will:
 - **Verify your environment** (Node 18+, npx).
 - **Start the live board** — `npx conductor-board &` (auto-opens the browser,
   auto-detects a free port, and writes it to `.conductor/server.json`).
-- **Convert the user's skill** into a gated conductor workflow — authoring each gate to
-  the **"What makes a good gate"** bar (the skill is the benchmark: translate each step's
-  *goal* into a real, cross-validating check), and **red-team every hard gate** (prove it
-  fails a known-bad example) into `.conductor/gate-review.md`.
+- **Convert the user's skill** into a gated conductor workflow — first **surfacing every
+  distinct work-unit the skill names as its own visual step/sub-step** (the **"What makes a
+  (visual) step"** bar — including gate-less *substep dividers* for visibility-only phases, so the
+  board reads as a complete story and no phase is folded away), then authoring each gate to the
+  **"What makes a good gate"** bar (the skill is the benchmark: translate each step's *goal* into a
+  real, cross-validating check), and **red-team every hard gate** (prove it fails a known-bad
+  example) into `.conductor/gate-review.md`.
 - **Validate** the generated workflow (`npx conductor-board validate`).
 - **Confirm the gates with the user** — present each gate (its skill goal, what it rejects,
   its red-team proof) as an **Approve/Reject** card. Execution can't start until the human
@@ -158,6 +161,65 @@ crawled price evidence before any price gate can check against it.
 A green gate should mean "faithful, accurate, sourced," not "didn't crash." If yours only
 guarantees the latter — or only that the agent *claimed* it's fine — it's a lint wearing a gate's
 badge. Rewrite it into one that would actually stop the worst output the skill can produce.
+
+## What makes a (visual) step — surface every work-unit
+
+Gate quality (above) is half the job. The other half is **visibility**, and it's an *orthogonal*
+axis: a step earns its place on the board by being a **distinct, user-recognizable unit of work** —
+**not** by needing a gate. The default is **GRANULAR**: every phase the skill names becomes its own
+visual step/sub-step.
+
+**The failure this prevents (study it).** A daily-enrichment skill did real SEO work — DataForSEO
+keyword research + akut/hembesök polish — but the conversion *folded* that work into other steps'
+instructions (`research-clinic`, `write-fields`) and never gave it its own card. The user scanned
+the board and thought *"the SEO step — was this skipped?"* The conversion **over-collapsed**: it
+created a step only where something needed a *gate*, when it should create a step wherever there's a
+distinct unit of work the user would look for. A folded-away phase is invisible, and an invisible
+phase reads as a *skipped* phase. **The board must read as a COMPLETE STORY of the work — no folded
+phases.**
+
+> **The "substep divider."** Every distinct, user-recognizable unit of work the skill names — every
+> phase the user would scan the board for — becomes its OWN visual step/sub-step, **EVEN IF it needs
+> no hard gate.** A *substep divider* is a step that exists for **visibility/confidence, not
+> gating**: a soft attestation (`gate: ["…done and looks right"]`) or **no substantive gate at all**
+> (just the board-sync `check:` so the card opens and is narrated) is fine and expected. If the user
+> mentioned it in the skill, it must become a visible step **automatically — without anyone asking.**
+
+**This is NOT over-gating.** A divider step is *good* gate-less. Don't manufacture a hard check to
+"justify" a divider's existence — that would re-introduce the bureaucratic over-gating the gate
+section warns against. Visibility and gating are independent: surface the phase (visibility), and
+gate it *only* if there's a real must-pass condition (gate quality). A gate-less card that simply
+shows "the SEO polish happened, and here's its beat trail" is exactly right.
+
+**What makes a (visual) step — the test:** *would the user, scanning the board for confidence the
+work happened, look for THIS phase by name?* If yes, it's a step — give it a card. Concretely,
+surface a step for each of these, gate or no gate:
+
+- a **named phase** the skill calls out ("keyword research", "SEO polish", "add diagrams",
+  "checksum", "calibration frames", "prove truth") — even a one-paragraph one;
+- a phase that produces an **artifact or side-effect the user cares about** (a PR, a snapshot, an
+  alt-text pass, a rollback rehearsal);
+- a phase the user would **ask "did we do the X step?"** about afterward.
+
+**Do NOT collapse a named phase into another step's prose.** "Also handle the SEO polish as part of
+write-fields" is the anti-pattern — it's how the phase disappears. The litmus, applied to every
+step you author: *did any work-unit the skill named end up living only inside another step's
+instruction, with no card of its own?* If yes, **promote it to its own step** (divider or gated).
+
+**Still not over-granular.** This rule surfaces *named work-units*, not mechanical micro-actions.
+"Open the file", "save", "format the JSON" are not phases the user scans for — they're the inside of
+a card (see spec §2.0 *What makes a good card*). The bar is **"a phase the user would look for,"**
+which sits naturally between the two failure modes: don't fold a real phase away (the bug above),
+and don't shatter one phase into keystrokes.
+
+**It generalizes — name the phases from the skill, don't pattern-match a domain.** In an unfamiliar
+skill (bell-ringing peals, cuneiform editions, raku firings) the *same* rule applies: read the skill,
+list every distinct work-unit it names, and give each a card. "Prove truth", "assign bells",
+"calibration frames", "reduction plan" are divider steps just as much as "keyword research" is — an
+exotic domain is never an excuse to fold its phases together. (Proven across the 120-case
+[substep-divider corpus](./tests/substep-divider-corpus/): naive folding hides 150/151 divider
+phases; granular-by-default surfaces 520/520 work-units across all 120 cases, all 20 obscure
+included.)
 
 ## Heartbeats
 

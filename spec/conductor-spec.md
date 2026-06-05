@@ -74,11 +74,48 @@ single item of a batch (check link 1, check link 2 → use a loop, or one "check
 links" card) · splitting one action into micro-steps (write paragraph 1, write
 paragraph 2 → that's one "write the page" card).
 
-**The test:** *can this card's gate **genuinely fail**, and does that failure change
-what happens next?* If yes, it's a card. Aim for visibility and structure, not
-granularity — a workflow with hundreds of micro-cards helps no one. There are **no
-count limits and no time limits**: a good card is defined by the gate-can-fail
-test, not by how long it takes or how many there are.
+**Two tests, two axes — a card needs to pass *either*.** Visibility and gating are
+*orthogonal*: a phase can deserve a card because it's gateable, *or* because the user
+would look for it — or both.
+
+1. **The gate test** — *can this card's gate **genuinely fail**, and does that failure
+   change what happens next?* If yes, it's a card.
+2. **The visibility test** — *would the user, scanning the board for confidence the work
+   happened, look for THIS phase by name?* If yes, it's a card **even if it carries no
+   gate** — a so-called **substep divider**.
+
+> **Substep dividers — surface every named work-unit, gate or not.** Every distinct,
+> user-recognizable phase the skill names becomes its own step/sub-step, *even when it
+> needs no hard gate*. A divider step exists for **visibility/confidence, not gating**: a
+> soft attestation or no substantive gate at all (just the board-sync `check:`) is fine and
+> expected. The failure this prevents: a real phase (e.g. an "SEO polish" or a "checksum"
+> pass) gets **folded into another step's instruction prose** and never shows on the board,
+> so the user thinks it was skipped. **Never fold a named phase into another card's prose —
+> promote it to its own card.** (This is *not* over-gating: don't invent a hard check to
+> justify a divider; gate-less is correct for it. See CONDUCTOR.md → *What makes a (visual)
+> step*.)
+
+```yaml
+# A gateless divider step — exists purely so the board shows this phase.
+- id: seo-polish
+  instruction: |
+    Polish the akut / hembesök SEO angle: tighten meta title + description against
+    the DataForSEO keywords gathered earlier.
+  gate:
+    - check: "npx conductor-board check seo-polish"   # board-sync only — the card opens & is narrated
+# A soft-attestation divider — light self-check, still no hard gate.
+- id: add-diagrams
+  instruction: Add explanatory diagrams to the rewritten page.
+  gate:
+    - "Each major section that needed a figure now has one (visibility divider — taste, not a hard gate)"
+```
+
+**Aim for the right altitude, not raw granularity.** A workflow with hundreds of
+micro-cards helps no one — but a workflow that *hides* a phase the user named is worse,
+because it reads as skipped work. Surface every **named work-unit** (gate test *or*
+visibility test passes); keep mechanical micro-actions *inside* a card. There are **no
+count limits and no time limits**: a good card is defined by the two tests, not by how long
+it takes or how many there are.
 
 ### 2.1 A standard gated step
 

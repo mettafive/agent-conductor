@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: license-audit
+description: >
+  license audit — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-packages
+    instruction: |
+      Scope the packages to process. Frontload every package as a pending iteration.
+    output: packages
+    gate:
+      - check: "npx conductor-board check scope-packages"
+      - "Every package captured before any work begins"
+
+  - id: license-audit-loop
+    type: loop
+    over: packages
+    as: package
+    requires: [scope-packages]
+    steps:
+      - id: read-license
+        instruction: |
+          read license: read license, license file.
+        gate:
+          - check: "npx conductor-board check read-license"
+          - name: "read license is correct"
+            check: "node verify-unit.mjs read-license --out out/read-license.json"
+      - id: classify-license
+        instruction: |
+          classify license: classify, spdx.
+        gate:
+          - check: "npx conductor-board check classify-license"
+          - name: "classify license is correct"
+            check: "node verify-unit.mjs classify-license --out out/classify-license.json"
+      - id: allowlist-check
+        instruction: |
+          allowlist check: allowlist, policy check.
+        gate:
+          - check: "npx conductor-board check allowlist-check"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: report-verdict
+        instruction: |
+          report verdict: report, verdict.
+        gate:
+          - check: "npx conductor-board check report-verdict"
+          - name: "report verdict is correct"
+            check: "node verify-unit.mjs report-verdict --out out/report-verdict.json"

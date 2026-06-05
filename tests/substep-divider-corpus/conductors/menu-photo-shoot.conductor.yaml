@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: menu-photo-shoot
+description: >
+  menu photo shoot — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-dishes
+    instruction: |
+      Scope the dishes to process. Frontload every dish as a pending iteration.
+    output: dishes
+    gate:
+      - check: "npx conductor-board check scope-dishes"
+      - "Every dish captured before any work begins"
+
+  - id: menu-photo-shoot-loop
+    type: loop
+    over: dishes
+    as: dish
+    requires: [scope-dishes]
+    steps:
+      - id: plate
+        instruction: |
+          plate: plate, styling.
+        gate:
+          - check: "npx conductor-board check plate"
+          - name: "plate is correct"
+            check: "node verify-unit.mjs plate --out out/plate.json"
+      - id: shoot
+        instruction: |
+          shoot: shoot, capture photo.
+        gate:
+          - check: "npx conductor-board check shoot"
+          - name: "shoot is correct"
+            check: "node verify-unit.mjs shoot --out out/shoot.json"
+      - id: retouch
+        instruction: |
+          retouch: retouch, color grade.
+        gate:
+          - check: "npx conductor-board check retouch"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: upload-photo
+        instruction: |
+          upload photo: upload, save photo.
+        gate:
+          - check: "npx conductor-board check upload-photo"
+          - name: "upload photo is correct"
+            check: "node verify-unit.mjs upload-photo --out out/upload-photo.json"

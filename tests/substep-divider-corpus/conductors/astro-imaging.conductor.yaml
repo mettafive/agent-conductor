@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: astro-imaging
+description: >
+  astro imaging — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-targets
+    instruction: |
+      Scope the targets to process. Frontload every target as a pending iteration.
+    output: targets
+    gate:
+      - check: "npx conductor-board check scope-targets"
+      - "Every target captured before any work begins"
+
+  - id: astro-imaging-loop
+    type: loop
+    over: targets
+    as: target
+    requires: [scope-targets]
+    steps:
+      - id: plan-session
+        instruction: |
+          plan session: plan session, target altitude.
+        gate:
+          - check: "npx conductor-board check plan-session"
+          - name: "plan session is correct"
+            check: "node verify-unit.mjs plan-session --out out/plan-session.json"
+      - id: capture-subs
+        instruction: |
+          capture subs: capture, sub frames.
+        gate:
+          - check: "npx conductor-board check capture-subs"
+          - name: "capture subs is correct"
+            check: "node verify-unit.mjs capture-subs --out out/capture-subs.json"
+      - id: calibration-frames
+        instruction: |
+          calibration frames: calibration, darks flats.
+        gate:
+          - check: "npx conductor-board check calibration-frames"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: guiding
+        instruction: |
+          guiding: guiding, autoguide.
+        gate:
+          - check: "npx conductor-board check guiding"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: stack-process
+        instruction: |
+          stack process: stack, process image.
+        gate:
+          - check: "npx conductor-board check stack-process"
+          - name: "stack process is correct"
+            check: "node verify-unit.mjs stack-process --out out/stack-process.json"

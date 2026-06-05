@@ -1,0 +1,2716 @@
+{
+  "coverage": "naive",
+  "summary": {
+    "total": 120,
+    "validC": 120,
+    "declaredTot": 520,
+    "surfacedTot": 370,
+    "dividerTot": 151,
+    "hiddenDividerTot": 150,
+    "foldedTot": 150,
+    "missingTot": 0,
+    "complete": 1,
+    "obscureComplete": 1,
+    "obscureTotal": 20
+  },
+  "results": [
+    {
+      "id": "daily-enrichment",
+      "common": true,
+      "valid": true,
+      "declared": 6,
+      "dividers": 2,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "keyword-research",
+          "into": "research-clinic",
+          "divider": true
+        },
+        {
+          "unit": "seo-polish",
+          "into": "write-fields",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "keyword-research",
+        "seo-polish"
+      ],
+      "coverage": 0.6666666666666666,
+      "complete": false
+    },
+    {
+      "id": "blog-pipeline",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "seo-titles",
+          "into": "draft",
+          "divider": true
+        },
+        {
+          "unit": "internal-links",
+          "into": "draft",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "seo-titles",
+        "internal-links"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "newsletter",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "subject-line",
+          "into": "write-issue",
+          "divider": true
+        },
+        {
+          "unit": "ab-variants",
+          "into": "write-issue",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "subject-line",
+        "ab-variants"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "doc-rewrite",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "add-examples",
+          "into": "rewrite",
+          "divider": true
+        },
+        {
+          "unit": "add-diagrams",
+          "into": "rewrite",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "add-examples",
+        "add-diagrams"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "product-copy",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "tone-pass",
+          "into": "write-copy",
+          "divider": true
+        },
+        {
+          "unit": "localize",
+          "into": "write-copy",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "tone-pass",
+        "localize"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "release-notes",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 1,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "highlight-breaking",
+          "into": "write-notes",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "highlight-breaking"
+      ],
+      "coverage": 0.8,
+      "complete": false
+    },
+    {
+      "id": "etl-load",
+      "common": true,
+      "valid": true,
+      "declared": 6,
+      "dividers": 2,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "type-coerce",
+          "into": "transform",
+          "divider": true
+        },
+        {
+          "unit": "dedupe",
+          "into": "transform",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "type-coerce",
+        "dedupe"
+      ],
+      "coverage": 0.6666666666666666,
+      "complete": false
+    },
+    {
+      "id": "csv-clean",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "normalize-dates",
+          "into": "clean",
+          "divider": true
+        },
+        {
+          "unit": "trim-whitespace",
+          "into": "clean",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "normalize-dates",
+        "trim-whitespace"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "db-migrate",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "verify-indexes",
+          "into": "apply-migration",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "verify-indexes"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "api-sync",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "rate-limit",
+          "into": "push-remote",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "rate-limit"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "geo-encode",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "confidence-flag",
+          "into": "geocode",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "confidence-flag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "pr-review",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "style-check",
+          "into": "review",
+          "divider": true
+        },
+        {
+          "unit": "security-scan",
+          "into": "review",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "style-check",
+        "security-scan"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "dep-bump",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "cve-scan",
+          "into": "upgrade",
+          "divider": true
+        },
+        {
+          "unit": "changelog-read",
+          "into": "upgrade",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "cve-scan",
+        "changelog-read"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "test-gen",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "edge-cases",
+          "into": "write-tests",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "edge-cases"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "refactor-pass",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "rename-symbols",
+          "into": "refactor",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "rename-symbols"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "ci-pipeline",
+      "common": true,
+      "valid": true,
+      "declared": 6,
+      "dividers": 1,
+      "surfaced": 5,
+      "folded": [
+        {
+          "unit": "coverage-report",
+          "into": "test",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "coverage-report"
+      ],
+      "coverage": 0.8333333333333334,
+      "complete": false
+    },
+    {
+      "id": "incident-response",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "write-postmortem",
+          "into": "root-cause",
+          "divider": true
+        },
+        {
+          "unit": "action-items",
+          "into": "root-cause",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "write-postmortem",
+        "action-items"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "market-research",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "pricing-table",
+          "into": "analyze",
+          "divider": true
+        },
+        {
+          "unit": "swot",
+          "into": "analyze",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "pricing-table",
+        "swot"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "literature-review",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "cite-extract",
+          "into": "summarize",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "cite-extract"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "survey-readout",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "segment",
+          "into": "compute-stats",
+          "divider": true
+        },
+        {
+          "unit": "theme-freetext",
+          "into": "compute-stats",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "segment",
+        "theme-freetext"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "ab-analysis",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "guardrail-metrics",
+          "into": "significance",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "guardrail-metrics"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "log-forensics",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "error-cluster",
+          "into": "correlate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "error-cluster"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "deploy-flow",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 1,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "smoke-flows",
+          "into": "deploy",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "smoke-flows"
+      ],
+      "coverage": 0.8,
+      "complete": false
+    },
+    {
+      "id": "backup-verify",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "checksum",
+          "into": "restore-test",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "checksum"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "cert-renew",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "reload-server",
+          "into": "renew",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "reload-server"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "scaling-audit",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "cost-estimate",
+          "into": "analyze-load",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "cost-estimate"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "support-triage",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 1,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "sentiment",
+          "into": "classify",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "sentiment"
+      ],
+      "coverage": 0.8,
+      "complete": false
+    },
+    {
+      "id": "kb-refresh",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "screenshot-refresh",
+          "into": "update",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "screenshot-refresh"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "onboarding-emails",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "personalize",
+          "into": "write-email",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "personalize"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "image-pipeline",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "alt-text",
+          "into": "generate",
+          "divider": true
+        },
+        {
+          "unit": "compress",
+          "into": "generate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "alt-text",
+        "compress"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "video-transcode",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "thumbnail",
+          "into": "transcode",
+          "divider": true
+        },
+        {
+          "unit": "subtitle",
+          "into": "transcode",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "thumbnail",
+        "subtitle"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "podcast-publish",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "chapter-marks",
+          "into": "show-notes",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "chapter-marks"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "price-monitor",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "change-flag",
+          "into": "record-price",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "change-flag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "inventory-sync",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "low-stock-alert",
+          "into": "update-listing",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "low-stock-alert"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "review-moderation",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "spam-check",
+          "into": "moderate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "spam-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "license-audit",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "allowlist-check",
+          "into": "classify-license",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "allowlist-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "gdpr-export",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "format-package",
+          "into": "redact",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "format-package"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "accessibility-sweep",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "contrast-check",
+          "into": "audit-wcag",
+          "divider": true
+        },
+        {
+          "unit": "aria-check",
+          "into": "audit-wcag",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "contrast-check",
+        "aria-check"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "invoice-process",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "tax-lines",
+          "into": "reconcile-total",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "tax-lines"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "expense-report",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "policy-flag",
+          "into": "categorize-spend",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "policy-flag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "payroll-run",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "benefits",
+          "into": "apply-deductions",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "benefits"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "seo-audit",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "schema-check",
+          "into": "audit-meta",
+          "divider": true
+        },
+        {
+          "unit": "speed-check",
+          "into": "audit-meta",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "schema-check",
+        "speed-check"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "ad-campaign",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "budget-split",
+          "into": "write-creative",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "budget-split"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "social-schedule",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "hashtag",
+          "into": "attach-media",
+          "divider": true
+        },
+        {
+          "unit": "best-time",
+          "into": "attach-media",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "hashtag",
+        "best-time"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "lead-enrich",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "intent-signals",
+          "into": "score-lead",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "intent-signals"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "resume-screen",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "bias-check",
+          "into": "match-criteria",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "bias-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "interview-kit",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "scoring-rubric",
+          "into": "write-questions",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "scoring-rubric"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "design-handoff",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "token-map",
+          "into": "spec-redlines",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "token-map"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "qa-regression",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "screenshot-diff",
+          "into": "run-flow",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "screenshot-diff"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "translation-batch",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "glossary-enforce",
+          "into": "translate",
+          "divider": true
+        },
+        {
+          "unit": "number-preserve",
+          "into": "translate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "glossary-enforce",
+        "number-preserve"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "data-labeling",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "confidence-mark",
+          "into": "label",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "confidence-mark"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "email-campaign-qa",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "spam-score",
+          "into": "link-check",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "spam-score"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "menu-engineering",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "margin-flag",
+          "into": "price-dish",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "margin-flag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "course-build",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "quiz",
+          "into": "write-content",
+          "divider": true
+        },
+        {
+          "unit": "transcript",
+          "into": "write-content",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "quiz",
+        "transcript"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "grant-application",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "budget-justify",
+          "into": "draft-proposal",
+          "divider": true
+        },
+        {
+          "unit": "impact-metrics",
+          "into": "draft-proposal",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "budget-justify",
+        "impact-metrics"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "contract-review",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "redline-suggest",
+          "into": "flag-risks",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "redline-suggest"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "menu-translation",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "allergen-note",
+          "into": "describe",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "allergen-note"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "ticket-dedup",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "link-context",
+          "into": "merge",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "link-context"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "feature-flag-cleanup",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "update-config",
+          "into": "remove-flag",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "update-config"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "sitemap-gen",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "priority-weights",
+          "into": "build-sitemap",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "priority-weights"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "schema-validate",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "cross-ref",
+          "into": "validate-schema",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "cross-ref"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "pentest-recon",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "cve-match",
+          "into": "service-fingerprint",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "cve-match"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "model-eval",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "per-category",
+          "into": "run-benchmark",
+          "divider": true
+        },
+        {
+          "unit": "regression-flag",
+          "into": "run-benchmark",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "per-category",
+        "regression-flag"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "rag-index",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "metadata-tag",
+          "into": "embed",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "metadata-tag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "feature-store",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "backfill",
+          "into": "validate-feature",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "backfill"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "alert-tuning",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "test-replay",
+          "into": "tune-threshold",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "test-replay"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "data-quality",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "anomaly-flag",
+          "into": "run-checks",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "anomaly-flag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "api-doc-gen",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "example-requests",
+          "into": "write-doc",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "example-requests"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "churn-outreach",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "offer-pick",
+          "into": "draft-outreach",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "offer-pick"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "warehouse-pick",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "batch-merge",
+          "into": "plan-route",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "batch-merge"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "fleet-maintenance",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "schedule-service",
+          "into": "assess-wear",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "schedule-service"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "menu-photo-shoot",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "retouch",
+          "into": "shoot",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "retouch"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "tax-prep",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 1,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "credit-check",
+          "into": "compute-deductions",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "credit-check"
+      ],
+      "coverage": 0.8,
+      "complete": false
+    },
+    {
+      "id": "event-planning",
+      "common": true,
+      "valid": true,
+      "declared": 6,
+      "dividers": 2,
+      "surfaced": 4,
+      "folded": [
+        {
+          "unit": "catering",
+          "into": "schedule-program",
+          "divider": true
+        },
+        {
+          "unit": "av-setup",
+          "into": "schedule-program",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "catering",
+        "av-setup"
+      ],
+      "coverage": 0.6666666666666666,
+      "complete": false
+    },
+    {
+      "id": "recipe-scaling",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "unit-convert",
+          "into": "scale",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "unit-convert"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "playlist-curate",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "flow-order",
+          "into": "expand",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "flow-order"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "garden-plan",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "spacing-layout",
+          "into": "select-plants",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "spacing-layout"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "meal-prep",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "macro-balance",
+          "into": "plan-meals",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "macro-balance"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "wardrobe-capsule",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "color-palette",
+          "into": "select-capsule",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "color-palette"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "study-plan",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "spaced-repetition",
+          "into": "build-schedule",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "spaced-repetition"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "trip-itinerary",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "book-logistics",
+          "into": "build-day-plan",
+          "divider": true
+        },
+        {
+          "unit": "budget-day",
+          "into": "build-day-plan",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "book-logistics",
+        "budget-day"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "home-inspection",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "photo-evidence",
+          "into": "document-issues",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "photo-evidence"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "warranty-claim",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "cost-estimate",
+          "into": "assess-damage",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "cost-estimate"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "loan-underwrite",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "dti-compute",
+          "into": "assess-risk",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "dti-compute"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "fraud-review",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "velocity-check",
+          "into": "investigate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "velocity-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "supply-forecast",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "seasonality",
+          "into": "forecast",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "seasonality"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "clinical-coding",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "modifier-check",
+          "into": "assign-codes",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "modifier-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "lab-result-review",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "trend-compare",
+          "into": "flag-abnormal",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "trend-compare"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "syllabus-build",
+      "common": true,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "assessment-plan",
+          "into": "sequence-units",
+          "divider": true
+        },
+        {
+          "unit": "reading-list",
+          "into": "sequence-units",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "assessment-plan",
+        "reading-list"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "moderation-queue",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "context-check",
+          "into": "classify-policy",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "context-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "ab-image-test",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "track-ctr",
+          "into": "launch-test",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "track-ctr"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "compliance-training",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "track-completion",
+          "into": "add-quiz",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "track-completion"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "vendor-onboard",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "risk-tier",
+          "into": "verify-vendor",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "risk-tier"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "menu-nutrition",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "allergen-label",
+          "into": "compute-nutrition",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "allergen-label"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "ad-compliance",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "disclosure-check",
+          "into": "check-claims",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "disclosure-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "patch-rollout",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "monitor-errors",
+          "into": "deploy-patch",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "monitor-errors"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "transcription-qa",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "speaker-label",
+          "into": "human-correct",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "speaker-label"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "social-listening",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "influencer-flag",
+          "into": "analyze-sentiment",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "influencer-flag"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "form-builder",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "conditional-logic",
+          "into": "add-validation",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "conditional-logic"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "store-locator-import",
+      "common": true,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "hours-parse",
+          "into": "geocode-store",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "hours-parse"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "bell-ringing-peal",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "prove-truth",
+          "into": "compose-peal",
+          "divider": true
+        },
+        {
+          "unit": "assign-bells",
+          "into": "compose-peal",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "prove-truth",
+        "assign-bells"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "falconry-weight",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 4,
+      "folded": [],
+      "missing": [],
+      "hiddenDividers": [],
+      "coverage": 1,
+      "complete": true
+    },
+    {
+      "id": "lutherie-setup",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "intonation",
+          "into": "adjust-truss",
+          "divider": true
+        },
+        {
+          "unit": "nut-slots",
+          "into": "adjust-truss",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "intonation",
+        "nut-slots"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "cuneiform-edit",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "mark-breaks",
+          "into": "transliterate",
+          "divider": true
+        },
+        {
+          "unit": "sign-list-ref",
+          "into": "transliterate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "mark-breaks",
+        "sign-list-ref"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "perfume-accord",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "ifra-check",
+          "into": "balance-pyramid",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "ifra-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "tide-mill-schedule",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "sluice-set",
+          "into": "plan-grind",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "sluice-set"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "fresco-restoration",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "retouch-tratteggio",
+          "into": "consolidate",
+          "divider": true
+        },
+        {
+          "unit": "uv-document",
+          "into": "consolidate",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "retouch-tratteggio",
+        "uv-document"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "orienteering-course",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "legality-check",
+          "into": "set-difficulty",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "legality-check"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "raku-firing",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "reduction-plan",
+          "into": "glaze",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "reduction-plan"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "scrimshaw-engrave",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "ink-rub",
+          "into": "engrave",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "ink-rub"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "dressage-test",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "collective-marks",
+          "into": "score-movement",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "collective-marks"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "sourdough-cycle",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "fold-schedule",
+          "into": "autolyse-mix",
+          "divider": true
+        },
+        {
+          "unit": "retard",
+          "into": "autolyse-mix",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "fold-schedule",
+        "retard"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "lighthouse-log",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "fog-signal-test",
+          "into": "clean-optic",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "fog-signal-test"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "ikebana-arrange",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "kenzan-fix",
+          "into": "set-structure",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "kenzan-fix"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "glassblowing-vessel",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "color-apply",
+          "into": "shape-form",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "color-apply"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "campanology-tower",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "clapper-set",
+          "into": "tune-bell",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "clapper-set"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "marquetry-panel",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "sand-shade",
+          "into": "assemble-pattern",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "sand-shade"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    },
+    {
+      "id": "kombucha-batch",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "ph-monitor",
+          "into": "first-ferment",
+          "divider": true
+        },
+        {
+          "unit": "flavor-second",
+          "into": "first-ferment",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "ph-monitor",
+        "flavor-second"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "astro-imaging",
+      "common": false,
+      "valid": true,
+      "declared": 5,
+      "dividers": 2,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "calibration-frames",
+          "into": "capture-subs",
+          "divider": true
+        },
+        {
+          "unit": "guiding",
+          "into": "capture-subs",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "calibration-frames",
+        "guiding"
+      ],
+      "coverage": 0.6,
+      "complete": false
+    },
+    {
+      "id": "knot-tying-guide",
+      "common": false,
+      "valid": true,
+      "declared": 4,
+      "dividers": 1,
+      "surfaced": 3,
+      "folded": [
+        {
+          "unit": "strength-note",
+          "into": "write-steps",
+          "divider": true
+        }
+      ],
+      "missing": [],
+      "hiddenDividers": [
+        "strength-note"
+      ],
+      "coverage": 0.75,
+      "complete": false
+    }
+  ]
+}

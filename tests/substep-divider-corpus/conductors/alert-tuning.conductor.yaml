@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: alert-tuning
+description: >
+  alert tuning — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-alerts
+    instruction: |
+      Scope the alerts to process. Frontload every alert as a pending iteration.
+    output: alerts
+    gate:
+      - check: "npx conductor-board check scope-alerts"
+      - "Every alert captured before any work begins"
+
+  - id: alert-tuning-loop
+    type: loop
+    over: alerts
+    as: alert
+    requires: [scope-alerts]
+    steps:
+      - id: analyze-history
+        instruction: |
+          analyze history: analyze history, alert noise.
+        gate:
+          - check: "npx conductor-board check analyze-history"
+          - name: "analyze history is correct"
+            check: "node verify-unit.mjs analyze-history --out out/analyze-history.json"
+      - id: tune-threshold
+        instruction: |
+          tune threshold: tune threshold, adjust.
+        gate:
+          - check: "npx conductor-board check tune-threshold"
+          - name: "tune threshold is correct"
+            check: "node verify-unit.mjs tune-threshold --out out/tune-threshold.json"
+      - id: test-replay
+        instruction: |
+          test replay: replay, backtest alert.
+        gate:
+          - check: "npx conductor-board check test-replay"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: deploy-alert
+        instruction: |
+          deploy alert: deploy, apply rule.
+        gate:
+          - check: "npx conductor-board check deploy-alert"
+          - name: "deploy alert is correct"
+            check: "node verify-unit.mjs deploy-alert --out out/deploy-alert.json"

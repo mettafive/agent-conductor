@@ -1,0 +1,36 @@
+conductor: 2.0.0
+name: meal-prep
+description: >
+  meal prep — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: plan-meals
+    instruction: |
+      plan meals: plan meals, weekly menu.
+    gate:
+      - check: "npx conductor-board check plan-meals"
+      - name: "plan meals is correct"
+        check: "node verify-unit.mjs plan-meals --out out/plan-meals.json"
+  - id: build-shopping
+    instruction: |
+      build shopping: build shopping, grocery list.
+    requires: [plan-meals]
+    gate:
+      - check: "npx conductor-board check build-shopping"
+      - name: "build shopping is correct"
+        check: "node verify-unit.mjs build-shopping --out out/build-shopping.json"
+  - id: macro-balance
+    instruction: |
+      macro balance: macros, nutrition balance.
+    requires: [build-shopping]
+    gate:
+      - check: "npx conductor-board check macro-balance"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: prep-batch
+    instruction: |
+      prep batch: prep batch, cook ahead.
+    requires: [macro-balance]
+    gate:
+      - check: "npx conductor-board check prep-batch"
+      - name: "prep batch is correct"
+        check: "node verify-unit.mjs prep-batch --out out/prep-batch.json"

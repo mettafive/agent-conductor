@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: clinical-coding
+description: >
+  clinical coding — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-encounters
+    instruction: |
+      Scope the encounters to process. Frontload every encounter as a pending iteration.
+    output: encounters
+    gate:
+      - check: "npx conductor-board check scope-encounters"
+      - "Every encounter captured before any work begins"
+
+  - id: clinical-coding-loop
+    type: loop
+    over: encounters
+    as: encounter
+    requires: [scope-encounters]
+    steps:
+      - id: read-chart
+        instruction: |
+          read chart: read chart, clinical note.
+        gate:
+          - check: "npx conductor-board check read-chart"
+          - name: "read chart is correct"
+            check: "node verify-unit.mjs read-chart --out out/read-chart.json"
+      - id: assign-codes
+        instruction: |
+          assign codes: assign codes, icd cpt.
+        gate:
+          - check: "npx conductor-board check assign-codes"
+          - name: "assign codes is correct"
+            check: "node verify-unit.mjs assign-codes --out out/assign-codes.json"
+      - id: modifier-check
+        instruction: |
+          modifier check: modifier, code modifier.
+        gate:
+          - check: "npx conductor-board check modifier-check"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: submit-claim
+        instruction: |
+          submit claim: submit claim, billing.
+        gate:
+          - check: "npx conductor-board check submit-claim"
+          - name: "submit claim is correct"
+            check: "node verify-unit.mjs submit-claim --out out/submit-claim.json"

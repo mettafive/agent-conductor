@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: contract-review
+description: >
+  contract review — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-contracts
+    instruction: |
+      Scope the contracts to process. Frontload every contract as a pending iteration.
+    output: contracts
+    gate:
+      - check: "npx conductor-board check scope-contracts"
+      - "Every contract captured before any work begins"
+
+  - id: contract-review-loop
+    type: loop
+    over: contracts
+    as: contract
+    requires: [scope-contracts]
+    steps:
+      - id: extract-clauses
+        instruction: |
+          extract clauses: extract clauses, parse terms.
+        gate:
+          - check: "npx conductor-board check extract-clauses"
+          - name: "extract clauses is correct"
+            check: "node verify-unit.mjs extract-clauses --out out/extract-clauses.json"
+      - id: flag-risks
+        instruction: |
+          flag risks: flag risk, risky clause.
+        gate:
+          - check: "npx conductor-board check flag-risks"
+          - name: "flag risks is correct"
+            check: "node verify-unit.mjs flag-risks --out out/flag-risks.json"
+      - id: redline-suggest
+        instruction: |
+          redline suggest: redline, suggested edit.
+        gate:
+          - check: "npx conductor-board check redline-suggest"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: summarize-contract
+        instruction: |
+          summarize contract: summarize, brief.
+        gate:
+          - check: "npx conductor-board check summarize-contract"
+          - name: "summarize contract is correct"
+            check: "node verify-unit.mjs summarize-contract --out out/summarize-contract.json"

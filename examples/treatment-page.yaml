@@ -4,7 +4,10 @@ description: >
   A branching SEO page builder. Researches a veterinary treatment, then branches
   on whether pet insurance is relevant before writing and SEO-checking the page.
 
-# Showcases: type: condition, if_true / if_false, and `then` rejoin points.
+# Showcases: type: condition, if_true / if_false, `then` rejoin points, and a
+# `keyword-research` SUBSTEP DIVIDER — a named phase that gets its own card for
+# VISIBILITY even though it has no hard gate (spec §2.0). Folding it into `research`
+# or `seo-check` would hide it, and the user would think the keyword step was skipped.
 inputs:
   - treatment
   - animal
@@ -18,6 +21,20 @@ steps:
       - "Covers what, when, cost, and owner concerns"
       - "At least 4 authoritative veterinary sources"
     output: research
+
+  - id: keyword-research
+    instruction: |
+      Pull the search demand for '{treatment} {animal}' from DataForSEO: head term,
+      long-tail variants, and the questions people actually ask. This shapes the
+      title, headings, and FAQ downstream.
+    requires: [research]
+    # SUBSTEP DIVIDER: visibility-only. No hard gate — the board-sync check is enough
+    # so the card opens and the keyword work is VISIBLE on the board. (Do NOT invent a
+    # hard check just to justify the card — gate-less is correct for a divider.)
+    gate:
+      - check: "npx conductor-board check keyword-research"
+      - "Captured the head term + long-tail variants + the real questions (soft attest — a visibility divider, not a hard gate)"
+    output: keywords
 
   - id: insurance-relevant
     instruction: |

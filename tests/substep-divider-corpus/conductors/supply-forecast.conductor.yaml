@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: supply-forecast
+description: >
+  supply forecast — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-products
+    instruction: |
+      Scope the products to process. Frontload every product as a pending iteration.
+    output: products
+    gate:
+      - check: "npx conductor-board check scope-products"
+      - "Every product captured before any work begins"
+
+  - id: supply-forecast-loop
+    type: loop
+    over: products
+    as: product
+    requires: [scope-products]
+    steps:
+      - id: pull-demand
+        instruction: |
+          pull demand: pull demand, sales history.
+        gate:
+          - check: "npx conductor-board check pull-demand"
+          - name: "pull demand is correct"
+            check: "node verify-unit.mjs pull-demand --out out/pull-demand.json"
+      - id: forecast
+        instruction: |
+          forecast: forecast, predict demand.
+        gate:
+          - check: "npx conductor-board check forecast"
+          - name: "forecast is correct"
+            check: "node verify-unit.mjs forecast --out out/forecast.json"
+      - id: seasonality
+        instruction: |
+          seasonality: seasonality, seasonal adjust.
+        gate:
+          - check: "npx conductor-board check seasonality"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: recommend-order
+        instruction: |
+          recommend order: recommend order, reorder qty.
+        gate:
+          - check: "npx conductor-board check recommend-order"
+          - name: "recommend order is correct"
+            check: "node verify-unit.mjs recommend-order --out out/recommend-order.json"

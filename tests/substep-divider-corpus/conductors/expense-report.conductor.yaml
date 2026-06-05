@@ -1,0 +1,36 @@
+conductor: 2.0.0
+name: expense-report
+description: >
+  expense report — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: collect-receipts
+    instruction: |
+      collect receipts: collect receipts, gather.
+    gate:
+      - check: "npx conductor-board check collect-receipts"
+      - name: "collect receipts is correct"
+        check: "node verify-unit.mjs collect-receipts --out out/collect-receipts.json"
+  - id: categorize-spend
+    instruction: |
+      categorize spend: categorize, expense category.
+    requires: [collect-receipts]
+    gate:
+      - check: "npx conductor-board check categorize-spend"
+      - name: "categorize spend is correct"
+        check: "node verify-unit.mjs categorize-spend --out out/categorize-spend.json"
+  - id: policy-flag
+    instruction: |
+      policy flag: policy flag, over limit.
+    requires: [categorize-spend]
+    gate:
+      - check: "npx conductor-board check policy-flag"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: submit
+    instruction: |
+      submit: submit, file report.
+    requires: [policy-flag]
+    gate:
+      - check: "npx conductor-board check submit"
+      - name: "submit is correct"
+        check: "node verify-unit.mjs submit --out out/submit.json"

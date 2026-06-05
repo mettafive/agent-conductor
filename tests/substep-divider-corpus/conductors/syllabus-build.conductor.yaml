@@ -1,0 +1,43 @@
+conductor: 2.0.0
+name: syllabus-build
+description: >
+  syllabus build — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: define-outcomes
+    instruction: |
+      define outcomes: learning outcomes, objectives.
+    gate:
+      - check: "npx conductor-board check define-outcomes"
+      - name: "define outcomes is correct"
+        check: "node verify-unit.mjs define-outcomes --out out/define-outcomes.json"
+  - id: sequence-units
+    instruction: |
+      sequence units: sequence units, weekly plan.
+    requires: [define-outcomes]
+    gate:
+      - check: "npx conductor-board check sequence-units"
+      - name: "sequence units is correct"
+        check: "node verify-unit.mjs sequence-units --out out/sequence-units.json"
+  - id: assessment-plan
+    instruction: |
+      assessment plan: assessment, grading.
+    requires: [sequence-units]
+    gate:
+      - check: "npx conductor-board check assessment-plan"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: reading-list
+    instruction: |
+      reading list: reading list, resources.
+    requires: [assessment-plan]
+    gate:
+      - check: "npx conductor-board check reading-list"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: publish-syllabus
+    instruction: |
+      publish syllabus: publish, share syllabus.
+    requires: [reading-list]
+    gate:
+      - check: "npx conductor-board check publish-syllabus"
+      - name: "publish syllabus is correct"
+        check: "node verify-unit.mjs publish-syllabus --out out/publish-syllabus.json"

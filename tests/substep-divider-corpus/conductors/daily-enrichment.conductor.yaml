@@ -1,0 +1,60 @@
+conductor: 2.0.0
+name: daily-enrichment
+description: >
+  daily enrichment — converted from a skill that names 6 distinct work-units.
+
+steps:
+  - id: scope-clinics
+    instruction: |
+      Scope the clinics to process. Frontload every clinic as a pending iteration.
+    output: clinics
+    gate:
+      - check: "npx conductor-board check scope-clinics"
+      - "Every clinic captured before any work begins"
+
+  - id: daily-enrichment-loop
+    type: loop
+    over: clinics
+    as: clinic
+    requires: [scope-clinics]
+    steps:
+      - id: research-clinic
+        instruction: |
+          research clinic: research, crawl, gather data.
+        gate:
+          - check: "npx conductor-board check research-clinic"
+          - name: "research clinic is correct"
+            check: "node verify-unit.mjs research-clinic --out out/research-clinic.json"
+      - id: keyword-research
+        instruction: |
+          keyword research: dataforseo, keyword research, search volume.
+        gate:
+          - check: "npx conductor-board check keyword-research"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: write-fields
+        instruction: |
+          write fields: write, description, story.
+        gate:
+          - check: "npx conductor-board check write-fields"
+          - name: "write fields is correct"
+            check: "node verify-unit.mjs write-fields --out out/write-fields.json"
+      - id: seo-polish
+        instruction: |
+          seo polish: seo polish, akut, hembesök, meta.
+        gate:
+          - check: "npx conductor-board check seo-polish"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: save-clinic
+        instruction: |
+          save clinic: save, patch, supabase, update db.
+        gate:
+          - check: "npx conductor-board check save-clinic"
+          - name: "save clinic is correct"
+            check: "node verify-unit.mjs save-clinic --out out/save-clinic.json"
+      - id: open-pr
+        instruction: |
+          open pr: pull request, open pr, ship.
+        gate:
+          - check: "npx conductor-board check open-pr"
+          - name: "open pr is correct"
+            check: "node verify-unit.mjs open-pr --out out/open-pr.json"

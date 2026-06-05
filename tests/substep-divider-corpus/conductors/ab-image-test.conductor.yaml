@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: ab-image-test
+description: >
+  ab image test — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-creatives
+    instruction: |
+      Scope the creatives to process. Frontload every creative as a pending iteration.
+    output: creatives
+    gate:
+      - check: "npx conductor-board check scope-creatives"
+      - "Every creative captured before any work begins"
+
+  - id: ab-image-test-loop
+    type: loop
+    over: creatives
+    as: creative
+    requires: [scope-creatives]
+    steps:
+      - id: prepare-variant
+        instruction: |
+          prepare variant: prepare variant, creative version.
+        gate:
+          - check: "npx conductor-board check prepare-variant"
+          - name: "prepare variant is correct"
+            check: "node verify-unit.mjs prepare-variant --out out/prepare-variant.json"
+      - id: launch-test
+        instruction: |
+          launch test: launch test, serve.
+        gate:
+          - check: "npx conductor-board check launch-test"
+          - name: "launch test is correct"
+            check: "node verify-unit.mjs launch-test --out out/launch-test.json"
+      - id: track-ctr
+        instruction: |
+          track ctr: ctr, click rate.
+        gate:
+          - check: "npx conductor-board check track-ctr"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: pick-winner
+        instruction: |
+          pick winner: pick winner, declare.
+        gate:
+          - check: "npx conductor-board check pick-winner"
+          - name: "pick winner is correct"
+            check: "node verify-unit.mjs pick-winner --out out/pick-winner.json"

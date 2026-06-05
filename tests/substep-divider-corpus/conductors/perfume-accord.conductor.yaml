@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: perfume-accord
+description: >
+  perfume accord — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-accords
+    instruction: |
+      Scope the accords to process. Frontload every accord as a pending iteration.
+    output: accords
+    gate:
+      - check: "npx conductor-board check scope-accords"
+      - "Every accord captured before any work begins"
+
+  - id: perfume-accord-loop
+    type: loop
+    over: accords
+    as: accord
+    requires: [scope-accords]
+    steps:
+      - id: select-notes
+        instruction: |
+          select notes: select notes, ingredients.
+        gate:
+          - check: "npx conductor-board check select-notes"
+          - name: "select notes is correct"
+            check: "node verify-unit.mjs select-notes --out out/select-notes.json"
+      - id: balance-pyramid
+        instruction: |
+          balance pyramid: balance, top heart base.
+        gate:
+          - check: "npx conductor-board check balance-pyramid"
+          - name: "balance pyramid is correct"
+            check: "node verify-unit.mjs balance-pyramid --out out/balance-pyramid.json"
+      - id: ifra-check
+        instruction: |
+          ifra check: ifra, regulatory limit.
+        gate:
+          - check: "npx conductor-board check ifra-check"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: record-formula
+        instruction: |
+          record formula: record formula, percentages.
+        gate:
+          - check: "npx conductor-board check record-formula"
+          - name: "record formula is correct"
+            check: "node verify-unit.mjs record-formula --out out/record-formula.json"

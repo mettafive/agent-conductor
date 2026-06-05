@@ -1,0 +1,60 @@
+conductor: 2.0.0
+name: etl-load
+description: >
+  etl load — converted from a skill that names 6 distinct work-units.
+
+steps:
+  - id: scope-tables
+    instruction: |
+      Scope the tables to process. Frontload every table as a pending iteration.
+    output: tables
+    gate:
+      - check: "npx conductor-board check scope-tables"
+      - "Every table captured before any work begins"
+
+  - id: etl-load-loop
+    type: loop
+    over: tables
+    as: table
+    requires: [scope-tables]
+    steps:
+      - id: extract
+        instruction: |
+          extract: extract, pull rows.
+        gate:
+          - check: "npx conductor-board check extract"
+          - name: "extract is correct"
+            check: "node verify-unit.mjs extract --out out/extract.json"
+      - id: transform
+        instruction: |
+          transform: transform, map columns.
+        gate:
+          - check: "npx conductor-board check transform"
+          - name: "transform is correct"
+            check: "node verify-unit.mjs transform --out out/transform.json"
+      - id: type-coerce
+        instruction: |
+          type coerce: type coerce, cast types.
+        gate:
+          - check: "npx conductor-board check type-coerce"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: dedupe
+        instruction: |
+          dedupe: dedupe, deduplicate.
+        gate:
+          - check: "npx conductor-board check dedupe"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: load
+        instruction: |
+          load: load, insert into warehouse.
+        gate:
+          - check: "npx conductor-board check load"
+          - name: "load is correct"
+            check: "node verify-unit.mjs load --out out/load.json"
+      - id: reconcile
+        instruction: |
+          reconcile: reconcile, row count check.
+        gate:
+          - check: "npx conductor-board check reconcile"
+          - name: "reconcile is correct"
+            check: "node verify-unit.mjs reconcile --out out/reconcile.json"

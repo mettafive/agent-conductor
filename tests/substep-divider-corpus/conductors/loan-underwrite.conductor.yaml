@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: loan-underwrite
+description: >
+  loan underwrite — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-applications
+    instruction: |
+      Scope the applications to process. Frontload every application as a pending iteration.
+    output: applications
+    gate:
+      - check: "npx conductor-board check scope-applications"
+      - "Every application captured before any work begins"
+
+  - id: loan-underwrite-loop
+    type: loop
+    over: applications
+    as: application
+    requires: [scope-applications]
+    steps:
+      - id: pull-credit
+        instruction: |
+          pull credit: pull credit, credit report.
+        gate:
+          - check: "npx conductor-board check pull-credit"
+          - name: "pull credit is correct"
+            check: "node verify-unit.mjs pull-credit --out out/pull-credit.json"
+      - id: assess-risk
+        instruction: |
+          assess risk: assess risk, underwrite.
+        gate:
+          - check: "npx conductor-board check assess-risk"
+          - name: "assess risk is correct"
+            check: "node verify-unit.mjs assess-risk --out out/assess-risk.json"
+      - id: dti-compute
+        instruction: |
+          dti compute: debt to income, dti ratio.
+        gate:
+          - check: "npx conductor-board check dti-compute"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: decision
+        instruction: |
+          decision: decision, approve decline.
+        gate:
+          - check: "npx conductor-board check decision"
+          - name: "decision is correct"
+            check: "node verify-unit.mjs decision --out out/decision.json"

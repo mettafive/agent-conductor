@@ -1,0 +1,43 @@
+conductor: 2.0.0
+name: newsletter
+description: >
+  newsletter — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: curate
+    instruction: |
+      curate: curate, select stories.
+    gate:
+      - check: "npx conductor-board check curate"
+      - name: "curate is correct"
+        check: "node verify-unit.mjs curate --out out/curate.json"
+  - id: write-issue
+    instruction: |
+      write issue: write, compose issue.
+    requires: [curate]
+    gate:
+      - check: "npx conductor-board check write-issue"
+      - name: "write issue is correct"
+        check: "node verify-unit.mjs write-issue --out out/write-issue.json"
+  - id: subject-line
+    instruction: |
+      subject line: subject line, preview text.
+    requires: [write-issue]
+    gate:
+      - check: "npx conductor-board check subject-line"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: ab-variants
+    instruction: |
+      ab variants: a/b, variant, split test.
+    requires: [subject-line]
+    gate:
+      - check: "npx conductor-board check ab-variants"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: schedule-send
+    instruction: |
+      schedule send: schedule, send, dispatch.
+    requires: [ab-variants]
+    gate:
+      - check: "npx conductor-board check schedule-send"
+      - name: "schedule send is correct"
+        check: "node verify-unit.mjs schedule-send --out out/schedule-send.json"

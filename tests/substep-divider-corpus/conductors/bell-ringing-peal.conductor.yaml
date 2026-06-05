@@ -1,0 +1,43 @@
+conductor: 2.0.0
+name: bell-ringing-peal
+description: >
+  bell ringing peal — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: choose-method
+    instruction: |
+      choose method: choose method, ringing method.
+    gate:
+      - check: "npx conductor-board check choose-method"
+      - name: "choose method is correct"
+        check: "node verify-unit.mjs choose-method --out out/choose-method.json"
+  - id: compose-peal
+    instruction: |
+      compose peal: compose peal, extent.
+    requires: [choose-method]
+    gate:
+      - check: "npx conductor-board check compose-peal"
+      - name: "compose peal is correct"
+        check: "node verify-unit.mjs compose-peal --out out/compose-peal.json"
+  - id: prove-truth
+    instruction: |
+      prove truth: prove truth, no repeated row.
+    requires: [compose-peal]
+    gate:
+      - check: "npx conductor-board check prove-truth"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: assign-bells
+    instruction: |
+      assign bells: assign bells, ringer order.
+    requires: [prove-truth]
+    gate:
+      - check: "npx conductor-board check assign-bells"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: notate
+    instruction: |
+      notate: notate, write call sheet.
+    requires: [assign-bells]
+    gate:
+      - check: "npx conductor-board check notate"
+      - name: "notate is correct"
+        check: "node verify-unit.mjs notate --out out/notate.json"

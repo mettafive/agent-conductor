@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: email-campaign-qa
+description: >
+  email campaign qa — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-emails
+    instruction: |
+      Scope the emails to process. Frontload every email as a pending iteration.
+    output: emails
+    gate:
+      - check: "npx conductor-board check scope-emails"
+      - "Every email captured before any work begins"
+
+  - id: email-campaign-qa-loop
+    type: loop
+    over: emails
+    as: email
+    requires: [scope-emails]
+    steps:
+      - id: render-email
+        instruction: |
+          render email: render, preview email.
+        gate:
+          - check: "npx conductor-board check render-email"
+          - name: "render email is correct"
+            check: "node verify-unit.mjs render-email --out out/render-email.json"
+      - id: link-check
+        instruction: |
+          link check: link check, verify links.
+        gate:
+          - check: "npx conductor-board check link-check"
+          - name: "link check is correct"
+            check: "node verify-unit.mjs link-check --out out/link-check.json"
+      - id: spam-score
+        instruction: |
+          spam score: spam score, deliverability.
+        gate:
+          - check: "npx conductor-board check spam-score"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: approve
+        instruction: |
+          approve: approve, sign off.
+        gate:
+          - check: "npx conductor-board check approve"
+          - name: "approve is correct"
+            check: "node verify-unit.mjs approve --out out/approve.json"

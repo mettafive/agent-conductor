@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: menu-translation
+description: >
+  menu translation — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-items
+    instruction: |
+      Scope the items to process. Frontload every item as a pending iteration.
+    output: items
+    gate:
+      - check: "npx conductor-board check scope-items"
+      - "Every item captured before any work begins"
+
+  - id: menu-translation-loop
+    type: loop
+    over: items
+    as: item
+    requires: [scope-items]
+    steps:
+      - id: translate-name
+        instruction: |
+          translate name: translate name, dish name.
+        gate:
+          - check: "npx conductor-board check translate-name"
+          - name: "translate name is correct"
+            check: "node verify-unit.mjs translate-name --out out/translate-name.json"
+      - id: describe
+        instruction: |
+          describe: describe, description.
+        gate:
+          - check: "npx conductor-board check describe"
+          - name: "describe is correct"
+            check: "node verify-unit.mjs describe --out out/describe.json"
+      - id: allergen-note
+        instruction: |
+          allergen note: allergen, dietary.
+        gate:
+          - check: "npx conductor-board check allergen-note"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: save-menu-item
+        instruction: |
+          save menu item: save, store item.
+        gate:
+          - check: "npx conductor-board check save-menu-item"
+          - name: "save menu item is correct"
+            check: "node verify-unit.mjs save-menu-item --out out/save-menu-item.json"
