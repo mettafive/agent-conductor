@@ -237,6 +237,10 @@ export function WorkflowSidebar({
   };
 
   const statusOf = (name: string) => workflows[name]?.snap.status as LiveStatus | null;
+  // The DERIVED status: buildModel already treats a run as "done" when every workflow-phase step is
+  // done — even if the agent forgot to flip the top-level status:"running". Use that everywhere the
+  // sidebar shows a workflow's state, so a finished run never reads "Running" with a climbing timer.
+  const derivedOf = (name: string) => (workflows[name] ? buildModel(workflows[name].snap) : null);
   const liveStatus = activeWf ? statusOf(activeWf) : null;
   const liveModel = activeWf ? buildModel(workflows[activeWf].snap) : null;
   const others = order.filter((n) => n !== activeWf);
@@ -244,7 +248,9 @@ export function WorkflowSidebar({
   const historyGroups = order
     .map((name) => {
       const status = statusOf(name);
-      const isRunning = status?.status === "running";
+      // a run is only "live" (and thus excluded from the finished list) while it's genuinely running
+      // — once every step is done the derived status settles, so the run can join the history.
+      const isRunning = derivedOf(name)?.overallStatus === "running";
       const runs = (workflows[name]?.history ?? []).filter(
         (h) => !(isRunning && h.run_id === status?.run_id),
       );
@@ -252,8 +258,15 @@ export function WorkflowSidebar({
     })
     .filter((g) => g.runs.length > 0);
 
-  const overallStatus = liveStatus?.status ?? "idle";
-  const elapsed = overallStatus === "running" ? clockSince(liveStatus?.started_at, now) : null;
+  const overallStatus = liveModel?.overallStatus ?? "idle";
+  const settled = overallStatus === "done" || overallStatus === "failed";
+  // While running the timer ticks to `now`; once settled it FREEZES at the run's end (the last beat,
+  // surfaced by merge.ts as endedAt) instead of climbing forever. Idle shows nothing.
+  const elapsed = settled
+    ? clockSince(liveModel?.startedAt, now, liveModel?.endedAt)
+    : overallStatus === "running"
+      ? clockSince(liveStatus?.started_at, now)
+      : null;
 
   return (
     <aside
@@ -294,7 +307,7 @@ export function WorkflowSidebar({
                 <SectionRule text="Workflows" />
                 <div className="space-y-0.5">
                   {others.map((name) => {
-                    const st = statusOf(name)?.status ?? "idle";
+                    const st = derivedOf(name)?.overallStatus ?? "idle";
                     return (
                       <button
                         key={name}

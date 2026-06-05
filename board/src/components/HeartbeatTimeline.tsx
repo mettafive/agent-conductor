@@ -193,11 +193,11 @@ function GroupBlock({
         {group.hasFinal ? "→" : String(number).padStart(2, "0")}
       </span>
 
-      {/* header — the title gets the room (wraps to 2 lines, never truncates to "Cli…"); the
-          state + time sit compact, top-right, so they never crowd the name. The iteration is on
-          the card's hover title, not a chip that competes for width. */}
+      {/* header — the title gets the room and wraps to as many lines as it needs (never truncates to
+          "…DB ro…"); the state + time sit compact, top-right, so they never crowd the name. The
+          iteration is on the card's hover title, not a chip that competes for width. */}
       <div className="flex items-start gap-2">
-        <span className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-chalk line-clamp-2">
+        <span className="min-w-0 flex-1 break-words text-[12.5px] font-medium leading-snug text-chalk">
           {renderNote(group.title)}
         </span>
         <span className="mt-px flex shrink-0 items-center gap-1.5">
@@ -242,9 +242,15 @@ function GroupBlock({
       {/* handoff to the next step */}
       {handoff?.to && <p className="mt-1.5 font-mono text-[9px] text-mint/80">→ handoff to {handoff.to}</p>}
 
-      {/* comments — prominent, at the bottom: the flow manager's tweak point */}
+      {/* comments — prominent, at the bottom: the flow manager's tweak point. The whole region
+          stops click/keydown from bubbling, so interacting with it never toggles the enclosing card
+          open/closed (the card's own onClick lives on an ancestor). */}
       {canComment && (
-        <div className="mt-2.5 border-t border-line pt-2">
+        <div
+          className="mt-2.5 border-t border-line pt-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <NoteThread notes={notes} workflow={workflow!} step={step!} card={group.id} cardTitle={group.title} />
         </div>
       )}
@@ -415,6 +421,11 @@ function NoteEditor({
         rows={2}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) =>
+          // gently bring the input fully into view so leaving a comment feels natural — the card may
+          // sit low in a scroll area, and a focused-but-clipped input is a jarring place to start.
+          e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest" })
+        }
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();

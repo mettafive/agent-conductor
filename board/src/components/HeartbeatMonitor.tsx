@@ -108,36 +108,40 @@ function InsightModal({ insight, onClose }: { insight: ShownInsight; onClose: ()
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.14 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15, ease: "easeOut" }}
       className="fixed inset-0 z-50 grid place-items-center bg-ink/75 p-6 font-sans backdrop-blur-sm"
       onClick={close}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.97, y: 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        className="relative w-full max-w-md rounded-2xl border border-line bg-panel p-6 shadow-2xl"
+        exit={{ opacity: 0, scale: 0.98, y: 4 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+        className="relative w-full max-w-md rounded-lg border border-line bg-panel p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={close}
           aria-label="Close"
-          className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full text-[12px] text-dim transition-colors hover:bg-line-2/50 hover:text-chalk"
+          className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded text-[12px] text-dim transition-colors hover:bg-line-2/50 hover:text-chalk"
         >
           ✕
         </button>
-        <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber">Insight</div>
-        <h3 className="mt-1.5 pr-6 text-[15px] font-medium leading-snug text-chalk">{insight.title}</h3>
-        <div className="mt-3 max-h-[50vh] space-y-3 overflow-y-auto">
-          {insight.note && <p className="text-[12.5px] leading-relaxed text-mist-2">{insight.note}</p>}
+        {/* eyebrow + title — same grammar as SummaryView's section heads (mono, uppercase, tracked) */}
+        <div className="font-mono text-[10px] uppercase tracking-wide text-amber">Insight</div>
+        <h3 className="mt-2 pr-6 text-[15px] font-medium leading-snug text-chalk">{insight.title}</h3>
+        <div className="mt-3 max-h-[50vh] space-y-2.5 overflow-y-auto board-scroll">
+          {insight.note && <p className="text-[12px] leading-relaxed text-mist-2">{insight.note}</p>}
           {(insight.current || insight.proposed) && (
-            <div className="space-y-1 rounded-lg border border-line bg-ink-2/40 p-3 font-mono text-[11px] leading-snug">
+            // the current→proposed diff, styled exactly like SummaryView's InsightItem change block
+            <div className="space-y-0.5 rounded-lg border border-line bg-ink/40 px-3 py-2.5 font-mono text-[10.5px] leading-snug">
               {insight.current && <div className="text-rose/80">− {insight.current}</div>}
               {insight.proposed && <div className="text-mint/80">+ {insight.proposed}</div>}
             </div>
           )}
           {bare && (
-            <p className="text-[12px] italic leading-snug text-dim">No further detail was captured for this insight.</p>
+            <p className="text-[12px] leading-snug text-dim">No further detail was captured for this insight.</p>
           )}
         </div>
         {meta && <div className="mt-4 border-t border-line pt-3 font-mono text-[10px] text-dim">{meta}</div>}
@@ -300,34 +304,51 @@ function ExpandedMonitor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const driftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stickRaf = useRef<number | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [cursorOn, setCursorOn] = useState(false);
 
-  // Glide (or snap) to the latest and re-pin. Smooth for explicit jumps — the button, the
-  // drift-home timer, opening — so the eye can follow the scroll; snapped for per-beat streaming.
-  const scrollToBottom = (smooth: boolean) => {
+  // Stick the bottom in view while pinned. The jank came from many SYNCHRONOUS scrollTop writes per
+  // frame — a new beat's length-effect AND the ResizeObserver AND each typewriter growth all snapped
+  // scrollTop independently, so the stream lurched (worst on multi-line rows that grow over several
+  // frames). Coalesce them into ONE write per animation frame: the browser then advances the scroll
+  // smoothly row-by-row as content grows, so the stream glides instead of jumping. No-op when the
+  // user has scrolled up (not pinned).
+  const stickToBottom = useCallback(() => {
+    if (!pinned.current) return;
+    if (stickRaf.current != null) return; // already scheduled this frame
+    stickRaf.current = requestAnimationFrame(() => {
+      stickRaf.current = null;
+      const el = scrollRef.current;
+      if (el && pinned.current) el.scrollTop = el.scrollHeight;
+    });
+  }, []);
+
+  // Glide (or snap) to the latest and re-pin. `smooth` for explicit jumps — the button, the
+  // drift-home timer, opening — so the eye can follow the scroll across a big gap.
+  const scrollToBottom = useCallback((smooth: boolean) => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
     pinned.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
     setShowJump(false);
     if (driftTimer.current) {
       clearTimeout(driftTimer.current);
       driftTimer.current = null;
     }
-  };
+  }, []);
 
   const shown = beats.filter((b) =>
     filter === "all" ? true : b.workflow === filter,
   );
 
+  // A new beat (or a filter change) lands → stick the bottom in view via the coalesced rAF.
   useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (el && pinned.current) {
-      el.scrollTop = el.scrollHeight;
+    if (pinned.current) {
+      stickToBottom();
       setShowJump(false);
     }
-  }, [shown.length, filter]);
+  }, [shown.length, filter, stickToBottom]);
 
   useEffect(() => {
     if (!streamKey) return;
@@ -337,11 +358,12 @@ function ExpandedMonitor({
   }, [streamKey]);
 
   // Opening the terminal (this component mounts on open) lands you at the latest. Clean up the
-  // drift-home timer on close/unmount.
+  // drift-home timer + any pending stick-rAF on close/unmount.
   useEffect(() => {
     scrollToBottom(false);
     return () => {
       if (driftTimer.current) clearTimeout(driftTimer.current);
+      if (stickRaf.current != null) cancelAnimationFrame(stickRaf.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -363,21 +385,22 @@ function ExpandedMonitor({
   const jumpToLatest = () => scrollToBottom(true); // smooth glide so the eye can follow the scroll
 
   // Keep the bottom row fully in view as it grows — a multi-line beat (or text still streaming in)
-  // would otherwise get clipped at the container edge. Observe the list and re-pin to the bottom
-  // while pinned, so the last row always clears.
+  // would otherwise get clipped at the container edge. The observer routes through the SAME coalesced
+  // stick routine as new beats, so a row growing over several frames advances the scroll one smooth
+  // step per frame instead of snapping each tick.
   const roRef = useRef<ResizeObserver | null>(null);
-  const contentRef = useCallback((node: HTMLDivElement | null) => {
-    roRef.current?.disconnect();
-    roRef.current = null;
-    if (node) {
-      const ro = new ResizeObserver(() => {
-        const el = scrollRef.current;
-        if (el && pinned.current) el.scrollTop = el.scrollHeight;
-      });
-      ro.observe(node);
-      roRef.current = ro;
-    }
-  }, []);
+  const contentRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      roRef.current?.disconnect();
+      roRef.current = null;
+      if (node) {
+        const ro = new ResizeObserver(() => stickToBottom());
+        ro.observe(node);
+        roRef.current = ro;
+      }
+    },
+    [stickToBottom],
+  );
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -534,11 +557,16 @@ function ExpandedMonitor({
           </motion.button>
         )}
       </AnimatePresence>
-      {modalInsight &&
-        createPortal(
-          <InsightModal insight={modalInsight} onClose={() => setModalInsight(null)} />,
-          document.body,
-        )}
+      {createPortal(
+        // AnimatePresence keeps the modal mounted through its exit transition, so the backdrop +
+        // card glide away on close instead of vanishing.
+        <AnimatePresence>
+          {modalInsight && (
+            <InsightModal insight={modalInsight} onClose={() => setModalInsight(null)} />
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </motion.div>
   );
 }
