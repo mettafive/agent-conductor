@@ -5,9 +5,10 @@ import { Icon } from "./Icon";
 import { Led } from "./Led";
 import { AppearIcon } from "./Appear";
 
-/** Shown when a run is complete — a distilled recap, not a data dump: what it PRODUCED first,
- *  then a tight one-line-per-step story, then learnings grouped into a digest (what this run did
- *  + what's new up front; the backlog folded behind a count). */
+/** Shown when a run is complete — INSIGHTS are the centerpiece. What it PRODUCED leads (the outcome),
+ *  then "What the run learned" front-and-center: the actionable insights (new this run + open) are
+ *  shown by default, never hidden behind a count; inherited/durable context folds behind a toggle.
+ *  Every insight click-expands to its full depth. Directives follow; the per-step recap is demoted. */
 export function SummaryView({ model }: { model: BoardModel }) {
   const failed = model.overallStatus === "failed";
   const wf = model.steps.filter((s) => s.phase === "workflow");
@@ -38,6 +39,7 @@ export function SummaryView({ model }: { model: BoardModel }) {
   const proven = knowledge.filter((k) => k.status === "proven"); // trusted, auto-applied at start
   const standing = knowledge.filter((k) => k.status === "applied"); // durable changes already baked in
   const open = knowledge.filter((k) => k.status === "open"); // noticed, not yet acted on
+  const actionable = emerging.length + open.length; // the insights that are the point of this screen
   const directives = (model.developerNotes ?? []).filter((n) => n.directive);
 
   return (
@@ -75,37 +77,32 @@ export function SummaryView({ model }: { model: BoardModel }) {
         </Section>
       )}
 
-      {/* What happened — one tight line per step, gate/loop tally inline, note clamped */}
-      <Section title="What happened">
-        <ol className="space-y-2.5">
-          {happened.map((h) => (
-            <li key={h.id} className="flex gap-2.5">
-              <span className="mt-[3px] shrink-0">
-                <Led state={h.column} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-[11px] text-chalk">{h.id}</span>
-                  {h.loop && <span className="font-mono text-[10px] text-mist">{h.loop}</span>}
-                  {h.gates && <span className="font-mono text-[10px] text-mist">{h.gates}</span>}
-                </div>
-                {h.note && (
-                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-mist-2">{renderNote(h.note)}</p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      {/* What we learned — what this run found + what shaped it up front; the rest collapsed.
-          Every insight expands to its note + current→proposed, so the depth is there on demand. */}
+      {/* What the run learned — THE STAR of the screen. The actionable insights (new this run +
+          open) are shown by default and visually prominent; inherited/durable context folds behind
+          a count. Every insight click-expands to its note + current→proposed + provenance. */}
       {knowledge.length > 0 && (
-        <Section title="What we learned">
-          {emerging.length > 0 && <LearnGroup label="New this run" hint="found here, feeds the next run" tone="amber" items={emerging} />}
-          {proven.length > 0 && <LearnGroup label="Applied at start" hint="trusted lessons auto-applied in Phase 0" tone="mint" items={proven} />}
-          {standing.length > 0 && <LearnGroup label="Standing rules" tone="dim" items={standing} collapsible />}
-          {open.length > 0 && <LearnGroup label="Open — needs action" tone="dim" items={open} collapsible />}
+        <Section title="What the run learned" emphasis>
+          {actionable === 0 ? (
+            <p className="mb-3 text-[12px] leading-snug text-mist">
+              No new or open insights this run — only inherited context below.
+            </p>
+          ) : (
+            <>
+              {emerging.length > 0 && (
+                <LearnGroup label="New this run" hint="found here, feeds the next run" tone="amber" items={emerging} prominent />
+              )}
+              {open.length > 0 && (
+                <LearnGroup label="Open — needs action" hint="noticed, not yet acted on" tone="amber" items={open} prominent />
+              )}
+            </>
+          )}
+          {/* Inherited / durable context — folded behind a count, expandable on demand. */}
+          {proven.length > 0 && (
+            <LearnGroup label="Applied at start" hint="trusted lessons auto-applied in Phase 0" tone="mint" items={proven} collapsible />
+          )}
+          {standing.length > 0 && (
+            <LearnGroup label="Standing rules" hint="durable changes already baked in" tone="dim" items={standing} collapsible />
+          )}
         </Section>
       )}
 
@@ -135,50 +132,61 @@ export function SummaryView({ model }: { model: BoardModel }) {
           </ul>
         </Section>
       )}
+
+      {/* What happened — context, not the payoff. Demoted below insights + directives and
+          collapsed behind a count; one tight line per step when expanded. */}
+      {happened.length > 0 && <Happened steps={happened} />}
     </div>
   );
 }
 
 const TONE = {
-  amber: { dot: "bg-amber", txt: "text-amber" },
-  mint: { dot: "bg-mint", txt: "text-mint" },
-  dim: { dot: "bg-line-2", txt: "text-mist" },
+  amber: { dot: "bg-amber", txt: "text-amber", border: "border-amber/25" },
+  mint: { dot: "bg-mint", txt: "text-mint", border: "border-mint/25" },
+  dim: { dot: "bg-line-2", txt: "text-mist", border: "border-line" },
 } as const;
 
-/** A lifecycle group of insights. Surfaced groups show inline; `collapsible` ones fold behind
- *  a count. Every item inside is independently expandable to its full context. */
+/** A lifecycle group of insights. `prominent` groups are the actionable ones — shown by default,
+ *  boxed and accented so they read as the centerpiece. `collapsible` ones (inherited context) fold
+ *  behind a count. Every item inside is independently expandable to its full context. */
 function LearnGroup({
   label,
   hint,
   tone,
   items,
   collapsible,
+  prominent,
 }: {
   label: string;
   hint?: string;
   tone: keyof typeof TONE;
   items: KnowledgeEntry[];
   collapsible?: boolean;
+  prominent?: boolean;
 }) {
   const [open, setOpen] = useState(!collapsible);
   const t = TONE[tone];
   return (
-    <div className="mb-3">
+    <div
+      className={`mb-3 ${
+        prominent ? `rounded-lg border ${t.border} bg-panel px-3 py-2.5` : ""
+      }`}
+    >
       <button
         onClick={() => collapsible && setOpen((v) => !v)}
-        className={`mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide ${t.txt} ${
+        className={`flex w-full items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide ${t.txt} ${
           collapsible ? "hover:opacity-80" : "cursor-default"
-        }`}
+        } ${open ? "mb-1" : ""}`}
       >
         <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
         {label} <span className="text-mist">· {items.length}</span>
         {hint && <span className="font-sans normal-case tracking-normal text-dim">— {hint}</span>}
-        {collapsible && <span className="text-dim">{open ? "▾" : "▸"}</span>}
+        {collapsible && <span className="ml-auto text-dim">{open ? "▾" : "▸"}</span>}
       </button>
       {open && (
-        <ul className="space-y-0.5 pl-3.5">
+        <ul className={`space-y-0.5 ${prominent ? "" : "pl-3.5"}`}>
           {items.map((k, i) => (
-            <InsightItem key={i} k={k} />
+            <InsightItem key={i} k={k} prominent={prominent} />
           ))}
         </ul>
       )}
@@ -187,8 +195,9 @@ function LearnGroup({
 }
 
 /** One insight — the title is the clickable summary; clicking reveals its captured depth
- *  (the evidence `note`, any `current → proposed` change, and where/how often it was seen). */
-function InsightItem({ k }: { k: KnowledgeEntry }) {
+ *  (the evidence `note`, any `current → proposed` change, and where/how often it was seen).
+ *  `prominent` items read brighter — they're the actionable ones, the point of the screen. */
+function InsightItem({ k, prominent }: { k: KnowledgeEntry; prominent?: boolean }) {
   const [open, setOpen] = useState(false);
   const hasDetail = !!(k.note || k.current || k.proposed);
   const meta = [k.scope, k.step, k.observed ? `seen ${k.observed}×` : null].filter(Boolean).join(" · ");
@@ -196,7 +205,7 @@ function InsightItem({ k }: { k: KnowledgeEntry }) {
     <li className="text-[12px] leading-snug">
       <button
         onClick={() => hasDetail && setOpen((v) => !v)}
-        className={`flex w-full items-start gap-1.5 py-0.5 text-left text-mist-2 ${
+        className={`flex w-full items-start gap-1.5 py-0.5 text-left ${prominent ? "text-chalk" : "text-mist-2"} ${
           hasDetail ? "hover:text-chalk" : "cursor-default"
         }`}
       >
@@ -221,11 +230,63 @@ function InsightItem({ k }: { k: KnowledgeEntry }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  emphasis,
+}: {
+  title: string;
+  children: React.ReactNode;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className={emphasis ? "mt-7" : "mt-6"}>
+      <div
+        className={`mb-2 font-mono text-[10px] uppercase tracking-wide ${emphasis ? "text-chalk" : "text-mist"}`}
+      >
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+type Happen = { id: string; note: string | null; column: string; gates: string | null; loop: string | null };
+
+/** The per-step recap — context, not the payoff. Collapsed behind a count and demoted below the
+ *  insights + directives; one tight line per step when expanded. */
+function Happened({ steps }: { steps: Happen[] }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="mt-6">
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-mist">{title}</div>
-      {children}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wide text-mist hover:opacity-80"
+      >
+        What happened <span className="text-dim">· {steps.length} steps</span>
+        <span className="text-dim">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <ol className="space-y-2.5">
+          {steps.map((h) => (
+            <li key={h.id} className="flex gap-2.5">
+              <span className="mt-[3px] shrink-0">
+                <Led state={h.column} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-[11px] text-chalk">{h.id}</span>
+                  {h.loop && <span className="font-mono text-[10px] text-mist">{h.loop}</span>}
+                  {h.gates && <span className="font-mono text-[10px] text-mist">{h.gates}</span>}
+                </div>
+                {h.note && (
+                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-mist-2">{renderNote(h.note)}</p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
