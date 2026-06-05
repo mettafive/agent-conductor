@@ -89,10 +89,16 @@ export function SummaryView({ model }: { model: BoardModel }) {
           ) : (
             <>
               {emerging.length > 0 && (
-                <LearnGroup label="New this run" hint="found here, feeds the next run" tone="amber" items={emerging} prominent />
+                <LearnGroup label="New this run" hint="found here — auto-applies once it proves out" tone="amber" items={emerging} prominent />
               )}
               {open.length > 0 && (
-                <LearnGroup label="Open — needs action" hint="noticed, not yet acted on" tone="amber" items={open} prominent />
+                <LearnGroup
+                  label="Open — for a follow-up"
+                  hint="noticed this run; a dedicated pass or your call, not auto-applied"
+                  tone="amber"
+                  items={open}
+                  prominent
+                />
               )}
             </>
           )}
