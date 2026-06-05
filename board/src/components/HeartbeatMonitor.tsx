@@ -405,9 +405,11 @@ function ExpandedMonitor({
               )}
               {b.insight && (
                 <span
-                  className="mt-1.5 h-1.5 w-1.5 shrink-0 select-none rounded-full bg-amber"
-                  title="carries an insight"
-                />
+                  className="mt-px shrink-0 select-none rounded bg-amber/15 px-1 font-mono text-[8px] leading-[1.6] text-amber"
+                  title="this beat captured a learning — open the Insights tab"
+                >
+                  ✦ insight
+                </span>
               )}
             </div>
           ))}
