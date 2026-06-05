@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import yaml from "js-yaml";
+import { sequentialOrderGuard } from "./writer.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -91,6 +92,14 @@ export async function runComplete(args) {
       return false;
     }
     loopPath = { loopId, iter, subId };
+    // SEQUENTIAL-ORDER guard: completing this iteration's sub-step advances it toward
+    // done, so for a sequential loop refuse while any earlier scoped iteration is still
+    // incomplete (parallel loops are not guarded — see sequentialOrderGuard).
+    const g = sequentialOrderGuard(statusPath, loopId, iter);
+    if (!g.ok) {
+      console.error(g.message);
+      return false; // don't run gates / write — process iterations in order
+    }
   } else {
     step = (doc.steps || []).find((s) => s && s.id === stepId);
     if (!step) {

@@ -46,6 +46,73 @@ function load(sp) {
     return null;
   }
 }
+
+// ── SEQUENTIAL-ORDER guard ───────────────────────────────────────────────────
+// loop-scope frontloads a loop's iterations in a defined order (the iterations-map
+// key insertion order). For a SEQUENTIAL loop the agent must process them in that
+// order — first pending first — so we refuse to advance iteration X's sub-step
+// toward done while any EARLIER iteration still has an incomplete sub-step. (A live
+// run once did iterations 1,2,5,6,10 and left 3,4,7,8,9 pending on a non-parallel
+// loop; this stops exactly that.)
+//
+// Smart, not rigid:
+//   • Parallel loops (conductor step `parallel: true` or `parallel: auto`) are NOT
+//     guarded — out-of-order is intended there.
+//   • Never blocks the genuine next-in-line iteration, nor re-touching an already
+//     in-progress earlier iteration.
+//   • If iterations aren't scoped yet (empty map), or the conductor/loop can't be
+//     resolved, it doesn't block (fail-open — never a false positive).
+//
+// Returns { ok: true } to proceed, or { ok: false, message } to refuse.
+export function sequentialOrderGuard(sp, loopId, item) {
+  let doc;
+  try {
+    const conductorPath = discoverConductor(sp);
+    if (!conductorPath) return { ok: true };
+    doc = loadConductor(conductorPath);
+  } catch {
+    return { ok: true }; // can't read the conductor → fail open, don't block
+  }
+  const loopStep = (doc.steps || []).find((s) => s && s.id === loopId && s.type === "loop");
+  if (!loopStep) return { ok: true }; // not a known loop → not our concern
+
+  // Parallel detection: ONLY `parallel: true` or `parallel: auto` are parallel.
+  if (loopStep.parallel === true || loopStep.parallel === "auto") return { ok: true };
+
+  const s = load(sp);
+  const iters = (s && s.steps && s.steps[loopId] && s.steps[loopId].iterations) || {};
+  const order = Object.keys(iters);
+  if (order.length === 0) return { ok: true }; // not scoped yet → nothing to order
+
+  const idx = order.indexOf(item);
+  if (idx <= 0) return { ok: true }; // first item, or an item not yet in the scoped map
+
+  // An iteration is COMPLETE only when every declared sub-step cell is `done`.
+  // Use the conductor's sub-step ids when available (so a half-done iteration with
+  // some cells missing still counts as incomplete); else fall back to "has cells and
+  // all done" (an empty {} iteration is NOT complete — it just hasn't started).
+  const subIds = (loopStep.steps || []).map((st) => st && st.id).filter(Boolean);
+  const isComplete = (cells) => {
+    cells = cells || {};
+    if (subIds.length) return subIds.every((sid) => cells[sid] && cells[sid].status === "done");
+    const vals = Object.values(cells);
+    return vals.length > 0 && vals.every((c) => c && c.status === "done");
+  };
+
+  // Find the first EARLIER iteration that isn't complete — that's what must be done first.
+  for (let i = 0; i < idx; i++) {
+    if (!isComplete(iters[order[i]])) {
+      const blocker = order[i];
+      return {
+        ok: false,
+        message:
+          red(`✗ loop '${loopId}' is sequential — finish '${blocker}' before '${item}'.`) +
+          `\n  ${dim(`Next up: ${blocker}. Process scoped iterations in order (first pending first), or mark the loop parallel in the conductor if out-of-order is intended.`)}`,
+      };
+    }
+  }
+  return { ok: true };
+}
 function save(sp, s) {
   fs.mkdirSync(path.dirname(sp), { recursive: true });
   fs.writeFileSync(sp, JSON.stringify(s, null, 2));
@@ -319,6 +386,17 @@ export async function runLoop(args) {
     return fail("usage: conductor-board loop <loopId> <item> <subId> <pending|running|done|failed>");
   const s = load(sp);
   if (!s) return fail("no status.json");
+
+  // SEQUENTIAL-ORDER guard: when advancing a sub-step toward done (running/done),
+  // refuse if an earlier scoped iteration is still incomplete (sequential loops only).
+  if (status === "running" || status === "done") {
+    const g = sequentialOrderGuard(sp, loopId, item);
+    if (!g.ok) {
+      console.error(g.message);
+      return false; // don't write — the agent must process iterations in order
+    }
+  }
+
   const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
   lp.type = "loop";
   lp.iterations = lp.iterations || {};
