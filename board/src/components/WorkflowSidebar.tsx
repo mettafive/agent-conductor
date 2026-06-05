@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { WorkflowEntry } from "../lib/useBoardState";
 import type { BoardStep, HistoryRun, Snapshot } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { buildModel } from "../lib/merge";
 import { iterationColumn } from "../lib/loop";
-import { clockSince } from "../lib/view";
+import { clockSince, SUMMARY_SEL } from "../lib/view";
 import { fmtDurCompact } from "../lib/format";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
@@ -232,6 +232,34 @@ export function WorkflowSidebar({
 }: Props) {
   const now = useNow(1000);
 
+  // Finished runs expand/collapse INDEPENDENTLY (a Set — several can be open at once, stacked
+  // under each other). Each open run lazy-loads its own snapshot so its branch tree can render.
+  const [openRuns, setOpenRuns] = useState<Set<string>>(new Set());
+  const [runSnaps, setRunSnaps] = useState<Record<string, Snapshot>>({});
+  const runKey = (wf: string, runId: string) => `${wf} ${runId}`;
+  const toggleRun = (wf: string, runId: string) =>
+    setOpenRuns((prev) => {
+      const next = new Set(prev);
+      const k = runKey(wf, runId);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
+  const openRun = (wf: string, runId: string) =>
+    setOpenRuns((prev) => (prev.has(runKey(wf, runId)) ? prev : new Set(prev).add(runKey(wf, runId))));
+  useEffect(() => {
+    for (const key of openRuns) {
+      if (runSnaps[key]) continue;
+      const sep = key.indexOf(" ");
+      const wf = key.slice(0, sep);
+      const runId = key.slice(sep + 1);
+      fetch(`/api/workflow/${encodeURIComponent(wf)}/history/${encodeURIComponent(runId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((rec) => rec && setRunSnaps((prev) => ({ ...prev, [key]: rec.snapshot })))
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRuns]);
+
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
     onResizeActive?.(true);
@@ -334,6 +362,23 @@ export function WorkflowSidebar({
                       }
                 }
               />
+              {/* Run summary — its own nav item for the LIVE run too, not only past runs. */}
+              <button
+                onClick={() => {
+                  if (selectedRun !== null) onPickWorkflow(activeWf); // snap back to live first
+                  onSelectStep?.(SUMMARY_SEL);
+                }}
+                className={`mt-1 flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] transition-colors duration-150 ${
+                  selectedRun === null && activeStep === SUMMARY_SEL ? SEL : "hover:bg-panel-2/60"
+                }`}
+              >
+                <Slot>
+                  <span className="text-mist">
+                    <Icon name="check" size={13} />
+                  </span>
+                </Slot>
+                <span className="min-w-0 flex-1 text-mist">Run summary</span>
+              </button>
             </div>
 
             {/* other workflows — compact switcher, only when there's more than one */}
@@ -385,41 +430,90 @@ export function WorkflowSidebar({
                       r.run_id ||
                       "Untitled run";
                     const dur = fmtDurCompact(r.started_at, r.completed_at);
+                    // Each finished run opens/closes on its own chevron (a Set drives it), so
+                    // several can stay open stacked under each other. The active (selected) run
+                    // reuses the already-fetched viewingSnap; others lazy-load into runSnaps.
+                    const isOpen = openRuns.has(runKey(name, r.run_id));
+                    const snap = active && viewingSnap ? viewingSnap : runSnaps[runKey(name, r.run_id)];
                     return (
                       <div key={r.run_id}>
-                        <button
-                          onClick={() => onPickRun(name, r.run_id)}
-                          className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left transition-colors duration-150 ${
+                        <div
+                          className={`flex items-stretch rounded transition-colors duration-150 ${
                             active ? SEL : "hover:bg-panel-2/60"
                           }`}
                         >
-                          <Slot>
-                            <span className={failed ? "text-rose" : "text-mist"}>
-                              <Icon name={failed ? "cross" : "check"} size={13} />
-                            </span>
-                          </Slot>
-                          <span className="min-w-0 flex-1 truncate text-[12.5px] text-mist">{label}</span>
-                          {dur && <span className="shrink-0 text-[11px] tabular-nums text-dim">{dur}</span>}
-                        </button>
-                        {active && viewingSnap && (
-                          <div className="ml-3 mt-0.5 pl-2">
-                            <StepTree snap={viewingSnap} activeStep={activeStep} onSelectStep={onSelectStep} />
-                            {/* per-run summary — selecting nothing shows this run's SummaryView */}
-                            <button
-                              onClick={() => onSelectStep?.(null)}
-                              className={`mt-0.5 flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12.5px] transition-colors duration-150 ${
-                                activeStep == null ? SEL : "hover:bg-panel-2/60"
-                              }`}
+                          <button
+                            onClick={() => toggleRun(name, r.run_id)}
+                            aria-label={isOpen ? "Collapse run" : "Expand run"}
+                            className="grid w-5 shrink-0 place-items-center text-dim transition-colors hover:text-mist"
+                          >
+                            <motion.span
+                              animate={{ rotate: isOpen ? 90 : 0 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                              className="grid place-items-center"
                             >
-                              <Slot>
-                                <span className="text-mist">
-                                  <Icon name="check" size={12} />
-                                </span>
-                              </Slot>
-                              <span className="min-w-0 flex-1 text-mist">Run summary</span>
-                            </button>
-                          </div>
-                        )}
+                              <Icon name="chevronRight" size={12} />
+                            </motion.span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              onPickRun(name, r.run_id);
+                              openRun(name, r.run_id);
+                            }}
+                            className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-2 text-left"
+                          >
+                            <Slot>
+                              <span className={failed ? "text-rose" : "text-mist"}>
+                                <Icon name={failed ? "cross" : "check"} size={13} />
+                              </span>
+                            </Slot>
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-mist">{label}</span>
+                            {dur && <span className="shrink-0 text-[11px] tabular-nums text-dim">{dur}</span>}
+                          </button>
+                        </div>
+
+                        <AnimatePresence initial={false}>
+                          {isOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.22, ease: "easeOut" }}
+                              className="overflow-hidden"
+                            >
+                              <div className="ml-5 mt-0.5 space-y-0.5 border-l border-line/60 pl-2">
+                                {snap ? (
+                                  <>
+                                    {/* per-run summary nav item */}
+                                    <button
+                                      onClick={() => onPickRun(name, r.run_id)}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12.5px] transition-colors duration-150 ${
+                                        active && activeStep === SUMMARY_SEL ? SEL : "hover:bg-panel-2/60"
+                                      }`}
+                                    >
+                                      <Slot>
+                                        <span className="text-mist">
+                                          <Icon name="check" size={12} />
+                                        </span>
+                                      </Slot>
+                                      <span className="min-w-0 flex-1 text-mist">Run summary</span>
+                                    </button>
+                                    <StepTree
+                                      snap={snap}
+                                      activeStep={active ? activeStep : null}
+                                      onSelectStep={(id) => {
+                                        if (!active) onPickRun(name, r.run_id);
+                                        onSelectStep?.(id);
+                                      }}
+                                    />
+                                  </>
+                                ) : (
+                                  <div className="px-2 py-1 font-mono text-[11px] text-dim">loading…</div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     );
                   })}

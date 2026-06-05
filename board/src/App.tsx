@@ -15,7 +15,7 @@ import {
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { relativeTime } from "./lib/heartbeat";
 import { useNow } from "./lib/useNow";
-import { activeIterationItem, clockSince, followStep, resolveActiveUnit } from "./lib/view";
+import { activeIterationItem, clockSince, followStep, resolveActiveUnit, SUMMARY_SEL } from "./lib/view";
 import { TopBar } from "./components/TopBar";
 import { ContextHeader } from "./components/ContextHeader";
 import { ActiveCard } from "./components/ActiveCard";
@@ -157,7 +157,7 @@ export function App() {
   const pickRun = (wf: string, runId: string) => {
     setSelectedWf(wf);
     setSelectedRun(runId);
-    setSelectedStep(null);
+    setSelectedStep(SUMMARY_SEL); // a picked run opens on its summary (the summary nav item is selected)
   };
   const backToLive = () => {
     // Snap to the workflow that's actually LIVE (running), not whatever's selected — otherwise
@@ -275,10 +275,13 @@ export function App() {
   const liveHighlight = followInLoop ? `${follow!.id}::${followItem}` : activeStepId;
 
   const showSummary =
-    (viewing || summaryReady) &&
-    selectedStep === null &&
     !!model &&
-    (model.overallStatus === "done" || model.overallStatus === "failed");
+    // explicit "Run summary" nav item (live or past), OR the auto-summary a finished run
+    // settles into when nothing is selected.
+    (selectedStep === SUMMARY_SEL ||
+      ((viewing || summaryReady) &&
+        selectedStep === null &&
+        (model.overallStatus === "done" || model.overallStatus === "failed")));
 
   const header = buildHeader({
     model,

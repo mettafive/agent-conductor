@@ -1,6 +1,11 @@
 import type { BoardModel, BoardStep, GateCriterion, HeartbeatEntry } from "./types";
 import { subStepColumn } from "./loop";
 
+/** Sentinel `selectedStep` value meaning "show this run's summary" — an explicit, clickable
+ *  navigator item (live or past), distinct from null (= follow live). No "::" so it never
+ *  parses as a loop iteration. */
+export const SUMMARY_SEL = "@summary";
+
 /** The single unit the main area follows: a step, or a loop's active sub-step. */
 export interface ActiveUnit {
   step: BoardStep;
