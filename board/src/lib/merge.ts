@@ -402,6 +402,14 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     ? (status.developer_notes as BoardModel["developerNotes"])
     : [];
 
+  // A run can finish with the agent forgetting to set status:done — but if every workflow step is
+  // already done, it IS complete. Treat it as done so the timer freezes, the summary shows, and the
+  // heart settles instead of "Running" ticking up forever.
+  const rawStatus = (status.status as string) ?? (total ? "idle" : "idle");
+  const allWorkflowDone = workflowSteps.length > 0 && workflowSteps.every((s) => s.column === "done");
+  const overall = rawStatus === "running" && allWorkflowDone ? "done" : rawStatus;
+  const settled = overall === "done" || overall === "failed";
+
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
     description: parsed?.description ?? (status.description as string | undefined),
@@ -420,10 +428,8 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     // A finished run rarely records a top-level completed_at, which left the done-screen timer
     // ticking to `now` forever. Freeze it: when the run is done/failed, fall back to the last
     // heartbeat (when work actually stopped).
-    endedAt:
-      (status.completed_at as string | undefined) ??
-      (status.status === "done" || status.status === "failed" ? lastBeatAt : undefined),
-    overallStatus: (status.status as string) ?? (total ? "idle" : "idle"),
+    endedAt: (status.completed_at as string | undefined) ?? (settled ? lastBeatAt : undefined),
+    overallStatus: overall,
     currentStep: status.current_step as string | undefined,
     steps,
     done,

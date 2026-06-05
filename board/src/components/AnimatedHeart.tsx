@@ -12,6 +12,8 @@ interface Props {
   title?: string;
   /** quiet-threshold in seconds (derived from the configured heartbeat interval) */
   stallSeconds?: number;
+  /** the run is finished — settle to a static neutral heart (not beating green, not amber stall) */
+  done?: boolean;
 }
 
 /**
@@ -20,9 +22,9 @@ interface Props {
  * throws a strong pulse whenever a new beat arrives (`lastBeatIso` changing), and
  * slows when quiet. The one element on the board that's deliberately human.
  */
-export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = STALL_SECONDS }: Props) {
+export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = STALL_SECONDS, done = false }: Props) {
   const now = useNow(1000);
-  const overdue = !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > stallSeconds;
+  const overdue = !done && !!lastBeatIso && (secondsSince(lastBeatIso, now) ?? 0) > stallSeconds;
 
   const [pulsing, setPulsing] = useState(false);
   const prev = useRef<string | undefined>(undefined);
@@ -42,7 +44,7 @@ export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = ST
     }
   }, [lastBeatIso]);
 
-  const cls = pulsing ? "heart-strong" : overdue ? "heart-weak" : "heart-rest";
+  const cls = done ? "" : pulsing ? "heart-strong" : overdue ? "heart-weak" : "heart-rest";
 
   return (
     <svg
@@ -50,7 +52,7 @@ export function AnimatedHeart({ lastBeatIso, size = 14, title, stallSeconds = ST
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      style={{ color: overdue ? "var(--color-amber)" : "var(--color-mint)" }}
+      style={{ color: done ? "var(--color-mist)" : overdue ? "var(--color-amber)" : "var(--color-mint)" }}
       aria-label={title ?? "heartbeat"}
     >
       <title>{title ?? (overdue ? "beats have gone quiet" : "heartbeat")}</title>

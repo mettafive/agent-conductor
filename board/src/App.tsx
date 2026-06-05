@@ -432,6 +432,7 @@ export function App() {
             lastBeatIso={globalLastBeat}
             conn={conn}
             stallSeconds={stallSecondsFor(heartbeatInterval)}
+            done={liveModel.overallStatus === "done" || liveModel.overallStatus === "failed"}
           />
         </div>
       </div>
