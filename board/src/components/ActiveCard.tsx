@@ -23,12 +23,14 @@ export function ActiveCard({
   workflow?: string;
   notes?: DeveloperNote[];
 }) {
-  const [open, setOpen] = useState(false);
   const now = useNow(1000);
   const u = resolveActiveUnit(step);
   const latest = u.beats.at(-1);
   const finalBeat = u.beats.find((b) => b.finalBeat);
   const hasDetail = u.beats.length > 0 || u.criteria.length > 0 || !!finalBeat?.handoff;
+  // The LIVE card opens by default — going back to live should land on the activity (gates +
+  // heartbeats), not a collapsed summary you have to click open. Settled cards start collapsed.
+  const [open, setOpen] = useState(() => u.running && hasDetail);
   const timer = u.running ? clockSince(u.startedAt, now) : clockSince(u.startedAt, now, u.completedAt);
 
   const body = latest ? (
