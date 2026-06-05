@@ -28,7 +28,7 @@ export function TypewriterText({ text, speed = 30, className, cursor = true, onD
     // letter's gap jitters slightly, and there's a barely-there breath after
     // sentence and clause punctuation. The pauses claw back most of the speed-up
     // (~10% faster overall) while making it feel typed, not played back.
-    const base = speed * 0.78;
+    const base = speed * 0.62; // ~20% quicker than before
     let i = 0;
     let timer: ReturnType<typeof setTimeout>;
     const step = () => {
@@ -42,10 +42,10 @@ export function TypewriterText({ text, speed = 30, className, cursor = true, onD
       // Uneven pace — some letters tumble out, others lag. Real breaths after
       // sentence/clause punctuation, and the odd hesitation mid-thought.
       let delay = base * (0.45 + Math.random() * 1.25); // ~0.45–1.7×
-      if (last === "." || last === "!" || last === "?") delay += 240;
-      else if (last === "," || last === ";" || last === ":") delay += 110;
-      else if (last === " ") delay += 22;
-      if (Math.random() < 0.06) delay += 120 + Math.random() * 160; // a brief pause to think
+      if (last === "." || last === "!" || last === "?") delay += 190;
+      else if (last === "," || last === ";" || last === ":") delay += 88;
+      else if (last === " ") delay += 18;
+      if (Math.random() < 0.06) delay += 96 + Math.random() * 128; // a brief pause to think
       timer = setTimeout(step, delay);
     };
     timer = setTimeout(step, base);
