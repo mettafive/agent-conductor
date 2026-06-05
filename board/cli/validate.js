@@ -5,8 +5,26 @@ import yaml from "js-yaml";
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+const amber = (s) => `\x1b[38;5;214m${s}\x1b[0m`;
 
 const SEMVER = /^\d+\.\d+\.\d+$/;
+
+// Naming hints — pure label checks (no judgment, no skill-reading). WARNINGS only,
+// never affect the exit code. Teaches the naming discipline without blocking anyone.
+const SHRUG = new Set(["finish", "process", "handle", "misc", "stuff", "todo", "task", "do-stuff", "step"]);
+function nameLints(steps, acc = []) {
+  for (const s of steps ?? []) {
+    if (!s || !s.id) continue;
+    if (/^step-\d+$/i.test(s.id))
+      acc.push(`step "${s.id}" still has its scaffold name — rename to a verb-object headline (e.g. claim-batch, ship-and-verify)`);
+    else if (SHRUG.has(String(s.id).toLowerCase()))
+      acc.push(`step "${s.id}" is vague — name the phase + its deliverable, in verb-object form`);
+    if (/TODO/.test(JSON.stringify([s.instruction ?? "", s.gate ?? ""])))
+      acc.push(`step "${s.id}" still contains a TODO — fill it in before running`);
+    if (s.type === "loop" && Array.isArray(s.steps)) nameLints(s.steps, acc);
+  }
+  return acc;
+}
 
 function gateOk(g) {
   if (typeof g === "string") return true;
@@ -210,6 +228,13 @@ export async function runValidate(args) {
           `${part(approvals, "approval", "approvals")}`,
       ),
     );
+    const hints = nameLints(steps);
+    if (hints.length) {
+      console.log("");
+      console.log(amber(`  ${hints.length} naming hint${hints.length === 1 ? "" : "s"} ${dim("(warnings, not errors)")}`));
+      for (const h of hints) console.log(amber(`    ⚠ ${h}`));
+      console.log(dim("    → what makes a board people trust: docs/authoring-a-good-board.md"));
+    }
     console.log("");
     return true;
   }

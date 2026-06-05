@@ -66,6 +66,18 @@ steps:
       - conditions (type: condition) where the flow branches
       - loops (type: loop) where steps repeat over a list
       - chain data between steps with output: and requires:
+      Make it a board a flow manager would TRUST at a glance:
+      - SURFACE EVERY WORK-UNIT as its own card — including inputs (recon / research /
+        read-prior-state) and outputs (publish / link / index / notify); those are
+        the phases that vanish first. Never fold a phase into another step's
+        instruction; log anything deliberately skipped, never drop it silently.
+      - GROUP at one altitude: one card per phase the operator would name; siblings
+        comparable in size; mechanical sub-actions are beats INSIDE a card, not their
+        own cards; card-count matched to the work. Repetition -> loop, decision -> fork.
+      - NAME each card like a promise: imperative verb-object, honest about its real
+        weight (ship-and-verify not stage; run-destructive-reset not run-script),
+        brief (2-4 words), each paired with a "green means ..." done-contract. Do the
+        naming as its own pass, after grouping. See docs/authoring-a-good-board.md.
       Save the conductor to .conductor/conductor.yaml.
     requires: [read-skill]
     gate:
@@ -73,6 +85,22 @@ steps:
         check: "test -f .conductor/conductor.yaml"
       - name: "Conductor passes validation"
         check: "npx conductor-board validate .conductor/conductor.yaml"
+
+  - id: review-board
+    instruction: |
+      Before executing, judge the board as a veteran FLOW MANAGER would: "If I had
+      to RUN this work from this board, would I be DISAPPOINTED or FILLED WITH JOY?"
+      Concretely — can I see the WHOLE story (no phase hidden; inputs + outputs both
+      present)? Is the GROUPING right (one altitude, no black-box card, no noise)?
+      Do the NAMES read like promises (verb-object, honest, brief, each with a "green
+      means" contract)? Do I TRUST a green (the gate sits on the card it verifies)?
+      Fix every "disappointed" before running — naming is its own pass, after
+      grouping. (validate also prints free naming hints.) See docs/authoring-a-good-board.md.
+    requires: [convert-to-conductor]
+    gate:
+      - name: "Conductor still valid after the review pass"
+        check: "npx conductor-board validate .conductor/conductor.yaml"
+      - "Judged the board as a flow manager and fixed every disappointment: every work-unit has a card or a logged exclusion, grouping is one-altitude + complexity-matched, names are honest verb-object headlines each with a green-contract, and greens are trustworthy"
 
   - id: execute-workflow
     instruction: |
@@ -92,6 +120,8 @@ steps:
       allowed: if you drift, stop, re-sync the board, restart the step cleanly, and
       apologize. The board shows a red "Freeballing?" banner after ~3 minutes
       without a heartbeat. Retry on gate failure — never skip.
+      NOTE: this step runs only after review-board, so the board is already one a
+      flow manager would trust before any real work starts.
       At least once per minute, append a heartbeat {at, note} to the current
       step's heartbeat array (read prior entries first; orient against the gate
       AND the goal; use [text](url) links for any PRs or pages you produce).
@@ -110,7 +140,7 @@ steps:
       insights auto-apply in the next run's Phase 0. Browse them on the board's
       ✨ Insights page. Set the top-level status to "done" when the last step
       completes.
-    requires: [convert-to-conductor]
+    requires: [review-board]
     gate:
       - name: "Status file exists"
         check: "test -f .conductor/status.json"

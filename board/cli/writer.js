@@ -113,6 +113,24 @@ export function sequentialOrderGuard(sp, loopId, item) {
   }
   return { ok: true };
 }
+
+// Declared sub-step ids of a loop, from the conductor (null if unresolvable).
+// Used so loop completion is judged against the conductor's REAL sub-steps — not
+// whatever cells happen to exist — keeping the board's "done" honest and matching
+// complete.js's coverage guard. Fail-open (null) when the conductor can't be read.
+function loopSubIds(sp, loopId) {
+  try {
+    const cp = discoverConductor(sp);
+    if (!cp) return null;
+    const doc = loadConductor(cp);
+    const ls = (doc.steps || []).find((s) => s && s.id === loopId && s.type === "loop");
+    if (!ls) return null;
+    const ids = (ls.steps || []).map((s) => s && s.id).filter(Boolean);
+    return ids.length ? ids : null;
+  } catch {
+    return null;
+  }
+}
 function save(sp, s) {
   fs.mkdirSync(path.dirname(sp), { recursive: true });
   fs.writeFileSync(sp, JSON.stringify(s, null, 2));
@@ -357,25 +375,37 @@ export async function runLoopScope(args) {
       console.error(dim(`    proceeding as a SINGLE iteration — re-run with separate args if that's wrong.`));
     }
   }
+  // Dedupe: a repeated item is always a mistake (an agent listing the same unit twice).
+  // Counting dupes in `total` while the iterations map dedupes them leaves total >
+  // iteration-count, so the loop can NEVER reach completion. Scope DISTINCT items only.
+  const seenItems = new Set();
+  const uniqueItems = items.filter((it) => (seenItems.has(it) ? false : (seenItems.add(it), true)));
+  if (uniqueItems.length !== items.length) {
+    console.error(
+      red(`⚠ loop-scope got ${items.length - uniqueItems.length} duplicate item(s) — scoping ${uniqueItems.length} distinct iteration(s).`),
+    );
+  }
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
   lp.type = "loop";
   lp.iterations = lp.iterations || {};
-  for (const item of items) {
+  for (const item of uniqueItems) {
     lp.iterations[item] = lp.iterations[item] || {}; // sub-steps materialize as work begins
   }
-  lp.total = items.length;
+  // total tracks the DISTINCT scoped iterations actually in the map (re-scoping is additive,
+  // so reconcile to the real key count rather than to this call's argument length).
+  lp.total = Object.keys(lp.iterations).length;
   lp.completed = lp.completed || 0;
   if (lp.status !== "running") lp.status = lp.status || "pending";
   const noteFlag = flag(args, ["--note"]);
   const note =
     typeof noteFlag === "string"
       ? noteFlag
-      : `${items.length} scoped: ${items.join(", ")}. All pending.`;
+      : `${uniqueItems.length} scoped: ${uniqueItems.join(", ")}. All pending.`;
   (lp.heartbeat = lp.heartbeat || []).push({ at: now(), note });
   save(sp, s);
-  return ok(`${loopId} scoped — ${items.length} iterations frontloaded`);
+  return ok(`${loopId} scoped — ${uniqueItems.length} iterations frontloaded`);
 }
 
 // conductor-board loop <loopId> <item> <subId> <status>
@@ -397,6 +427,16 @@ export async function runLoop(args) {
     }
   }
 
+  // Guard a typo'd sub-step id: if the conductor declares this loop's sub-steps and
+  // subId isn't one of them, warn loudly (but still write — fail-open for back-compat).
+  // Without this, `loop <item> <typo> done` writes a phantom cell that USED to satisfy
+  // the loose "all present cells done" completion check and falsely turn the board green.
+  const declaredSubs = loopSubIds(sp, loopId);
+  if (declaredSubs && !declaredSubs.includes(subId)) {
+    console.error(
+      red(`⚠ '${subId}' is not a declared sub-step of loop '${loopId}' (declared: ${declaredSubs.join(", ")}).`),
+    );
+  }
   const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
   lp.type = "loop";
   lp.iterations = lp.iterations || {};
@@ -409,12 +449,14 @@ export async function runLoop(args) {
     lp.status = "running";
     s.current_step = loopId;
   }
-  // recompute completed. An iteration is complete only when it has materialized
-  // sub-step cells AND every one is done — a frontloaded-but-empty iteration ({})
-  // must NOT count (Object.values({}).every(...) is vacuously true, which would
-  // otherwise mark all not-yet-started iterations "complete" and flip the whole
-  // loop to done the instant the first iteration finishes).
+  // Recompute completed against the conductor's DECLARED sub-steps when available, so an
+  // iteration counts complete only when every real sub-step is done (matching complete.js's
+  // coverage guard) — a phantom/typo'd cell can't falsely finish it. Fall back to the loose
+  // "has cells and all done" check only when the conductor can't be resolved. Either way a
+  // frontloaded-but-empty iteration ({}) must NOT count (that would flip the whole loop done
+  // the instant the first iteration finishes).
   lp.completed = Object.values(lp.iterations).filter((sub) => {
+    if (declaredSubs) return declaredSubs.every((sid) => sub[sid] && sub[sid].status === "done");
     const cells = Object.values(sub);
     return cells.length > 0 && cells.every((c) => c.status === "done");
   }).length;

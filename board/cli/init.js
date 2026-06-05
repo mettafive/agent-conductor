@@ -20,6 +20,11 @@ function flag(args, names) {
 
 function buildYaml({ name, description, steps }) {
   const lines = [
+    "# A good board shows EVERY phase the skill does — including the easily-dropped",
+    "# ends: inputs (recon / research / read-prior-state) and outputs (publish / link",
+    "# / index / notify). Group at one altitude; name each card like a promise:",
+    "# verb-object, honest, brief — with a \"green means …\" contract. (Naming is its",
+    "# own pass, after grouping.)  →  docs/authoring-a-good-board.md",
     "conductor: 1.0.0",
     `name: ${name}`,
     `description: ${description}`,
@@ -27,12 +32,14 @@ function buildYaml({ name, description, steps }) {
     "steps:",
   ];
   for (let i = 1; i <= steps; i++) {
+    if (i === 1)
+      lines.push(`  # ↳ rename step-${i} to a verb-object headline a manager reads at a glance (e.g. claim-batch, ship-and-verify)`);
     lines.push(`  - id: step-${i}`);
     lines.push("    instruction: |");
-    lines.push("      TODO: Describe what to do in this step.");
+    lines.push("      TODO: what this phase does (include its real weight / risk).");
     if (i > 1) lines.push(`    requires: [step-${i - 1}]`);
     lines.push("    gate:");
-    lines.push('      - "TODO: Add validation criteria"');
+    lines.push('      - "green: TODO — what a green card here proves"');
     lines.push("");
   }
   return lines.join("\n").replace(/\n+$/, "\n");
@@ -82,6 +89,7 @@ export async function runInit(args) {
   console.log("");
   console.log(`${green("✓")} Created ${bold(rel)} with ${steps} step${steps === 1 ? "" : "s"}.`);
   console.log(dim("  Edit the steps, then run: ") + "conductor-board");
+  console.log(dim("  What makes a board people trust: ") + "docs/authoring-a-good-board.md");
   console.log("");
   return true;
 }

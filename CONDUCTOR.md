@@ -221,6 +221,49 @@ exotic domain is never an excuse to fold its phases together. (Proven across the
 phases; granular-by-default surfaces 520/520 work-units across all 120 cases, all 20 obscure
 included.)
 
+**Make coverage *enforceable*, not just exhortative.** Everything above is guidance — and guidance
+alone did **not** stop the SEO omission: this very lesson was already written here when a
+daily-enrichment conductor shipped with the paid DataForSEO recon folded into `research-clinic`'s
+prose and the treatment-linking (findability) step dropped entirely. The gap was **mechanical** —
+nothing compared the conductor's steps to the skill's work-unit *inventory*, so the omission was
+invisible. So at authoring time (setup's translate-skill step), run a **work-unit coverage check**:
+enumerate the source skill's work-units, then assert every one maps to a **step** (matched by step
+id/name — *not* by appearing inside another step's instruction prose) **or a logged, visible
+exclusion**. Never silently absent. **Inputs and outputs vanish first:** a recon/keyword INPUT and a
+findability / index / publish / notify OUTPUT don't produce the central artifact, so an
+artifact-focused conversion quietly drops them — exactly what happened (paid-SEO recon in,
+treatment-linking out). Tested mechanically across the 43-case
+[work-unit coverage corpus](./tests/coverage.smoke.mjs): it flags 30 omitted work-units a naive
+structural check catches 0 of. **A conductor that models a skill is INCOMPLETE until every named
+work-unit has a card or a logged exclusion** — `mention ≠ coverage`.
+
+## Name the cards like a promise — the 6 tests
+
+Naming tested as the **weakest** dimension of board quality, and a *dedicated naming pass* lifted it
+hard (+1.6 on a 10-scale across 15 skills, **+1.1 holistic**, with grouping held flat as the control).
+A card's title is the contract the flow manager reads at a glance — it has to earn trust on its own.
+**Do naming as its OWN pass, after grouping is settled** (it's a different craft; folding it into the
+grouping step is *why* names come out weakest). Name every card to pass all six:
+
+1. **Specific** — name the phase + its deliverable; never a shrug (`finish`, `process`, `write-fields`).
+2. **Operator-language** — what a person *managing* the work calls it, not the script/function
+   (`buy-dataforseo-recon`, not `dfs-batch`).
+3. **Honest about weight + risk** — never undersell. A card that ships+snapshots+indexes is
+   `ship-and-verify`, not `stage`; the destructive one is `run-destructive-reset`, not `run-script`.
+4. **One convention** — imperative `verb-object`, lowercase-kebab, the same altitude across every
+   sibling card.
+5. **Brief** — a 2–4-word headline. The *full* weight goes in the green-contract (#6), **not** the
+   title; honesty must not bloat the label into a sentence. (This test exists because the first naming
+   pass over-corrected toward honesty and produced unscannable titles like
+   `build-enrichable-candidate-set-and-reject-unsafe`.)
+6. **Implies green** — pair each card with a one-line **"green means …"** contract stating what a green
+   card *proves*. This is what makes a green trustworthy — it lifts the *trust* dimension too, not just
+   *names*. (e.g. `claim-4-clinics` · *green: exactly 4 slugs claimed in candidates.json, branch pushed*.)
+
+The acceptance bar above all of this is not a checklist — it's whether a flow manager opening the board
+would be **disappointed or filled with joy** (would they trust the greens, orient at a glance, and be
+proud to hand it off?). Coverage, grouping, and naming are the levers; joy is the score.
+
 ## Heartbeats
 
 **The board shows only what you narrate — so narrate every phase that takes time, not just
