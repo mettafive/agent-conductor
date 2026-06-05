@@ -50,6 +50,15 @@ function ConnDot({ conn }: { conn?: Conn }) {
   );
 }
 
+/** A small sparkle — marks a beat that captured a learning (an SVG, not an emoji). */
+function InsightIcon() {
+  return (
+    <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden className="shrink-0">
+      <path d="M12 2l1.7 6.1L20 10l-6.3 1.9L12 18l-1.7-6.1L4 10l6.3-1.9L12 2z" />
+    </svg>
+  );
+}
+
 interface Props {
   beats: StreamBeat[];
   arrival: Arrival | null;
@@ -391,12 +400,17 @@ function ExpandedMonitor({
                 </span>
               )}
               {b.insight && (
-                <span
-                  className="mt-px shrink-0 select-none rounded bg-amber/15 px-1 font-mono text-[8px] leading-[1.6] text-amber"
-                  title="this beat captured a learning — open the Insights tab"
+                <button
+                  onClick={() => {
+                    pinned.current = true;
+                    setFilter("insights");
+                  }}
+                  className="mt-px flex shrink-0 select-none items-center gap-0.5 rounded bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
+                  title="captured a learning — click to browse it in the Insights tab"
                 >
-                  ✦ insight
-                </span>
+                  <InsightIcon />
+                  insight
+                </button>
               )}
             </div>
           ))}

@@ -215,17 +215,17 @@ function GroupBlock({
       ) : rows.length > 0 ? (
         <div className="mt-2 space-y-1 border-l border-line pl-2.5">
           {shownRows.map((h, i) => (
-            <div key={i} className="flex items-start gap-1.5">
+            <div key={i}>
               <span
-                className="mt-px shrink-0 rounded bg-line-2/40 px-1 font-mono text-[8.5px] leading-[1.5] text-dim"
+                className="inline-block rounded bg-line-2/40 px-1 font-mono text-[8.5px] leading-[1.5] text-dim"
                 title={h.at}
               >
                 {absTime(h.at)}
               </span>
-              <span className="flex-1 text-[11px] leading-snug text-mist-2">
+              <p className="mt-0.5 text-[11px] leading-snug text-mist-2">
                 {renderNote(h.note)}
                 {h.insight && <span className="mt-0.5 block text-[9.5px] italic text-amber/90">↳ {h.insight.seed}</span>}
-              </span>
+              </p>
             </div>
           ))}
           {collapsible && (
