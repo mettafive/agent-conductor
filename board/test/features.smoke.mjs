@@ -961,6 +961,99 @@ steps:
   assert(s.steps.prepare.status === "done" && s.steps.publish.status === "done", "not all steps done");
 });
 
+// ── coverage: every work-unit must have a card (the folded-phase guard) ────────
+
+// A conductor that FOLDS the paid recon into pick-batch (the real treatment-readability bug).
+const FOLDED = `conductor: 2.2.0
+name: tr
+description: d
+steps:
+  - id: setup-branch
+    instruction: branch
+    gate: ["ok"]
+  - id: pick-batch
+    instruction: |
+      FIRST prefetch the paid recon:
+        npx tsx scripts/tr.ts prefetch-popular --count 25
+      THEN claim the batch:
+        npx tsx scripts/tr.ts next --count 5
+    gate: ["ok"]
+  - id: report
+    instruction: report
+    gate: ["ok"]
+`;
+// The work-unit ledger read-skill WOULD emit — the recon is its own line.
+const LEDGER = `# analysis
+## work-units
+- id: setup-branch          kind: gateable
+- id: buy-dataforseo-recon  kind: divider
+- id: pick-batch            kind: gateable
+- id: report                kind: divider
+`;
+
+test("coverage: fails (exit 1) and names the work-unit folded into another card", () => {
+  const tmp = tmpdir();
+  const a = writeFile(tmp, ".conductor/skill-analysis.md", LEDGER);
+  const c = writeFile(tmp, ".conductor/conductor.yaml", FOLDED);
+  const r = cli(["coverage", "--analysis", a, "--conductor", c], tmp);
+  assert(r.code === 1, `expected exit 1 on a folded phase, got ${r.code}:\n${r.out}`);
+  assert(/buy-dataforseo-recon/.test(r.out), `expected the orphan named:\n${r.out}`);
+  assert(/NO card/i.test(r.out), `expected a "no card" message:\n${r.out}`);
+});
+
+test("coverage: passes (exit 0) once every work-unit — incl. loop sub-steps — has a card", () => {
+  const tmp = tmpdir();
+  const fixed = FOLDED
+    .replace("  - id: pick-batch", "  - id: buy-dataforseo-recon\n    instruction: buy\n    gate: [\"ok\"]\n  - id: pick-batch")
+    // and add a loop whose sub-step is a ledger work-unit, to prove sub-steps count
+    .replace("  - id: report\n    instruction: report\n    gate: [\"ok\"]\n",
+      "  - id: polish-and-ship\n    type: loop\n    over: xs\n    as: x\n    steps:\n      - id: report\n        instruction: report\n        gate: [\"ok\"]\n");
+  const a = writeFile(tmp, ".conductor/skill-analysis.md", LEDGER);
+  const c = writeFile(tmp, ".conductor/conductor.yaml", fixed);
+  const r = cli(["coverage", "--analysis", a, "--conductor", c], tmp);
+  assert(r.code === 0, `expected exit 0 when all work-units have a card, got ${r.code}:\n${r.out}`);
+  assert(/all 4 work-units have a card/.test(r.out), `expected the all-covered message:\n${r.out}`);
+});
+
+test("coverage: errors clearly when the work-unit ledger is missing", () => {
+  const tmp = tmpdir();
+  const c = writeFile(tmp, ".conductor/conductor.yaml", FOLDED);
+  const r = cli(["coverage", "--analysis", path.join(tmp, "nope.md"), "--conductor", c], tmp);
+  assert(r.code === 1 && /no work-unit ledger/i.test(r.out), `expected a missing-ledger error:\n${r.out}`);
+});
+
+test("validate: backstop warns (exit 0) when one step bundles 2+ distinct tool commands", () => {
+  const tmp = tmpdir();
+  const c = writeFile(tmp, "c.yaml", FOLDED);
+  const r = cli(["validate", c], tmp);
+  assert(r.code === 0, `backstop is a warning, must not fail validation: exit ${r.code}\n${r.out}`);
+  assert(/pick-batch.*bundles 2 distinct commands/.test(r.out), `expected the folded-phase warning:\n${r.out}`);
+  assert(/prefetch-popular/.test(r.out) && /\bnext\b/.test(r.out), `expected the distinguishing subcommands shown:\n${r.out}`);
+});
+
+test("validate: backstop stays quiet for a single-command step (no false positive)", () => {
+  const tmp = tmpdir();
+  const ok = `conductor: 2.2.0
+name: t
+description: d
+steps:
+  - id: claim-batch
+    instruction: |
+      Claim the batch:
+        npx tsx scripts/tr.ts next --count 5
+    gate: ["ok"]
+  - id: setup-branch
+    instruction: |
+      mkdir -p runs/today
+      git switch -C work origin/main
+    gate: ["ok"]
+`;
+  const c = writeFile(tmp, "c.yaml", ok);
+  const r = cli(["validate", c], tmp);
+  assert(r.code === 0, `expected valid:\n${r.out}`);
+  assert(!/bundles \d+ distinct commands/.test(r.out), `single-command + scaffolding steps must not warn:\n${r.out}`);
+});
+
 // ── runner ────────────────────────────────────────────────────────────────────
 const results = [];
 for (const { name, fn } of scenarios) {

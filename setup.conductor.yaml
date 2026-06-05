@@ -64,13 +64,28 @@ steps:
         judgment.
       Flag every loop candidate AND every divider work-unit loudly — the convert step must turn each
       loop into a loop (never a flat step) and each named work-unit into its own card (never folded).
-      Save your analysis to .conductor/skill-analysis.md — include the explicit work-unit list,
-      each tagged gateable|divider.
+      Save your analysis to .conductor/skill-analysis.md. It MUST contain a machine-readable
+      WORK-UNIT LEDGER — one line per named work-unit, in EXACTLY this format, under a
+      `## work-units` heading (this is what `conductor-board coverage` checks the conductor against,
+      so the id you write here MUST become the step/sub-step id in the conductor):
+
+        ## work-units
+        - id: buy-dataforseo-recon   kind: divider
+        - id: claim-batch            kind: gateable
+        - id: polish-page            kind: gateable   loop: per-page
+        - id: index-submit           kind: divider
+
+      `kind: gateable` = has a real must-pass condition; `kind: divider` = visibility-only (the user
+      wants to SEE it happened, no hard check). Put the PAID/EXTERNAL recon (DataForSEO, an API buy,
+      a crawl) on its own line — that is the line most often folded away. Prose above the ledger is
+      fine; the ledger lines are the contract.
     requires: [start-board]
     gate:
       - name: "Analysis saved"
         check: "test -f .conductor/skill-analysis.md"
-      - "The analysis lists EVERY distinct work-unit the skill names (not just the gateable ones), each tagged gateable|divider — so the convert step can give each its own card. I did not let any named phase (e.g. an SEO/keyword/polish pass) survive only as a sentence inside another work-unit"
+      - name: "Work-unit ledger present (machine-readable, ≥1 `- id: … kind: …` line)"
+        check: "grep -qE '^- id:[[:space:]]*[A-Za-z0-9].*kind:[[:space:]]*(gateable|divider)' .conductor/skill-analysis.md"
+      - "The analysis lists EVERY distinct work-unit the skill names (not just the gateable ones) in the `## work-units` ledger, each tagged gateable|divider — so the convert step can give each its own card. I did not let any named phase (e.g. an SEO/keyword/polish pass, a paid recon) survive only as a sentence inside another work-unit"
 
   - id: convert-to-conductor
     instruction: |
@@ -145,6 +160,8 @@ steps:
         check: "test -f .conductor/conductor.yaml"
       - name: "Conductor passes validation"
         check: "npx conductor-board validate .conductor/conductor.yaml"
+      - name: "COVERAGE: every work-unit in the ledger has a card (independent check — no folded phase)"
+        check: "npx conductor-board coverage --analysis .conductor/skill-analysis.md --conductor .conductor/conductor.yaml"
       - name: "Gate-review written (gates traced to skill goals + red-teamed)"
         check: "test -f .conductor/gate-review.md"
       - "Every hard gate was run against a known-bad example and FAILED it — a gate that can't reject its own violation is a lint, not a gate"

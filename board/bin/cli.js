@@ -30,6 +30,9 @@ const HELP = `
     (default)                Serve the live board (watches .conductor/)
     init                     Scaffold a new .conductor/conductor.yaml
     validate [path]          Check a conductor against the spec
+    coverage                 Verify every work-unit in .conductor/skill-analysis.md
+                             has a card in the conductor (fails on a folded phase).
+                             [--analysis <md>] [--conductor <yaml>]
     setup                    Write setup.conductor.yaml (the bootstrap conductor)
     check <step-id>          Board-sync pre-gate check — fails if the board is
                              stale for this step (use as a step's first gate)
@@ -85,6 +88,11 @@ if (command === "init") {
 if (command === "validate") {
   const { runValidate } = await import("../cli/validate.js");
   process.exit((await runValidate(rest)) ? 0 : 1);
+}
+
+if (command === "coverage") {
+  const { runCoverage } = await import("../cli/coverage.js");
+  process.exit((await runCoverage(rest)) ? 0 : 1);
 }
 
 if (command === "setup") {

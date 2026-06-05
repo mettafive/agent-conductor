@@ -51,11 +51,30 @@ steps:
       Break it down into: the discrete sequential steps; decision points where
       the flow could branch; repeated operations that need loops; and which
       checks are verifiable by a shell command vs which need judgment.
-      Save your analysis to .conductor/skill-analysis.md.
+      Save your analysis to .conductor/skill-analysis.md. It MUST contain a
+      machine-readable WORK-UNIT LEDGER — one line per named work-unit the user
+      would scan the board for, under a \`## work-units\` heading, in EXACTLY this
+      format (the id you write here MUST become the step/sub-step id in the
+      conductor — \`conductor-board coverage\` checks the conductor against it):
+
+        ## work-units
+        - id: buy-dataforseo-recon   kind: divider
+        - id: claim-batch            kind: gateable
+        - id: polish-page            kind: gateable   loop: per-page
+        - id: index-submit           kind: divider
+
+      \`kind: gateable\` = has a real must-pass condition; \`kind: divider\` =
+      visibility-only (the user wants to SEE it happened, no hard check). The #1
+      failure is folding a named phase — a paid/external recon (DataForSEO, an API
+      buy, a crawl), an SEO/keyword/polish pass, an index/publish — into another
+      step so it never gets a card and the user thinks it was skipped. Give each
+      its own ledger line now so that cannot happen.
     requires: [start-board]
     gate:
       - name: "Analysis saved"
         check: "test -f .conductor/skill-analysis.md"
+      - name: "Work-unit ledger present (machine-readable)"
+        check: "grep -qE '^- id:[[:space:]]*[A-Za-z0-9].*kind:[[:space:]]*(gateable|divider)' .conductor/skill-analysis.md"
 
   - id: convert-to-conductor
     instruction: |
@@ -85,6 +104,8 @@ steps:
         check: "test -f .conductor/conductor.yaml"
       - name: "Conductor passes validation"
         check: "npx conductor-board validate .conductor/conductor.yaml"
+      - name: "COVERAGE: every work-unit in the ledger has a card (no folded phase)"
+        check: "npx conductor-board coverage --analysis .conductor/skill-analysis.md --conductor .conductor/conductor.yaml"
 
   - id: review-board
     instruction: |
