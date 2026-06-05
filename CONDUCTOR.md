@@ -248,8 +248,12 @@ conductor's `knowledge:` section with `conductor-board suggest`:
 - **`--scope` is required** — `this-conductor` (auto-appliable) | `upstream` |
   `template` | `tooling` | `corpus`. The highest-leverage learnings are usually
   cross-cutting; without a scope they leak into chat and vanish.
-- For `this-conductor` insights, include `--step`, `--current`, `--proposed` so a
-  future run can auto-apply them once they reach **proven**.
+- **Capture depth, not a bumper sticker.** A bare title isn't actionable — the next run, and
+  the human reading the done screen, need the *why* and the *change*. Always add **`--note`**
+  with the evidence (what you saw, where, how often — e.g. *"jordbruksverket TypeError'd
+  mid-batch on a live URL; 8s cooldown + retry succeeded"*), and for a concrete change add
+  **`--current`/`--proposed`** (the exact before→after). For `this-conductor` insights,
+  `--step` + `--current` + `--proposed` are what let a future run auto-apply them once **proven**.
 - A repeat sighting bumps `observed` and escalates `emerging` → **proven** (3×).
   The conductor file is version-controlled — commit it and the learning travels
   with the repo. Browse it any time on the board's ✨ **Insights** page.
