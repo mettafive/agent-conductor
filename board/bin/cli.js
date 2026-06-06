@@ -21,21 +21,24 @@ function flag(names, fallback) {
 }
 
 const HELP = `
-  conductor-board — gated workflows for AI agents, with a live Kanban board
+  conductor-board — independently checked AI-agent workflows, with a live Kanban board
 
   Usage
     $ npx conductor-board [command] [options]
 
   Commands
     (default)                Serve the live board (watches .conductor/)
-    init                     Scaffold a new .conductor/conductor.yaml
+    init                     Scaffold a new .conductor/conductor.json
     validate [path]          Check a conductor against the spec
-    coverage                 Verify every work-unit in .conductor/skill-analysis.md
+    cards [path]             Validate card-design output: id/title/instruction,
+                             unique kebab-case ids, no dependencies.
+                             [--skill <path>]
+    coverage                 Verify every card in .conductor/cards.json
                              has a card in the conductor (fails on a folded phase).
-                             [--analysis <md>] [--conductor <yaml>]
-    setup                    Write setup.conductor.yaml (the bootstrap conductor)
-    check <step-id>          Board-sync pre-gate check — fails if the board is
-                             stale for this step (use as a step's first gate)
+                             [--cards <json>] [--conductor <json>]
+    setup                    Write setup.conductor.json (the bootstrap conductor)
+    check <step-id>          Run the independent instruction checker and record
+                             its PASS/FAIL verdict
     ps                       List every conductor-board running on this machine
     stop [--all]             Stop this project's board (or every board)
     clean [--keep N]         Trim history to the last N runs; add
@@ -51,11 +54,14 @@ const HELP = `
     knowledge [--min N]      List knowledge / gate on captured-learnings count
     loop-scope <loop> <item...>   Frontload every iteration as pending (scope beat)
     loop <loop> <item> <sub> <state>   Update a loop sub-step
-    complete <step>[::iter::sub] [--attest-soft]   Run hard gates, then advance
+    gate-result <step>[::iter::sub] --passed|--failed [--evidence "..."]
+                             Record an independent checker verdict for a card
+    complete <step>[::iter::sub]   Consume checker verdict, then advance on pass
+    feedback <step>[::iter::sub]   Read latest checker failure and attempts left
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
-    --conductor, -c <file>   Path to the conductor  (default: auto-discovered)
+    --conductor, -c <file>   Path to conductor.json (default: auto-discovered)
     --port <n>               Port to serve on        (default: 3042)
     --headless               Don't open a browser (CI / cloud / no display).
                              Same as CONDUCTOR_HEADLESS=1. Default: opens.
@@ -64,14 +70,14 @@ const HELP = `
     --name, -n <name>        Workflow name (skips the prompts)
     --description, -d <text> One-line description
     --steps, -s <n>          Number of placeholder steps
-    --force, -f              Overwrite an existing conductor.yaml
+    --force, -f              Overwrite an existing conductor.json
 
   --help, -h                 Show this help
 
   Examples
     $ npx conductor-board
     $ npx conductor-board init --name clinic-update --steps 4
-    $ npx conductor-board validate .conductor/conductor.yaml
+    $ npx conductor-board validate .conductor/conductor.json
 `;
 
 // ---- subcommands ----
@@ -88,6 +94,11 @@ if (command === "init") {
 if (command === "validate") {
   const { runValidate } = await import("../cli/validate.js");
   process.exit((await runValidate(rest)) ? 0 : 1);
+}
+
+if (command === "cards") {
+  const { runCards } = await import("../cli/cards.js");
+  process.exit((await runCards(rest)) ? 0 : 1);
 }
 
 if (command === "coverage") {
@@ -143,6 +154,16 @@ if (["step", "gate", "heartbeat", "overview", "comment", "directives", "resolve"
 if (command === "complete") {
   const { runComplete } = await import("../cli/complete.js");
   process.exit((await runComplete(rest)) ? 0 : 1);
+}
+
+if (command === "feedback") {
+  const { runFeedback } = await import("../cli/complete.js");
+  process.exit((await runFeedback(rest)) ? 0 : 1);
+}
+
+if (command === "gate-result") {
+  const { runGateResult } = await import("../cli/complete.js");
+  process.exit((await runGateResult(rest)) ? 0 : 1);
 }
 
 if (command && command !== "board") {

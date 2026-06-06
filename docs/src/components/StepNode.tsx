@@ -4,8 +4,7 @@ import type { StepNodeData } from "../lib/parseConductor";
 type StepNode = Node<StepNodeData>;
 
 export function StepNode({ data }: NodeProps<StepNode>) {
-  const soft = data.gates.filter((g) => g.kind === "soft").length;
-  const hard = data.gates.filter((g) => g.kind === "hard").length;
+  const check = data.gates[0];
 
   if (data.isCondition) {
     return (
@@ -74,26 +73,12 @@ export function StepNode({ data }: NodeProps<StepNode>) {
             )}
           </div>
         )}
-        {data.type === "approval" && (
-          <span className="mt-2 inline-block rounded-md border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[10px] text-amber">
-            ⏳ human approval
-          </span>
-        )}
-
-        {(soft > 0 || hard > 0) && (
+        {check && (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {soft > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-line-2 bg-ink/60 px-1.5 py-0.5 font-mono text-[10px] text-mist-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-iris" />
-                {soft} soft
-              </span>
-            )}
-            {hard > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-mint/25 bg-mint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-mint">
-                <span className="h-1.5 w-1.5 rounded-full bg-mint" />
-                {hard} check
-              </span>
-            )}
+            <span className="inline-flex items-center gap-1 rounded-md border border-mint/25 bg-mint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-mint">
+              <span className="h-1.5 w-1.5 rounded-full bg-mint" />
+              check{check.checker ? `:${check.checker}` : ""}
+            </span>
           </div>
         )}
       </div>

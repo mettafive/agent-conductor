@@ -1,41 +1,17 @@
 export type Column = "pending" | "running" | "gate" | "done" | "failed";
 
-export interface HardGate {
-  text: string;
-  name?: string;
-}
-
 export interface GateCriterion {
-  kind: "soft" | "hard";
   text: string;
   name?: string;
   /** filled from status.gate_detail when available */
   passed?: boolean | null;
-  exitCode?: number;
-  /** true when the gate-runner (conductor-board complete) actually ran the check */
-  verified?: boolean;
-}
-
-export interface ApprovalConfig {
-  prompt?: string;
-  items?: string[]; // per-item templates, e.g. "{page} — ready to ship"
-  approve?: string; // target step on approve
-  reject?: string; // target step on reject
-}
-
-export interface ApprovalItem {
-  label: string;
-  decision: "approved" | "rejected" | null;
-}
-
-export interface ApprovalState {
-  prompt?: string;
-  items: ApprovalItem[];
-  decided: boolean;
+  checker?: "instruction";
+  evidence?: string;
 }
 
 export interface ConductorStep {
   id: string;
+  title: string;
   index: number;
   instruction: string;
   firstLine: string;
@@ -45,17 +21,12 @@ export interface ConductorStep {
   then?: string;
   output?: string;
   requires: string[];
-  soft: string[];
-  hard: HardGate[];
   // loops (§4.3)
   isLoop: boolean;
   over?: string;
   as?: string;
   parallel?: boolean | "auto";
   subSteps?: ConductorStep[];
-  // human approval (§4.4)
-  isApproval: boolean;
-  approval?: ApprovalConfig;
 }
 
 export interface IterationStep {
@@ -101,7 +72,7 @@ export interface KnowledgeEntry {
   scope: Scope;
   observed: number;
   step?: string;
-  /** instruction | gate | new_step | remove_step | reorder — structural ones need approval */
+  /** instruction | gate | new_step | remove_step | reorder */
   type?: string;
   current?: string;
   proposed?: string;
@@ -199,7 +170,6 @@ export interface ImproveMeta {
   note?: string;
   observed?: number;
   scope?: Scope;
-  /** structural changes (add/remove/reorder step) need human approval */
   structural?: boolean;
   kind?: string; // instruction | gate | new_step | remove_step | reorder | validate
 }
@@ -219,7 +189,6 @@ export interface BoardStep extends ConductorStep {
   output_value?: unknown;
   criteria: GateCriterion[];
   loop?: LoopState;
-  approvalState?: ApprovalState;
   heartbeat: HeartbeatEntry[];
   learnings: string[];
   /** parallel-agent overviews of activity cards, keyed by card id (the opener beat's `at`) */
@@ -320,7 +289,7 @@ export interface RunRecord extends HistoryRun {
 
 export interface Snapshot {
   status: Record<string, unknown> | null;
-  conductorYaml: string | null;
+  conductorJson: string | null;
   statusPath: string;
   conductorPath: string | null;
 }

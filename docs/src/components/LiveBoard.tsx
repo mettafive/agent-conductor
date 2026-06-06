@@ -8,33 +8,33 @@ import { TypewriterText } from "./TypewriterText";
 /**
  * The live board demo. Cards slide column → column with the same layout
  * animation the real app uses (framer-motion `layout`), stepping strictly
- * pending → running → gate → done so a step is never skipped. The heartbeat
+ * pending → running → checking → done so a step is never skipped. The heartbeat
  * streams agent-fast and finishes before a card moves. Two sizes: a compact
  * three-step version, and a five-step version when the board has room.
  */
 
 type Col = "pending" | "running" | "gate" | "done";
 const COLS: Col[] = ["pending", "running", "gate", "done"];
-const COL_LABEL: Record<Col, string> = { pending: "Pending", running: "Running", gate: "Gate", done: "Done" };
+const COL_LABEL: Record<Col, string> = { pending: "Pending", running: "Running", gate: "Checking", done: "Done" };
 
 interface Step {
   id: string;
-  gate: boolean;
+  check: boolean;
   note: string;
 }
 
 // A page-building agent run — exactly the kind of workflow where an agent
 // declares victory early and skips the image or the SEO pass.
 const FULL: Step[] = [
-  { id: "research", gate: false, note: "Pulling 6 sources on the treatment — cost ranges, risks, the questions owners actually ask." },
-  { id: "write page", gate: true, note: "Drafting the page from research — answering the owner's top three questions in the first screen." },
-  { id: "generate image", gate: true, note: "Generating a hero image of the treatment for this species; checking it reads on-brand." },
-  { id: "SEO check", gate: true, note: "Auditing title, meta, headings, internal links and the target keyword." },
-  { id: "publish", gate: true, note: "Every gate green. Publishing the page and pinging the sitemap." },
+  { id: "research", check: true, note: "Pulling 6 sources on the treatment — cost ranges, risks, the questions owners actually ask." },
+  { id: "write page", check: true, note: "Drafting the page from research — answering the owner's top three questions in the first screen." },
+  { id: "generate image", check: true, note: "Generating a hero image of the treatment for this species; checking it reads on-brand." },
+  { id: "SEO check", check: true, note: "Auditing title, meta, headings, internal links and the target keyword." },
+  { id: "publish", check: true, note: "Every check green. Publishing the page and pinging the sitemap." },
 ];
 const COMPACT: Step[] = [FULL[1], FULL[2], FULL[3]]; // write · image · SEO
 
-const GATE_NOTE = (id: string) => `Verifying ${id} — every criterion has to pass before the next step unlocks.`;
+const CHECK_NOTE = (id: string) => `Checking ${id} — the output has to satisfy the instruction before the next step unlocks.`;
 const RESET_NOTE = "Run complete. Watching for the next page to build.";
 
 interface State {
@@ -60,9 +60,9 @@ function advance(s: State, steps: Step[]): { next: State; delay: number } {
     return { next: { cols, note: step.note }, delay: 2100 }; // let the beat finish
   }
   if (cols[i] === "running") {
-    if (step.gate) {
+    if (step.check) {
       cols[i] = "gate";
-      return { next: { cols, note: GATE_NOTE(step.id) }, delay: 1300 };
+      return { next: { cols, note: CHECK_NOTE(step.id) }, delay: 1300 };
     }
     cols[i] = "done";
   } else {

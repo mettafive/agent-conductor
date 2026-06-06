@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import yaml from "js-yaml";
 import { validateConductor } from "./validate.js";
 
 export const SCOPES = ["this-conductor", "upstream", "template", "tooling", "corpus"];
@@ -12,15 +11,11 @@ export function discoverConductor(statusPath, explicit) {
     return fs.existsSync(p) ? p : null;
   }
   const dir = path.dirname(statusPath);
-  for (const c of ["conductor.yaml", "conductor.yml"]) {
+  for (const c of ["conductor.json"]) {
     const p = path.join(dir, c);
     if (fs.existsSync(p)) return p;
   }
-  if (fs.existsSync(dir)) {
-    const y = fs.readdirSync(dir).find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-    if (y) return path.join(dir, y);
-  }
-  for (const c of ["conductor.yaml", "conductor.yml"]) {
+  for (const c of ["conductor.json"]) {
     const p = path.resolve(process.cwd(), c);
     if (fs.existsSync(p)) return p;
   }
@@ -74,7 +69,7 @@ export function mergeKnowledge(doc, entry) {
 
 /** Read + parse a conductor file. Throws on parse error. */
 export function loadConductor(conductorPath) {
-  return yaml.load(fs.readFileSync(conductorPath, "utf8")) || {};
+  return JSON.parse(fs.readFileSync(conductorPath, "utf8")) || {};
 }
 
 /**
@@ -90,7 +85,7 @@ export function saveConductor(conductorPath, doc) {
     /* backup is best-effort */
   }
   try {
-    fs.writeFileSync(conductorPath, yaml.dump(doc, { lineWidth: 100 }));
+    fs.writeFileSync(conductorPath, JSON.stringify(doc, null, 2) + "\n");
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };

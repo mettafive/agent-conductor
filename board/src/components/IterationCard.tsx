@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { ConductorStep, HeartbeatEntry, IterationStep, DeveloperNote } from "../lib/types";
+import type { HeartbeatEntry, IterationStep, DeveloperNote } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import { subStepColumn } from "../lib/loop";
 import { renderNote } from "../lib/heartbeat";
@@ -18,15 +18,14 @@ const MOVE = {
 
 /**
  * A full-size card for one loop sub-step within an iteration. Shows the
- * iteration name, gate badges, the latest heartbeat, a finalBeat handoff
- * marker, attempt count and duration. Click to expand the gate results and the
+ * iteration name, checker badges, the latest heartbeat, a finalBeat handoff
+ * marker, attempt count and duration. Click to expand the checker results and the
  * full heartbeat timeline.
  */
 export function IterationCard({
   loopId,
   item,
   sub,
-  def,
   beats,
   workflow,
   notes,
@@ -34,15 +33,12 @@ export function IterationCard({
   loopId: string;
   item: string;
   sub: IterationStep;
-  def?: ConductorStep;
   beats: HeartbeatEntry[];
   workflow?: string;
   notes?: DeveloperNote[];
 }) {
   const now = useNow(5000);
   const col = subStepColumn(sub);
-  const soft = def?.soft ?? [];
-  const hard = def?.hard ?? [];
   // prefer beats tagged to this exact sub-step; fall back to the iteration's
   const subBeats = beats.filter((b) => b.sub === sub.id);
   const shown = subBeats.length > 0 ? subBeats : beats;
@@ -51,7 +47,7 @@ export function IterationCard({
   const passed = sub.criteria.filter((c) => c.passed === true).length;
   const gateTotal = sub.criteria.length;
   const dur = fmtDur(sub.started_at, sub.completed_at);
-  const hasDetail = shown.length > 0 || soft.length + hard.length > 0 || gateTotal > 0;
+  const hasDetail = shown.length > 0 || gateTotal > 0;
   // the live (running) iteration opens by default — following = see its beats, no extra click.
   const [open, setOpen] = useState(() => col === "running" && hasDetail);
 
@@ -102,7 +98,7 @@ export function IterationCard({
         <span className="text-mist">{item}</span>
         {gateTotal > 0 && (
           <span className="tabular-nums">
-            {passed}/{gateTotal} gates
+            {passed}/{gateTotal} checks
           </span>
         )}
         {dur && <span className="tabular-nums">{dur}</span>}
@@ -125,7 +121,7 @@ export function IterationCard({
         </div>
       )}
 
-      {/* expanded: gate results + heartbeat timeline */}
+      {/* expanded: checker results + heartbeat timeline */}
       <AnimatePresence initial={false}>
         {open && hasDetail && (
           <motion.div
@@ -135,28 +131,9 @@ export function IterationCard({
             transition={{ duration: 0.22 }}
             className="overflow-hidden"
           >
-            {sub.criteria.length > 0 ? (
-              <div className="pl-7">
-                <GateList criteria={sub.criteria} settled={col === "done"} />
-              </div>
-            ) : (
-              (soft.length > 0 || hard.length > 0) && (
-                <div className="mt-2.5 space-y-0.5 border-t border-line pt-2 pl-7">
-                  {soft.map((t, i) => (
-                    <div key={`s${i}`} className="flex gap-1.5 text-[11px] leading-snug text-mist">
-                      <span className="text-cyan">·</span>
-                      <span className="flex-1">{t}</span>
-                    </div>
-                  ))}
-                  {hard.map((h, i) => (
-                    <div key={`h${i}`} className="flex gap-1.5 font-mono text-[10px] leading-snug text-mint/80">
-                      <span>$</span>
-                      <span className="flex-1">{h.name ?? h.text}</span>
-                    </div>
-                  ))}
-                </div>
-              )
-            )}
+            <div className="pl-7">
+              <GateList criteria={sub.criteria} settled={col === "done"} />
+            </div>
             {shown.length > 0 && (
               <HeartbeatTimeline
                 entries={shown}

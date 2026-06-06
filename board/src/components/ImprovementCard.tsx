@@ -1,49 +1,39 @@
 import type { BoardStep } from "../lib/types";
-import type { Decision } from "./ApprovalCard";
 import { Icon } from "./Icon";
 import { Led } from "./Led";
 
 const COL_LABEL: Record<string, string> = {
   running: "Applying",
-  gate: "Gate Check",
+  gate: "Checking",
   done: "Done",
   failed: "Failed",
   pending: "Pending",
 };
 
 /** Default gate checklist shown for an auto-apply improvement card. */
-function defaultGates(structural: boolean): string[] {
-  return structural
-    ? ["Structural change — human approval", "conductor still validates"]
-    : ["conductor.yaml modified", "validation passes", "change is ≤ 1 sentence"];
+function defaultGates(): string[] {
+  return ["conductor.json modified", "validation passes", "change is ≤ 1 sentence"];
 }
 
 /**
  * A Phase 0 self-improvement card (§10.2). Shows the before/after diff for a
- * proven this-conductor insight. Text changes auto-apply; structural changes
- * (add/remove/reorder step) render an Approve / Skip control instead.
+ * proven this-conductor insight. Phase 0 is off by default in v3; this remains
+ * only for explicit opt-in while the simpler version is designed.
  */
-export function ImprovementCard({
-  step,
-  onApprove,
-}: {
-  step: BoardStep;
-  onApprove?: (stepId: string, decisions: Decision[]) => Promise<{ ok: boolean }> | void;
-}) {
+export function ImprovementCard({ step }: { step: BoardStep }) {
   const im = step.improve;
   const isValidate = im?.kind === "validate";
   const isRead = im?.kind === "read-knowledge";
   const structural = im?.structural === true;
-  const decided = step.approvalState?.decided || step.column === "done";
 
   const defaults = isRead
     ? ["knowledge read and categorized"]
     : isValidate
       ? ["conductor-board validate passes"]
-      : defaultGates(structural);
+      : defaultGates();
   const gates =
     step.criteria.length > 0
-      ? step.criteria.map((c) => ({ text: c.kind === "hard" && c.name ? c.name : c.text, passed: c.passed }))
+      ? step.criteria.map((c) => ({ text: c.name ?? c.text, passed: c.passed }))
       : defaults.map((t) => ({ text: t, passed: null as boolean | null }));
 
   return (
@@ -82,7 +72,7 @@ export function ImprovementCard({
             )}
             {structural && (
               <span className="rounded-md border border-amber/40 bg-amber/10 px-2 py-0.5 font-mono text-[10px] text-amber">
-                needs approval
+                parked in v3
               </span>
             )}
           </div>
@@ -130,30 +120,6 @@ export function ImprovementCard({
             </div>
           ))}
         </div>
-
-        {/* structural changes wait for a human */}
-        {structural && !decided && onApprove && (
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              onClick={() => onApprove(step.id, [{ label: im?.title ?? step.id, decision: "approved" }])}
-              className="rounded-lg border border-mint/40 bg-mint/10 px-3 py-1.5 font-mono text-[11px] text-mint transition-colors hover:bg-mint/15"
-            >
-              Approve
-            </button>
-            <button
-              onClick={() => onApprove(step.id, [{ label: im?.title ?? step.id, decision: "rejected" }])}
-              className="rounded-lg border border-line px-3 py-1.5 font-mono text-[11px] text-mist transition-colors hover:text-chalk"
-            >
-              Skip this run
-            </button>
-          </div>
-        )}
-        {structural && decided && step.approvalState && (
-          <div className="mt-4 font-mono text-[11px] text-mist">
-            decision recorded — the agent will{" "}
-            {step.approvalState.items.some((i) => i.decision === "rejected") ? "skip it" : "apply it"}.
-          </div>
-        )}
       </div>
     </div>
   );

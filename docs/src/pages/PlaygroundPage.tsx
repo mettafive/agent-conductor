@@ -5,7 +5,7 @@ import { Playground } from "../components/Playground";
 const LEGEND = [
   { k: "Step", d: "A unit of work with a gate that must pass." },
   { k: "Condition", d: "Branches the flow on if_true / if_false." },
-  { k: "Loop", d: "Runs the same gated sub-steps over a list." },
+  { k: "Loop", d: "Runs the same checked sub-steps over a list." },
   { k: "Edges", d: "requires dashes in; then rejoins a branch." },
 ];
 
@@ -15,7 +15,7 @@ export function PlaygroundPage() {
       <SectionHead
         kicker="Playground"
         title="See a workflow before you run it"
-        sub="Edit the conductor YAML; the flow graph redraws as you type."
+        sub="Edit the conductor JSON; the flow graph redraws as you type."
       />
 
       <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-relaxed text-mist">

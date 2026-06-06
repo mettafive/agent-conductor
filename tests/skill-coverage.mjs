@@ -9,7 +9,7 @@
  *
  * Usage:
  *   node tests/skill-coverage.mjs                  # run the built-in real-skill corpus
- *   node tests/skill-coverage.mjs <conductor.yaml> <skillFile...>   # ad-hoc
+ *   node tests/skill-coverage.mjs <conductor.json> <skillFile...>   # ad-hoc
  */
 import fs from "node:fs";
 
@@ -20,7 +20,7 @@ const TRIGGERS = {
   recon:       ["dataforseo", "seo recon", "keyword volume", "search volume", "serp scrape", "pre-loop", "keyword research", "paid seo", "gsc"],
   research:    ["crawl", "multi-page", "om-oss", "scrape the", "research the", "read the site", "website crawl", "§4b", "current content"],
   write:       ["write the", "author", "compose", "rewrite", "enrich the", "de-jargon", "the description", "prose", "faq", "seo title", "lede"],
-  gate:        ["super-check", "gate-enrich", "grounding gate", "runallgates", "preservation gate", "the gate", "qa gate", "check-links"],
+  check:        ["super-check", "check-enrich", "grounding check", "runallchecks", "preservation check", "the check", "qa check", "check-links"],
   stage:       ["dry-run", "stage the", "staged patch", "proposal json", "apply-clinic-enrichment", "before/after"],
   findability: ["clinic_treatment_matches", "findability", "link-existing", "internal link", "interlink", "searchable", "animal-correct link", "related treatment"],
   index:       ["indexing api", "index-treatments", "submit to google", "google indexing", "sitemap"],
@@ -32,7 +32,7 @@ const TRIGGERS = {
 const STEP_ALIASES = {
   setup: ["setup","branch","init"], pick: ["pick","select","queue","claim"],
   recon: ["recon","keyword","dataforseo","serp"], research: ["research","crawl","gather","scrape","read"],
-  write: ["write","author","enrich","rewrite","compose","generate","content"], gate: ["gate","validate","verify","audit","qa","check"],
+  write: ["write","author","enrich","rewrite","compose","generate","content"], check: ["check","validate","verify","audit","qa","check"],
   stage: ["stage","patch","package"], findability: ["findability","link","links","interlink","match","crossref"],
   index: ["index","indexing","sitemap"], publish: ["publish","pr","ship","deploy","commit","push","apply"],
   notify: ["notify","brief","report","summary","email","digest"],
@@ -45,8 +45,21 @@ function skillUnits(text) {
   const hay = lower(text);
   return Object.entries(TRIGGERS).filter(([, ps]) => ps.some((p) => hay.includes(p))).map(([u]) => u);
 }
-function conductorUnits(yamlText) {
-  const ids = [...yamlText.matchAll(/(?:^|\n)\s*-?\s*id:\s*([A-Za-z0-9_:-]+)/g)].map((m) => m[1]);
+function collectIds(steps, out = []) {
+  for (const step of steps || []) {
+    if (step?.id) out.push(step.id);
+    if (Array.isArray(step?.steps)) collectIds(step.steps, out);
+  }
+  return out;
+}
+function conductorUnits(jsonText) {
+  let doc;
+  try {
+    doc = JSON.parse(jsonText);
+  } catch {
+    doc = {};
+  }
+  const ids = collectIds(doc.steps);
   const stepTokens = new Set(ids.flatMap(tok));
   return Object.entries(STEP_ALIASES).filter(([, al]) => al.some((a) => stepTokens.has(a))).map(([u]) => u);
 }
@@ -55,10 +68,10 @@ function conductorUnits(yamlText) {
 const PV = "/Users/lukas/Documents/ClaudeCode/VetAndAdmin/PrivatVet";
 const CORPUS = [
   { name: "daily-enrichment",
-    conductor: `${PV}/.conductor/conductor.yaml`,
+    conductor: `${PV}/.conductor/conductor.json`,
     skill: [`${PV}/.claude/skills/daily-enrichment/SKILL.md`, `${PV}/docs/clinic-enrichment-runbook.md`] },
   { name: "treatment-readability",
-    conductor: `${PV}/.claude/skills/treatment-readability/treatment-readability.conductor.yaml`,
+    conductor: `${PV}/.claude/skills/treatment-readability/treatment-readability.conductor.json`,
     skill: [`${PV}/.claude/skills/treatment-readability/SKILL.md`, `${PV}/docs/treatment-readability-runbook.md`] },
 ];
 
@@ -68,10 +81,10 @@ const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return 
 
 function analyze(entry) {
   const skillText = entry.skill.map(read).filter(Boolean).join("\n\n");
-  const yamlText = read(entry.conductor);
-  if (!skillText || !yamlText) return { name: entry.name, error: `missing files (skill:${!!skillText} conductor:${!!yamlText})` };
+  const jsonText = read(entry.conductor);
+  if (!skillText || !jsonText) return { name: entry.name, error: `missing files (skill:${!!skillText} conductor:${!!jsonText})` };
   const sUnits = skillUnits(skillText);
-  const cUnits = conductorUnits(yamlText);
+  const cUnits = conductorUnits(jsonText);
   const gaps = sUnits.filter((u) => !cUnits.includes(u));
   return { name: entry.name, sUnits, cUnits, gaps };
 }

@@ -1,0 +1,51 @@
+{
+  "conductor": "3.0.0",
+  "name": "content-page",
+  "description": "Build a structured, SEO-ready content page from a topic.",
+  "inputs": [
+    "topic",
+    "keyword"
+  ],
+  "steps": [
+    {
+      "id": "research",
+      "instruction": "Research {topic}. Capture the questions real readers ask and the facts\nneeded to answer them.\n",
+      "output": "research",
+      "title": "Research",
+      "requires": []
+    },
+    {
+      "id": "structure",
+      "instruction": "Plan the page: an H1, a short intro, and H2 sections that answer each of\nthe reader's questions in order of importance.\n",
+      "requires": [
+        "research"
+      ],
+      "output": "outline",
+      "title": "Structure"
+    },
+    {
+      "id": "write",
+      "instruction": "Write the page from the outline. Answer the top question in the first\nscreen. Write for a real reader, not a search engine.\n",
+      "requires": [
+        "structure"
+      ],
+      "title": "Write"
+    },
+    {
+      "id": "validate",
+      "instruction": "Check the HTML is well-formed and the structure is intact.\n",
+      "requires": [
+        "write"
+      ],
+      "title": "Validate"
+    },
+    {
+      "id": "seo",
+      "instruction": "Finalize SEO: title tag, meta description, and natural use of {keyword}.\n",
+      "requires": [
+        "validate"
+      ],
+      "title": "Seo"
+    }
+  ]
+}

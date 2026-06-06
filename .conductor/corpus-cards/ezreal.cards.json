@@ -1,0 +1,22 @@
+[
+  {
+    "id": "read-lead-context",
+    "title": "Read lead context",
+    "instruction": "Read the lead record and mock CRM history to identify company, contact, role, source, region, current status, account history, prior touches, open opportunities, and restrictions."
+  },
+  {
+    "id": "research-company-priorities",
+    "title": "Research company priorities",
+    "instruction": "Research the company using available sources or MOCK_ENRICHMENT_API, identify likely business priorities, triggers, relevant pain points, likely decision makers, and buying committee roles."
+  },
+  {
+    "id": "score-qualification",
+    "title": "Score qualification",
+    "instruction": "Score fit using company size, industry, timing, budget signal, and product match, then write a concise qualification summary with confidence and missing data."
+  },
+  {
+    "id": "prepare-outreach-handoff",
+    "title": "Prepare outreach handoff",
+    "instruction": "Draft a personalized outreach angle and first email, prepare a mock CRM update with enriched fields, notes, score, and next step, and produce a sales handoff with risks and recommended sequence."
+  }
+]

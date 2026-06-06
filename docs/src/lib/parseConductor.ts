@@ -1,14 +1,15 @@
-import yaml from "js-yaml";
 import type { Edge, Node } from "@xyflow/react";
 
-export type GateCriterion =
-  | { kind: "soft"; text: string }
-  | { kind: "hard"; text: string; name?: string };
+export interface GateCriterion {
+  text: string;
+  name?: string;
+  checker?: "instruction";
+}
 
 export interface StepNodeData {
   stepId: string;
   index: number;
-  type: "step" | "condition" | "loop" | "approval";
+  type: "step" | "condition" | "loop";
   instruction: string;
   gates: GateCriterion[];
   requires: string[];
@@ -30,8 +31,8 @@ export interface ParsedConductor {
 
 interface RawStep {
   id: string;
+  title?: string;
   instruction?: string;
-  gate?: unknown[];
   type?: string;
   if_true?: string;
   if_false?: string;
@@ -40,25 +41,18 @@ interface RawStep {
   output?: string;
   over?: string;
   parallel?: boolean;
-  approval?: { actions?: { approve?: string; reject?: string } };
 }
 
-function normalizeGates(gate: unknown[] | undefined): GateCriterion[] {
-  if (!Array.isArray(gate)) return [];
-  return gate.map((g): GateCriterion => {
-    if (typeof g === "string") return { kind: "soft", text: g };
-    if (g && typeof g === "object") {
-      const o = g as Record<string, unknown>;
-      if (typeof o.check === "string") {
-        return {
-          kind: "hard",
-          text: o.check,
-          name: typeof o.name === "string" ? o.name : undefined,
-        };
-      }
-    }
-    return { kind: "soft", text: String(g) };
-  });
+function instructionCheck(s: RawStep): GateCriterion[] {
+  const text = (s.instruction ?? "").trim();
+  if (!text) return [];
+  return [
+    {
+      text,
+      name: s.title ?? s.id,
+      checker: "instruction",
+    },
+  ];
 }
 
 const X_CENTER = 0;
@@ -66,14 +60,14 @@ const X_GAP = 300;
 const Y_GAP = 168;
 
 /**
- * Turn a conductor YAML string into a laid-out flow graph.
+ * Turn a conductor JSON string into a laid-out flow graph.
  * Layout: steps stack vertically in declared order. Condition branches fan
  * their targets into left / right lanes so if_true / if_false read clearly.
  */
 export function parseConductor(src: string): ParsedConductor {
   let doc: { name?: string; description?: string; inputs?: string[]; steps?: RawStep[] };
   try {
-    doc = (yaml.load(src) as typeof doc) ?? {};
+    doc = (JSON.parse(src) as typeof doc) ?? {};
   } catch (e) {
     return {
       name: "",
@@ -81,7 +75,7 @@ export function parseConductor(src: string): ParsedConductor {
       inputs: [],
       nodes: [],
       edges: [],
-      error: e instanceof Error ? e.message : "Invalid YAML",
+      error: e instanceof Error ? e.message : "Invalid JSON",
     };
   }
 
@@ -108,17 +102,11 @@ export function parseConductor(src: string): ParsedConductor {
       if (s.if_true) lane.set(s.if_true, -1);
       if (s.if_false) lane.set(s.if_false, 1);
     }
-    if (s?.type === "approval") {
-      const a = s.approval?.actions;
-      if (a?.approve) lane.set(a.approve, -1);
-      if (a?.reject) lane.set(a.reject, 1);
-    }
   });
 
   const nodes: Node<StepNodeData>[] = steps.map((s, i) => {
     const isCondition = s.type === "condition";
-    const kind =
-      s.type === "loop" ? "loop" : s.type === "approval" ? "approval" : isCondition ? "condition" : "step";
+    const kind = s.type === "loop" ? "loop" : isCondition ? "condition" : "step";
     const laneX = (lane.get(s.id) ?? 0) * X_GAP;
     return {
       id: s.id,
@@ -129,7 +117,7 @@ export function parseConductor(src: string): ParsedConductor {
         index: i,
         type: kind,
         instruction: (s.instruction ?? "").trim(),
-        gates: normalizeGates(s.gate),
+        gates: instructionCheck(s),
         requires: Array.isArray(s.requires) ? s.requires : [],
         output: s.output,
         isCondition,
@@ -171,35 +159,6 @@ export function parseConductor(src: string): ParsedConductor {
         });
       }
       return; // conditions route only via if_true/if_false
-    }
-
-    if (s.type === "approval") {
-      const a = s.approval?.actions;
-      if (a?.approve && idToIndex.has(a.approve)) {
-        pushEdge({
-          id: `${s.id}->approve->${a.approve}`,
-          source: s.id,
-          target: a.approve,
-          label: "approve",
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: "var(--color-mint)", strokeWidth: 1.5 },
-          labelStyle: { fill: "var(--color-mint)" },
-        });
-      }
-      if (a?.reject && idToIndex.has(a.reject)) {
-        pushEdge({
-          id: `${s.id}->reject->${a.reject}`,
-          source: s.id,
-          target: a.reject,
-          label: "reject",
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: "var(--color-rose)", strokeWidth: 1.5 },
-          labelStyle: { fill: "var(--color-rose)" },
-        });
-      }
-      return; // approval routes only via approve/reject
     }
 
     // explicit rejoin

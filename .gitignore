@@ -14,7 +14,7 @@ npm-debug.log*
 .idea/
 .vscode/
 
-# conductor runtime state (any depth) — but NOT conductor.yaml, which users commit
+# conductor runtime state (any depth) — but NOT conductor.json, which users commit
 .conductor/status.json
 **/.conductor/status.json
 .conductor/server.json
@@ -34,4 +34,4 @@ npm-debug.log*
 .phase5/
 
 # conductor apply-suggestion backups
-**/conductor.yaml.bak.*
+**/conductor.json.bak.*

@@ -1,7 +1,7 @@
 {
   "name": "agent-conductor-monorepo",
   "version": "0.2.0",
-  "description": "A portable spec and live local Kanban board for orchestrating AI agent workflows with gated steps.",
+  "description": "A portable spec and live Kanban board for orchestrating AI agent workflows.",
   "license": "MIT",
   "author": "mettafive",
   "homepage": "https://mettafive.github.io/agent-conductor",
@@ -20,7 +20,7 @@
     "kanban",
     "spec",
     "claude",
-    "gated-steps",
+    "verified-cards",
     "conductor"
   ],
   "private": true,

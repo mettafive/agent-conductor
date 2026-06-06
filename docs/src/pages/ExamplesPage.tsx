@@ -16,7 +16,7 @@ export function ExamplesPage() {
       <SectionHead
         kicker="Examples"
         title="Patterns to steal from"
-        sub="From a linear pipeline to a gated review with branches and loops."
+        sub="From a linear pipeline to checked workflows with branches and loops."
       />
 
       <div className="mx-auto mt-12 max-w-5xl space-y-3">
@@ -52,9 +52,9 @@ export function ExamplesPage() {
                     >
                       <div className="border-t border-line px-5 py-4">
                         <p className="mb-3 text-sm leading-relaxed text-mist-2 sm:hidden">{ex.tagline}</p>
-                        <CodeBlock code={ex.yaml} filename={`${ex.id}.yaml`} lang="yaml" />
+                        <CodeBlock code={ex.json} filename={`${ex.id}.json`} lang="json" />
                         <a
-                          href={`${GH}/${ex.id}.yaml`}
+                          href={`${GH}/${ex.id}.json`}
                           target="_blank"
                           rel="noreferrer"
                           className="mt-3 inline-flex items-center gap-1.5 font-mono text-xs text-mist transition-colors hover:text-chalk"

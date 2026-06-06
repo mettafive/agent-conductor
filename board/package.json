@@ -1,7 +1,7 @@
 {
   "name": "conductor-board",
-  "version": "2.6.1",
-  "description": "Gated workflows for AI agents — live Kanban board included",
+  "version": "3.0.0",
+  "description": "A portable spec and live Kanban board for orchestrating AI agent workflows.",
   "license": "MIT",
   "author": "mettafive",
   "type": "module",
@@ -34,7 +34,7 @@
     "workflow",
     "kanban",
     "orchestration",
-    "gates",
+    "verified-cards",
     "conductor",
     "claude",
     "codex"
@@ -47,12 +47,8 @@
   "bugs": {
     "url": "https://github.com/mettafive/agent-conductor/issues"
   },
-  "dependencies": {
-    "js-yaml": "^4.1.0"
-  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
-    "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

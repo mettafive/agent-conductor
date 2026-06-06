@@ -1,23 +1,22 @@
 #!/usr/bin/env node
 // Dev tool: walk a conductor and write .conductor/status.json over time so the
-// board animates through Pending -> Running -> Gate Check -> Done (and Failed).
+// board animates through Pending -> Running -> Checking -> Done (and Failed).
 // Emits the full Phase-5 status shape — goal, current_step_goal, per-step
 // heartbeats (with the occasional insight), finalBeat handoffs, learnings, and
 // post-run optimization suggestions — so any example showcases the live board.
 // Not part of the shipped package — purely for demos and manual testing.
 //
-//   node scripts/simulate.js [conductor.yaml] [--dir .conductor] [--loop] [--fail seo-check]
+//   node scripts/simulate.js [conductor.json] [--dir .conductor] [--loop] [--fail seo-check]
 
 import fs from "node:fs";
 import path from "node:path";
-import yaml from "js-yaml";
 
 const args = process.argv.slice(2);
 const flag = (name, def) => {
   const i = args.indexOf(name);
   return i !== -1 ? args[i + 1] : def;
 };
-const conductorArg = args.find((a) => !a.startsWith("-") && /\.ya?ml$/.test(a));
+const conductorArg = args.find((a) => !a.startsWith("-") && /\.json$/.test(a));
 const dir = path.resolve(process.cwd(), flag("--dir", ".conductor"));
 const loop = args.includes("--loop");
 const failStep = flag("--fail", null);
@@ -29,21 +28,19 @@ const DEFAULT_ITEMS = ["src/auth.ts", "src/api/users.ts", "db/schema.sql", "ui/L
 const loopItems = () =>
   itemsArg ? String(itemsArg).split(",").map((s) => s.trim()).filter(Boolean) : DEFAULT_ITEMS;
 
-const conductorPath = conductorArg ?? path.join(dir, "conductor.yaml");
+const conductorPath = conductorArg ?? path.join(dir, "conductor.json");
 if (!fs.existsSync(conductorPath)) {
   console.error(`conductor not found: ${conductorPath}`);
   process.exit(1);
 }
 
-const doc = yaml.load(fs.readFileSync(conductorPath, "utf8"));
+const doc = JSON.parse(fs.readFileSync(conductorPath, "utf8"));
 const steps = (doc.steps || []).filter((s) => s && s.id);
 fs.mkdirSync(dir, { recursive: true });
 const statusPath = path.join(dir, "status.json");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms / SPEED));
 const nowIso = () => new Date().toISOString();
-const gateCount = (s) => (Array.isArray(s.gate) ? s.gate.length : 0);
-
 function write(state) {
   fs.writeFileSync(statusPath, JSON.stringify(state, null, 2));
 }
@@ -53,11 +50,6 @@ function write(state) {
 const oneLine = (s) =>
   String(s || "").trim().split("\n").map((x) => x.trim()).find(Boolean) || "";
 const goalOf = (step) => oneLine(step.instruction) || step.id;
-const firstGate = (step) => {
-  const g = Array.isArray(step.gate) ? step.gate[0] : null;
-  if (!g) return "the step's intent";
-  return typeof g === "object" ? g.name || g.check : String(g);
-};
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function beat(entry, note, extra = {}) {
@@ -72,26 +64,25 @@ function nextStepId(step, idx) {
 }
 
 function maybeInsight(step) {
-  const type = Math.random() < 0.5 ? "instruction" : "gate";
-  const seed =
-    type === "instruction"
-      ? `${step.id}: stating the exact output path in the instruction would remove a guess.`
-      : `${step.id}: this gate could be tightened into an executable check.`;
-  return { type, seed, step: step.id, confidence: Math.random() < 0.5 ? "high" : "medium" };
+  return {
+    type: "instruction",
+    seed: `${step.id}: stating the exact output path in the instruction would remove a guess.`,
+    step: step.id,
+    confidence: Math.random() < 0.5 ? "high" : "medium",
+  };
 }
 
 // 1–2 working heartbeats while a step runs; sometimes one carries an insight.
 async function workBeats(step, entry, state, idx) {
-  const n = gateCount(step);
-  beat(entry, `Working ${step.id} toward the gate: "${firstGate(step)}".`);
+  beat(entry, `Working ${step.id} against its instruction: "${goalOf(step)}".`);
   write({ ...state });
   await sleep(750);
 
   const withInsight = idx === 1 || /review|seo|security|audit|write/.test(step.id);
   const note = pick([
-    `Making progress — ${n > 1 ? `${n} criteria to clear` : "closing on the gate"}.`,
+    "Making progress; collecting output the checker can inspect.",
     `${step.id} taking shape; checking it against the goal.`,
-    `Cross-checking the work so far against "${firstGate(step)}".`,
+    `Cross-checking the work so far against "${goalOf(step)}".`,
   ]);
   beat(entry, note, withInsight && Math.random() < 0.7 ? { insight: maybeInsight(step) } : {});
   write({ ...state });
@@ -101,16 +92,16 @@ async function workBeats(step, entry, state, idx) {
 function addLearnings(step, entry) {
   if (!/review|seo|security|audit|outline|research/.test(step.id)) return;
   entry.learnings = pick([
-    [`${step.id}: front-loading the gate criteria kept the work on-target.`],
-    [`${step.id}: the cheapest check to run first is the file-exists gate.`, `Soft gates read best when phrased as a question.`],
+    [`${step.id}: making the instruction concrete kept the work on-target.`],
+    [`${step.id}: naming the expected evidence made the checker result clearer.`],
   ]);
 }
 
 function finalBeat(step, entry, state, idx) {
   const to = nextStepId(step, idx);
-  const handoff = { to, context: `${step.id} satisfied its gate; ${to} can build on it.` };
+  const handoff = { to, context: `${step.id} satisfied its instruction check; ${to} can build on it.` };
   if (step.output) handoff.produced = step.output;
-  beat(entry, `${step.id} complete — gates green. Handing off to ${to}.`, {
+  beat(entry, `${step.id} complete — checker passed. Handing off to ${to}.`, {
     finalBeat: true,
     handoff,
   });
@@ -123,14 +114,13 @@ function buildSuggestions(walked) {
   return [
     {
       id: "sg-1",
-      type: "new_gate",
+      type: "instruction",
       step: a,
-      title: `Add an executable check to ${a}`,
-      rationale: `Heartbeats on ${a} show the soft gate carried the weight — a hard check would make it verifiable.`,
+      title: `Tighten ${a}'s instruction`,
+      rationale: `Heartbeats on ${a} show the checker would benefit from a more concrete output contract.`,
       source_heartbeat: nowIso(),
-      current: `(soft) ${a} meets its intent`,
-      proposed: `check: "test -s ${a}.out"`,
-      impact: "stronger gate",
+      proposed: `Produce the requested output and include inspectable evidence for ${a}.`,
+      impact: "clearer checker verdict",
       confidence: "high",
     },
     {
@@ -158,17 +148,16 @@ function buildSuggestions(walked) {
   ];
 }
 
-function gateDetail(step, passed) {
-  if (!Array.isArray(step.gate)) return undefined;
-  return step.gate.map((g) => {
-    const isHard = g && typeof g === "object" && typeof g.check === "string";
-    return {
-      criterion: isHard ? g.check : String(g),
-      kind: isHard ? "hard" : "soft",
-      passed,
-      ...(isHard ? { exit_code: passed ? 0 : 1 } : {}),
-    };
-  });
+function checkerDetail(step, passed) {
+  return [{
+    criterion: goalOf(step),
+    name: step.title || step.id,
+    checker: "instruction",
+    passed,
+    evidence: passed
+      ? `Simulated checker verified output against: ${goalOf(step)}`
+      : `Simulated checker found output did not satisfy: ${goalOf(step)}`,
+  }];
 }
 
 async function runLoop(step, state, idx) {
@@ -212,14 +201,13 @@ async function runLoop(step, state, idx) {
       cell.status = "running";
       write({ ...state });
       await sleep(650);
-      if (gateCount(sub) > 0) {
-        cell.gate = "checking";
-        write({ ...state });
-        await sleep(650);
-      }
+      cell.gate = "checking";
+      write({ ...state });
+      await sleep(650);
       if (failStep === sub.id && item === items[0] && cell.attempt === 1) {
         cell.gate = "failed";
-        beat(entry, `${item}: ${sub.id} gate failed — retrying.`, { iteration: item });
+        cell.gate_detail = checkerDetail(sub, false);
+        beat(entry, `${item}: ${sub.id} checker failed — retrying.`, { iteration: item });
         write({ ...state });
         await sleep(650);
         cell.attempt = 2;
@@ -227,14 +215,13 @@ async function runLoop(step, state, idx) {
         cell.status = "running";
         write({ ...state });
         await sleep(650);
-        if (gateCount(sub) > 0) {
-          cell.gate = "checking";
-          write({ ...state });
-          await sleep(650);
-        }
+        cell.gate = "checking";
+        write({ ...state });
+        await sleep(650);
       }
       cell.status = "done";
-      cell.gate = gateCount(sub) > 0 ? "passed" : "pending";
+      cell.gate = "passed";
+      cell.gate_detail = checkerDetail(sub, true);
       write({ ...state });
       await sleep(220);
     }
@@ -251,6 +238,7 @@ async function runLoop(step, state, idx) {
 
   entry.status = "done";
   entry.gate = "passed";
+  entry.gate_detail = checkerDetail(step, true);
   entry.current_item = null;
   entry.completed_at = nowIso();
   finalBeat(step, entry, state, idx);
@@ -314,7 +302,7 @@ async function run() {
     entry.status = "running";
     entry.started_at = nowIso();
     state.current_step_goal = goalOf(step);
-    beat(entry, `Starting ${step.id}. Orienting against the goal and the gate.`);
+    beat(entry, `Starting ${step.id}. Orienting against the goal and instruction.`);
     write({ ...state });
     await sleep(800);
 
@@ -323,6 +311,7 @@ async function run() {
       beat(entry, `Decision: taking the "${branch}" branch.`);
       entry.status = "done";
       entry.gate = "passed";
+      entry.gate_detail = checkerDetail(step, true);
       entry.completed_at = nowIso();
       entry.branch_taken = branch;
       beat(entry, `Branch chosen. Handing off to ${branch}.`, {
@@ -338,21 +327,19 @@ async function run() {
     // working heartbeats
     await workBeats(step, entry, state, i);
 
-    // gate check phase
-    if (gateCount(step) > 0) {
-      entry.gate = "checking";
-      beat(entry, `Evaluating the gate — ${gateCount(step)} criteria.`);
-      write({ ...state });
-      await sleep(1200);
-    }
+    // independent checker phase
+    entry.gate = "checking";
+    beat(entry, "Independent checker is comparing output to the instruction.");
+    write({ ...state });
+    await sleep(1200);
 
     // terminal failure — workflow ends failed (for demoing failed history)
     if (fatalStep === step.id) {
       entry.status = "failed";
       entry.gate = "failed";
-      entry.gate_detail = gateDetail(step, false);
+      entry.gate_detail = checkerDetail(step, false);
       entry.completed_at = nowIso();
-      beat(entry, `${step.id} could not satisfy its gate. Stopping.`);
+      beat(entry, `${step.id} could not satisfy its instruction check. Stopping.`);
       state.status = "failed";
       state.completed_at = nowIso();
       state.current_step = step.id;
@@ -364,8 +351,8 @@ async function run() {
     const shouldFail = failStep === step.id && entry.attempt === 1;
     if (shouldFail) {
       entry.gate = "failed";
-      entry.gate_detail = gateDetail(step, false);
-      beat(entry, `Gate failed on first pass — diagnosing and retrying.`);
+      entry.gate_detail = checkerDetail(step, false);
+      beat(entry, "Checker failed on first pass — diagnosing and retrying.");
       write({ ...state });
       await sleep(1000);
       entry.attempt = 2;
@@ -380,8 +367,8 @@ async function run() {
     }
 
     entry.status = "done";
-    entry.gate = gateCount(step) > 0 ? "passed" : "pending";
-    entry.gate_detail = gateDetail(step, true);
+    entry.gate = "passed";
+    entry.gate_detail = checkerDetail(step, true);
     entry.completed_at = nowIso();
     addLearnings(step, entry);
     finalBeat(step, entry, state, i);

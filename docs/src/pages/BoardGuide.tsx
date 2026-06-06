@@ -9,21 +9,25 @@ import { Icon } from "../components/Icon";
 const HOME = import.meta.env.BASE_URL; // "/agent-conductor/"
 const GH = "https://github.com/mettafive/agent-conductor";
 
-const CONDUCTOR_YAML = `conductor: 1.0.0
-name: basic-report
-description: Research, outline, write, review.
-
-steps:
-  - id: research
-    instruction: Gather five credible sources on {topic}.
-    gate:
-      - "At least 5 sources, each with a URL"
-  - id: write
-    instruction: Write an 800-word report, citing every claim.
-    requires: [research]
-    gate:
-      - "Every claim cites a source"      # soft
-      - check: "test -f report.md"        # hard, must exit 0`;
+const CONDUCTOR_JSON = `{
+  "conductor": "3.0.0",
+  "name": "basic-report",
+  "description": "Research, outline, write, review.",
+  "steps": [
+    {
+      "id": "research",
+      "title": "Research",
+      "instruction": "Gather five credible sources on {topic}.",
+      "requires": []
+    },
+    {
+      "id": "write",
+      "title": "Write",
+      "instruction": "Write an 800-word report, citing every claim.",
+      "requires": ["research"]
+    }
+  ]
+}`;
 
 const STATUS_JSON = `{
   "workflow": "basic-report",
@@ -56,7 +60,7 @@ npx conductor-board directives --open
 
 # then, for EACH one, exactly one of:
 npx conductor-board resolve <cardId> \\
-  --applied "added an early-exit gate when the price table is empty"
+  --applied "tightened the instruction to require an empty-price early exit"
 npx conductor-board resolve <cardId> \\
   --deferred "needs the user's input on which source to trust"`;
 
@@ -68,11 +72,11 @@ npx conductor-board heartbeat write "Drafting section 2…"
 
 const MULTI_TREE = `.conductor/
 ├── daily-price/
-│   ├── conductor.yaml
+│   ├── conductor.json
 │   ├── status.json
 │   └── history/
 └── treatment-page/
-    ├── conductor.yaml
+    ├── conductor.json
     └── status.json`;
 
 /* ---------- small layout helpers (match the landing-page design) ---------- */
@@ -117,8 +121,8 @@ const TOC = [
   ["card", "Anatomy of a card"],
   ["surfaces", "Two surfaces"],
   ["getting-started", "Getting started"],
-  ["good-gates", "What makes a good gate"],
-  ["gate-approval", "Authored & approved"],
+  ["good-instructions", "Good instructions"],
+  ["checker-results", "Checker results"],
   ["no-skip", "Nothing gets skipped"],
   ["activity-cards", "Activity cards"],
   ["directives", "Directives & steering"],
@@ -145,25 +149,25 @@ const COLUMNS = [
     body: "The agent is executing the step's instruction. The focus LED pulses green→white; the card streams the latest heartbeat. If beats go quiet it slows and a stall dot turns amber.",
   },
   {
-    name: "Gate Check",
+    name: "Checking",
     dot: "bg-amber",
     text: "text-amber",
     border: "border-amber/30",
-    body: "The instruction is done and the agent is evaluating the gate — running every hard check and self-validating every soft criterion before it's allowed to advance.",
+    body: "The instruction is done and an independent checker is evaluating the output before the card can advance.",
   },
   {
     name: "Done",
     dot: "bg-mint",
     text: "text-mint",
     border: "border-mint/30",
-    body: "Every gate criterion passed. The step is locked in, its output (if any) is recorded, and the next step unlocks.",
+    body: "The checker passed. The step is locked in, its output (if any) is recorded, and the next step unlocks.",
   },
   {
     name: "Failed",
     dot: "bg-rose",
     text: "text-rose",
     border: "border-rose/30",
-    body: "A gate could not be satisfied and the workflow stopped here. Appears as a side column only when something fails — the agent retries before it ever lands here.",
+    body: "The checker failed and the workflow stopped here. Appears as a side column only when something fails — the agent retries before it ever lands here.",
   },
 ];
 
@@ -197,9 +201,10 @@ export function BoardGuide() {
             The Kanban Board
           </h1>
           <p className="mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-mist-2">
-            A live, local Kanban board that watches an agent work through a gated
-            workflow in real time. Each step is a card; cards move across columns
-            as the agent executes, gates, and completes them. One command, zero
+            A live, local Kanban board that watches an agent work through an
+            independently checked workflow in real time. Each step is a card;
+            cards move across columns as the agent works, gets checked, and
+            completes them. One command, zero
             cloud, nothing to configure.
           </p>
           <div className="mt-6 inline-flex items-center gap-2 rounded-lg border border-line bg-ink-2/80 px-4 py-2 font-mono text-sm">
@@ -250,8 +255,8 @@ export function BoardGuide() {
             <section className="space-y-4">
               <H2 id="overview" kicker="Overview">What the board is</H2>
               <P>
-                You hand an agent a <Code>conductor.yaml</Code> — a workflow broken
-                into <strong className="text-chalk">gated steps</strong>. As the
+                You hand an agent a <Code>conductor.json</Code> — a workflow broken
+                into <strong className="text-chalk">checked steps</strong>. As the
                 agent works, it writes its progress to{" "}
                 <Code>.conductor/status.json</Code>. The board watches that file
                 and redraws itself the instant anything changes. No SDK, no
@@ -276,10 +281,10 @@ export function BoardGuide() {
                   <tbody>
                     {[
                       ["Board", "The local web app you open with npx conductor-board. Watches .conductor/ and updates live over Server-Sent Events."],
-                      ["Workflow", "One conductor.yaml + its status.json. The board can show several side by side."],
-                      ["Step", "A unit of work in the workflow — rendered as a card. Has an instruction and a gate."],
-                      ["Gate", "The criteria a step must pass before the next unlocks. Soft (self-validated) or hard (a shell check that must exit 0)."],
-                      ["Column", "A lane representing a step's state: Pending, Running, Gate Check, Done (and Failed)."],
+                      ["Workflow", "One conductor.json + its status.json. The board can show several side by side."],
+                      ["Step", "A unit of work in the workflow — rendered as a card. Has a title, instruction, and requires list."],
+                      ["Checker", "An independent reviewer that compares the card's output to its instruction before it moves to Done."],
+                      ["Column", "A lane representing a step's state: Pending, Running, Checking, Done (and Failed)."],
                       ["Heartbeat", "A timestamped note the agent appends as it works — by default about every 30s (15s–5min, configurable) — so you can see its thinking."],
                       ["Activity card", "A group of heartbeats sharing one intent on one target. The agent declares each one; it gets a title, a live status, and a comment box."],
                       ["finalBeat", "The closing heartbeat of a step — a summary plus a handoff that carries context to the next step."],
@@ -302,10 +307,10 @@ export function BoardGuide() {
 
             {/* COLUMNS */}
             <section className="space-y-4">
-              <H2 id="columns" kicker="The lanes">Pending → Running → Gate Check → Done</H2>
+              <H2 id="columns" kicker="The lanes">Pending → Running → Checking → Done</H2>
               <P>
-                Every step flows left to right. A step only advances when its gate
-                passes; if a gate fails, the agent{" "}
+                Every step flows left to right. A step only advances when its checker
+                passes; if the checker fails, the agent{" "}
                 <strong className="text-chalk">retries the step — it never skips
                 it</strong>, so cards move back into Running rather than jumping
                 ahead.
@@ -330,7 +335,7 @@ export function BoardGuide() {
               <ul className="space-y-2 text-sm text-mist-2">
                 {[
                   ["Identity", "the step id and its position in the workflow; a fork icon for condition steps, a loop icon for loops."],
-                  ["Gates", "each criterion with a soft / hard label and a ✓ / ✗ / ○ as the agent records pass, fail, or not-yet-checked."],
+                      ["Checker", "the independent instruction check, with pass, fail, or pending state."],
                   ["Heartbeats", "a vertical timeline of the agent's notes, newest first, with relative time while running and absolute time once done."],
                   ["finalBeat", "the closing beat, marked ·→, showing the handoff to the next step."],
                   ["Loops", "for loop steps, a per-iteration breakdown with its own status dots and filter tabs."],
@@ -358,8 +363,8 @@ export function BoardGuide() {
                   <ul className="mt-2 space-y-1.5 text-sm text-mist-2">
                     {[
                       "Watch steps move across the columns live.",
-                      "Expand a card to read its heartbeats and gates.",
-                      "Approve the gates before the first run.",
+                      "Expand a card to read its heartbeats and checker results.",
+                      "Review instructions before the first run.",
                       "Comment on a card to steer the next run.",
                       "Open the heartbeat monitor to follow every beat in one stream.",
                       "Switch between running workflows in the sidebar.",
@@ -379,14 +384,14 @@ export function BoardGuide() {
                   <p className="mt-2 text-sm leading-relaxed text-mist-2">What the agent writes:</p>
                   <ul className="mt-2 space-y-1.5 text-sm text-mist-2">
                     {[
-                      "Author each gate to the good-gate bar; red-team every hard one.",
-                      "Save the workflow to .conductor/conductor.yaml.",
+                      "Write each instruction so an independent checker can evaluate it.",
+                      "Save the workflow to .conductor/conductor.json.",
                       "Create .conductor/status.json with every step pending.",
-                      "Mark each step running → done, updating gate state.",
+                      "Mark each step running → done, updating checker state.",
                       "Heartbeat about every 30s, grouped into activity cards.",
                       "Resolve every open directive — apply or defer.",
                       "Close each step with a finalBeat handoff.",
-                      "Retry on a failed gate — never skip.",
+                      "Retry on a failed checker result — never skip.",
                       "Before status: done, write 3–5 suggestions.",
                     ].map((t) => (
                       <li key={t} className="flex gap-2">
@@ -401,7 +406,7 @@ export function BoardGuide() {
                 Agents don't need to learn an API. Point one at{" "}
                 <a href={`${GH}/blob/main/CONDUCTOR.md`} target="_blank" rel="noreferrer" className="text-cyan underline-offset-2 hover:underline">CONDUCTOR.md ↗</a>{" "}
                 (or the self-bootstrapping{" "}
-                <a href={`${GH}/blob/main/setup.conductor.yaml`} target="_blank" rel="noreferrer" className="text-cyan underline-offset-2 hover:underline">setup.conductor.yaml ↗</a>)
+                <a href={`${GH}/blob/main/setup.conductor.json`} target="_blank" rel="noreferrer" className="text-cyan underline-offset-2 hover:underline">setup.conductor.json ↗</a>)
                 and it handles the whole contract.
               </P>
             </section>
@@ -412,7 +417,7 @@ export function BoardGuide() {
               <ol className="space-y-4">
                 {[
                   ["Start the board", <>Run <Code>npx conductor-board</Code> in your project. It opens your browser at <Code>http://localhost:3042</Code> and starts watching <Code>.conductor/</Code>. (Prefer fewer keystrokes? <Code>npx 3042</Code> is an alias.)</>],
-                  ["Point your agent at the workflow", <>Tell your agent: <em>"Read CONDUCTOR.md, convert my skill into a conductor, save it, and run it."</em> It writes <Code>.conductor/conductor.yaml</Code> and maintains <Code>status.json</Code>.</>],
+                  ["Point your agent at the workflow", <>Tell your agent: <em>"Read CONDUCTOR.md, convert my skill into a conductor, save it, and run it."</em> It writes <Code>.conductor/conductor.json</Code> and maintains <Code>status.json</Code>.</>],
                   ["Watch it run", <>Cards appear and move through the columns as the agent works. Expand any card to read its heartbeats; open the monitor to follow the whole stream.</>],
                   ["Review & improve", <>When the run finishes, browse it in history — and apply any optimization suggestions back to the conductor for next time.</>],
                 ].map(([title, body], i) => (
@@ -428,31 +433,27 @@ export function BoardGuide() {
                 ))}
               </ol>
               <div className="grid gap-4 lg:grid-cols-2">
-                <CodeBlock code={CONDUCTOR_YAML} filename="conductor.yaml" lang="yaml" />
+                <CodeBlock code={CONDUCTOR_JSON} filename="conductor.json" lang="json" />
                 <CodeBlock code={STATUS_JSON} filename="status.json" lang="json" />
               </div>
             </section>
 
-            {/* GOOD GATES */}
+            {/* GOOD INSTRUCTIONS */}
             <section className="space-y-4">
-              <H2 id="good-gates" kicker="The standard">What makes a good gate</H2>
+              <H2 id="good-instructions" kicker="The standard">What makes a good instruction</H2>
               <P>
-                A gate is only worth the run if it would actually{" "}
-                <strong className="text-chalk">fail bad work</strong>. The common
-                failure is a gate written as a <em>lint</em> — it confirms the output
-                didn't crash and has the right shape, then passes anything that
-                renders. That's not a gate; it's a formatter. When a skill is turned
-                into gated steps, each gate is authored to this bar:
+                A checker is only useful when the instruction gives it a concrete bar:
+                <strong className="text-chalk"> would this output satisfy the request?</strong>
+                The common failure is an instruction that only names an activity
+                without naming the expected evidence, scope, or deliverable.
               </P>
               <ul className="space-y-2.5 text-sm text-mist-2">
                 {[
-                  ["Substance, not surface", "“Is it correct, faithful, complete?” — not “did it render?” Output can be perfectly well-formed and completely wrong."],
-                  ["Cross-validate the dimensions", "Check the fields against each other, never in isolation: the FAQ price matches the body matches the database, and the source backs the claim beside it."],
-                  ["No self-widening loopholes", "A threshold must not be relaxable by a side-effect of the work it's judging. The thing being judged can't move the bar."],
-                  ["Catch blatant fabrication", "A cheap guard flags a figure or claim that appears from nowhere with nothing behind it — without pretending to be a full hallucination-proofer."],
-                  ["Gate on grounding, not novelty", "A new, well-sourced fact should pass; only an unsupported one gets flagged. Blocking every new fact punishes exactly what a capable agent is for."],
-                  ["Never let the agent grade itself", "A gate must not read a flag the agent wrote about its own work — checking testsPass: true is the agent grading its own homework. Re-run the tests, hit the live endpoint, recompute the number yourself."],
-                  ["Prove it catches its own violation", "A gate you haven't watched FAIL on a crafted violation is assumed broken — ship every gate with a red-team line, the way you ship a test with a failing case."],
+                  ["Substance, not surface", "Say what correct, faithful, and complete means for this card, not just what file shape should exist."],
+                  ["Name the evidence", "If the card needs sources, prices, tests, pages, or screenshots, say so in the instruction."],
+                  ["Define the scope", "A checker needs to know how many items, which audience, and what dimensions matter."],
+                  ["Avoid self-reporting", "Do not ask the work agent to say it is done. Ask for output an independent checker can inspect."],
+                  ["Fold vague work", "If a unit of work cannot be checked against a concrete instruction, fold it into a card that can."],
                 ].map(([k, v]) => (
                   <li key={k} className="flex gap-2">
                     <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-iris" />
@@ -461,29 +462,25 @@ export function BoardGuide() {
                 ))}
               </ul>
               <P>
-                A green gate should mean{" "}
-                <strong className="text-chalk">"faithful, accurate, sourced,"</strong>{" "}
-                not "didn't crash." The full standard — including grounding checks in
-                real data and honestly delegating the judgment dimensions to a
-                reviewer — lives in{" "}
+                A green check should mean the output satisfied the card instruction.
+                The full agent contract lives in{" "}
                 <a href={`${GH}/blob/main/CONDUCTOR.md`} target="_blank" rel="noreferrer" className="text-cyan underline-offset-2 hover:underline">CONDUCTOR.md ↗</a>.
               </P>
             </section>
 
-            {/* GATE APPROVAL */}
+            {/* CHECKER RESULTS */}
             <section className="space-y-4">
-              <H2 id="gate-approval" kicker="Before any run">Authored, red-teamed, human-approved</H2>
+              <H2 id="checker-results" kicker="Before Done">Checker results</H2>
               <P>
-                Gates don't go live on trust. Turning a skill into a conductor is a
-                one-time setup flow, and{" "}
-                <strong className="text-chalk">nothing executes on an unproven gate</strong>:
+                A card does not move to Done just because the work agent says it is
+                finished. An independent checker records a verdict first:
               </P>
               <ol className="space-y-4">
                 {[
-                  ["A skill becomes gates", <>Each step's <em>goal</em> is translated into a real, cross-validating check authored to the standard above — not a shape check.</>],
-                  ["Each hard gate is red-teamed", <>The gate is fed a known-bad example and must be watched to <strong className="text-chalk">fail</strong> it. The proof is recorded to <Code>.conductor/gate-review.md</Code>.</>],
-                  ["You approve they match intent", <>Every gate is presented as an <strong className="text-chalk">Approve / Reject</strong> card — its skill goal, what it rejects, its red-team proof. Execution can't start until you agree the gates faithfully capture the skill; a rejection routes back to fix the gate.</>],
-                  ["Only then does it run", <>Every later run just <em>enforces</em> the approved gates. The authoring + approval is one-time, at the start.</>],
+                  ["A skill becomes cards", <>Each independently verifiable unit of work becomes a card.</>],
+                  ["Each card has an instruction", <>That instruction is the checker contract.</>],
+                  ["The checker records a verdict", <>Use <Code>gate-result</Code> with pass/fail evidence.</>],
+                  ["Then complete consumes it", <>A failed result retries the card; a passed result moves it to Done.</>],
                 ].map(([title, body], i) => (
                   <li key={i} className="flex gap-4">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-iris/30 bg-iris/10 font-mono text-sm text-iris">
@@ -508,8 +505,8 @@ export function BoardGuide() {
               <div className="space-y-3">
                 {[
                   ["A loop can't close with work left undone", "Every iteration is frontloaded as pending the moment it's scoped, so the plan is visible before any card moves. A loop-coverage guard refuses to advance while any iteration is still incomplete — and lists the ones missed. A frontloaded item left pending is a skipped page, not a finished loop."],
-                  ["Phase 0 can't be skipped", "The self-improvement pass runs before step 1: its improvement and directive cards must resolve before any workflow gate can pass. The board follows it so it isn't dark before the work starts."],
-                  ["A failed gate forces fix-and-retry", "A gate that can't be satisfied sends the card back into Running. The agent fixes and re-attempts — it never skips ahead. Failed appears only as a side column when something truly stops."],
+                  ["Phase 0 is parked by default", "The old self-improvement pass only runs when auto_improve: true is explicitly set."],
+                  ["A failed checker result forces fix-and-retry", "A failed result sends the card back into Running. The agent fixes and re-attempts — it never skips ahead. Failed appears only as a side column when something truly stops."],
                 ].map(([k, v]) => (
                   <div key={k} className="rounded-xl border border-line bg-panel/30 p-4">
                     <div className="flex items-center gap-2">
@@ -566,7 +563,7 @@ export function BoardGuide() {
                 </li>
                 <li className="flex gap-2">
                   <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
-                  <span><strong className="text-chalk">Defer it</strong> — only with a real reason (it conflicts with a hard rule, or needs your input), recorded with <Code>resolve --deferred</Code>.</span>
+                  <span><strong className="text-chalk">Defer it</strong> — only with a real reason (it conflicts with a required rule, or needs your input), recorded with <Code>resolve --deferred</Code>.</span>
                 </li>
               </ul>
               <P>
@@ -674,7 +671,7 @@ export function BoardGuide() {
                 The same heartbeat that keeps an agent on track can carry an{" "}
                 <span className="inline-block h-1.5 w-1.5 translate-y-px rounded-full bg-amber" />{" "}
                 <span className="text-amber">insight</span> — a faster path, a
-                too-strict gate, a missing instruction. Before a run ends, the
+                too-strict checker result, a missing instruction. Before a run ends, the
                 agent distills those into a few <strong className="text-chalk">suggestions</strong>.
                 When the run finishes, the board surfaces them with a before/after
                 diff and a one-click <strong className="text-chalk">Apply</strong>{" "}
@@ -686,7 +683,7 @@ export function BoardGuide() {
                 <strong className="text-chalk">Phase 0</strong> — a self-improvement
                 pass that runs before step 1, rewrites the steps the insight names,
                 then re-validates. Phase 0 can't be skipped: its cards must resolve
-                before any workflow gate passes, and the board follows it so it isn't
+                before workflow execution, and the board follows it so it isn't
                 dark before the work begins.
               </P>
               <P>

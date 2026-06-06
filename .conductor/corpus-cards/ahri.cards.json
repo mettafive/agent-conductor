@@ -1,0 +1,22 @@
+[
+  {
+    "id": "define-brief-scope",
+    "title": "Define brief scope",
+    "instruction": "Restate the research question, audience, desired decision, deadline, market, geography, timeframe, competitors, and excluded areas."
+  },
+  {
+    "id": "gather-and-score-sources",
+    "title": "Gather and score sources",
+    "instruction": "Gather source candidates using available files, approved web research, or MOCK_RESEARCH_API, then score each source for recency, authority, relevance, and bias."
+  },
+  {
+    "id": "synthesize-findings",
+    "title": "Synthesize findings",
+    "instruction": "Extract strongest evidence bullets with source notes, identify competitor moves, customer implications, operational risks, open uncertainties, group findings into themes, and remove duplicates or unsupported claims."
+  },
+  {
+    "id": "write-recommendations-brief",
+    "title": "Write recommendations brief",
+    "instruction": "Write the final brief with title, executive summary that states the decision implication first, key findings, 3-5 practical recommendations with confidence levels, risks, sources, follow-up questions, missing data, and suggested next research actions."
+  }
+]

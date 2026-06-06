@@ -12,12 +12,12 @@ import { StepNode } from "./StepNode";
 const nodeTypes: NodeTypes = { step: StepNode };
 
 interface Props {
-  yaml: string;
+  json: string;
   className?: string;
 }
 
-export function FlowDiagram({ yaml, className }: Props) {
-  const parsed = useMemo(() => parseConductor(yaml), [yaml]);
+export function FlowDiagram({ json, className }: Props) {
+  const parsed = useMemo(() => parseConductor(json), [json]);
 
   return (
     <div className={`relative h-full w-full ${className ?? ""}`}>
@@ -26,7 +26,7 @@ export function FlowDiagram({ yaml, className }: Props) {
           <div>
             <p className="font-mono text-sm text-rose">{parsed.error}</p>
             <p className="mt-2 text-xs text-mist">
-              Fix the YAML and the graph will redraw.
+              Fix the JSON and the graph will redraw.
             </p>
           </div>
         </div>

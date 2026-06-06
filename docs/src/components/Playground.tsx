@@ -4,14 +4,14 @@ import { FlowDiagram } from "./FlowDiagram";
 
 export function Playground() {
   const [active, setActive] = useState(EXAMPLES[0].id); // daily-price — land on the impressive one
-  const [yaml, setYaml] = useState(EXAMPLES[0].yaml);
+  const [json, setJson] = useState(EXAMPLES[0].json);
   const [dirty, setDirty] = useState(false);
 
   const select = (id: string) => {
     const ex = EXAMPLES.find((e) => e.id === id);
     if (!ex) return;
     setActive(id);
-    setYaml(ex.yaml);
+    setJson(ex.json);
     setDirty(false);
   };
 
@@ -33,7 +33,7 @@ export function Playground() {
         ))}
         <span className="ml-auto hidden items-center gap-1.5 font-mono text-[11px] text-mist sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-mint" />
-          {dirty ? "editing — live" : "edit the YAML →"}
+          {dirty ? "editing — live" : "edit the JSON →"}
         </span>
       </div>
 
@@ -41,16 +41,16 @@ export function Playground() {
         <div className="border-b border-line lg:border-b-0 lg:border-r">
           <textarea
             spellCheck={false}
-            value={yaml}
+            value={json}
             onChange={(e) => {
-              setYaml(e.target.value);
+              setJson(e.target.value);
               setDirty(true);
             }}
             className="h-[340px] w-full resize-none bg-transparent p-4 font-mono text-[12.5px] leading-relaxed text-mist-2 outline-none lg:h-[520px]"
           />
         </div>
         <div className="h-[340px] bg-ink-2 lg:h-[520px]">
-          <FlowDiagram yaml={yaml} />
+          <FlowDiagram json={json} />
         </div>
       </div>
     </div>

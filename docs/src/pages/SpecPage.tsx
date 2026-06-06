@@ -3,28 +3,26 @@ import { Reveal } from "../components/Reveal";
 import { CodeBlock } from "../components/CodeBlock";
 import { Led } from "../components/Led";
 
-const QUICKSTART = `conductor: 1.0.0
-name: basic-report
-description: Research, outline, write, review.
-
-inputs:
-  - topic
-
-steps:
-  - id: research
-    instruction: |
-      Research {topic}. Gather five credible sources.
-    gate:
-      - "At least 5 sources, each with a URL"
-
-  - id: write
-    instruction: |
-      Write an 800-word report, citing every claim.
-    requires: [research]
-    gate:
-      - "Every claim cites a source"      # soft — self-validated
-      - "No placeholder text remains"     # soft
-      - check: "test -f report.md"        # hard — must exit 0`;
+const QUICKSTART = `{
+  "conductor": "3.0.0",
+  "name": "basic-report",
+  "description": "Research, outline, write, review.",
+  "inputs": ["topic"],
+  "steps": [
+    {
+      "id": "research",
+      "title": "Research",
+      "instruction": "Research {topic}. Gather five credible sources.",
+      "requires": []
+    },
+    {
+      "id": "write",
+      "title": "Write",
+      "instruction": "Write an 800-word report, citing every claim.",
+      "requires": ["research"]
+    }
+  ]
+}`;
 
 const STATUS_JSON = `{
   "conductor": "1.0.0",
@@ -39,38 +37,35 @@ const STATUS_JSON = `{
   }
 }`;
 
-const GATE_SNIPPET = `gate:
-  - "Output reads naturally"          # soft
-  - "No placeholder text remains"     # soft
-  - check: "npm test"                 # hard, must exit 0
-  - name: "Type-check passes"         # hard, labelled
-    check: "tsc --noEmit"`;
+const CHECK_SNIPPET = `npx conductor-board gate-result research \\
+  --passed \\
+  --evidence "5 credible sources captured with URLs"`;
 
 export function SpecPage() {
   return (
     <Page>
       <SectionHead
         kicker="The spec"
-        title="One YAML file. Any agent."
+        title="One JSON file. Any agent."
         sub="No SDK, no runtime, no lock-in — the conductor file is the whole contract."
       />
 
       <div className="mt-12 grid items-start gap-5 lg:grid-cols-2">
         <Reveal>
-          <CodeBlock code={QUICKSTART} filename="conductor.yaml" lang="yaml" />
+          <CodeBlock code={QUICKSTART} filename="conductor.json" lang="json" />
         </Reveal>
         <div className="space-y-5">
           <Reveal>
             <div className="rounded-2xl border border-line bg-panel/40 p-6">
               <h3 className="flex items-center gap-2.5 text-base font-semibold text-chalk">
-                <Led state="done" /> Two kinds of gate
+                <Led state="done" /> Every card has an instruction check
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-mist-2">
-                Mix plain-language self-validation with executable checks in a single
-                gate. Soft for <em>is this good?</em>, hard for <em>is this true?</em>
+                Every card is independently verified against its instruction.
+                The checker records a verdict before completion.
               </p>
               <div className="mt-4">
-                <CodeBlock code={GATE_SNIPPET} lang="yaml" />
+                <CodeBlock code={CHECK_SNIPPET} lang="bash" />
               </div>
             </div>
           </Reveal>
@@ -149,7 +144,7 @@ export function SpecPage() {
                   <span className="text-dim">#</span> "Here's my skill. Read CONDUCTOR.md,
                 </div>
                 <div className="text-mist">&nbsp;&nbsp;convert it to a conductor, and run it."</div>
-                <div className="mt-3 text-mint">→ .conductor/conductor.yaml + status.json</div>
+                <div className="mt-3 text-mint">→ .conductor/conductor.json + status.json</div>
                 <div className="text-mint">→ board lights up</div>
               </div>
             </div>

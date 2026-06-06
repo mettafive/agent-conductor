@@ -1,7 +1,5 @@
 import { parseConductor } from "./parse";
 import type {
-  ApprovalItem,
-  ApprovalState,
   BoardModel,
   BoardStep,
   Column,
@@ -37,10 +35,10 @@ interface RawStepStatus {
   };
   gate_detail?: Array<{
     criterion?: string;
-    kind?: string;
     passed?: boolean;
     exit_code?: number;
-    verified?: boolean;
+    checker?: string;
+    evidence?: string;
   }>;
   // loops
   type?: string;
@@ -48,11 +46,6 @@ interface RawStepStatus {
   completed?: number;
   current_item?: string;
   iterations?: Record<string, Record<string, RawStepStatus>>;
-  // approval
-  approval?: {
-    prompt?: string;
-    items?: Array<{ label?: string; decision?: string | null }>;
-  };
   // heartbeats
   heartbeat?: Array<{
     at?: string;
@@ -169,69 +162,38 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
   };
 }
 
-function buildApproval(step: ConductorStep, st: RawStepStatus): ApprovalState | undefined {
-  if (!step.isApproval) return undefined;
-  const fromStatus = st.approval?.items;
-  let items: ApprovalItem[];
-  if (Array.isArray(fromStatus) && fromStatus.length > 0) {
-    items = fromStatus.map((i) => ({
-      label: String(i?.label ?? ""),
-      decision: i?.decision === "approved" || i?.decision === "rejected" ? i.decision : null,
-    }));
-  } else {
-    // materialize from the conductor's item templates (no decisions yet)
-    items = (step.approval?.items ?? []).map((t) => ({ label: t, decision: null }));
-  }
-  const decided = items.length > 0 && items.every((i) => i.decision !== null);
-  return { prompt: st.approval?.prompt ?? step.approval?.prompt, items, decided };
-}
-
 function columnFor(rawStatus: string, gate: string): Column {
   if (rawStatus === "failed" || gate === "failed") return "failed";
   if (rawStatus === "done") return "done";
-  if (rawStatus === "awaiting_approval" || gate === "checking") return "gate";
+  if (gate === "checking") return "gate";
   if (rawStatus === "running") return "running";
   return "pending";
 }
 
-/** Attach per-criterion pass/fail from gate_detail when the agent recorded it. */
+/** Attach checker pass/fail from gate_detail when the independent checker recorded it. */
 function buildCriteria(step: ConductorStep, detail: RawStepStatus["gate_detail"]): GateCriterion[] {
-  const out: GateCriterion[] = [];
-  const findDetail = (text: string) =>
-    detail?.find((d) => d.criterion === text || d.criterion === text.trim());
-
-  for (const text of step.soft) {
-    const d = findDetail(text);
-    out.push({ kind: "soft", text, passed: d ? !!d.passed : null });
-  }
-  for (const h of step.hard) {
-    const d = findDetail(h.text) ?? (h.name ? findDetail(h.name) : undefined);
-    out.push({
-      kind: "hard",
-      text: h.text,
-      name: h.name,
-      passed: d ? !!d.passed : null,
-      exitCode: d?.exit_code,
-      verified: d?.verified === true,
-    });
-  }
-  return out;
+  const text = step.instruction || step.title || step.id;
+  const d = detail?.find((x) => x.criterion === text) ?? detail?.[0];
+  return [{
+    text,
+    name: step.title,
+    passed: d ? !!d.passed : null,
+    checker: "instruction",
+    evidence: d?.evidence,
+  }];
 }
 
 /** Build a step list from status alone, when no conductor file is present. */
 function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): ConductorStep[] {
   return Object.keys(statusSteps).map((id, index) => ({
     id,
+    title: id,
     index,
     instruction: "",
     firstLine: "",
     isCondition: !!statusSteps[id]?.branch_taken,
     requires: [],
-    soft: [],
-    hard: [],
     isLoop: statusSteps[id]?.type === "loop",
-    isApproval:
-      !!statusSteps[id]?.approval || statusSteps[id]?.status === "awaiting_approval",
   }));
 }
 
@@ -271,15 +233,13 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
     };
     return {
       id,
+      title,
       index,
       instruction: "",
       firstLine: title,
       isCondition: false,
       requires: [],
-      soft: [],
-      hard: [],
       isLoop: false,
-      isApproval: false,
       column: columnFor(rawStatus, gateState),
       rawStatus,
       gateState,
@@ -290,9 +250,8 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
       phase: "improve",
       branchTaken: undefined,
       output_value: undefined,
-      criteria: buildCriteria({ id, soft: [], hard: [] } as unknown as ConductorStep, st.gate_detail),
+      criteria: [],
       loop: undefined,
-      approvalState: undefined,
       heartbeat: buildHeartbeat(st),
       learnings: [],
     } as BoardStep;
@@ -300,7 +259,7 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
 }
 
 // Snapshots are fresh objects only when the server pushes an update, so caching
-// the derived model by snapshot identity is correct — and it stops the YAML from
+// the derived model by snapshot identity is correct — and it stops the JSON from
 // being re-parsed on every render / clock tick (the board re-renders each second).
 const modelCache = new WeakMap<Snapshot, BoardModel>();
 
@@ -315,19 +274,18 @@ export function buildModel(snap: Snapshot): BoardModel {
 function buildModelImpl(snap: Snapshot): BoardModel {
   const status = snap.status ?? {};
   const statusSteps = (status.steps as Record<string, RawStepStatus>) ?? {};
-  const parsed = parseConductor(snap.conductorYaml);
+  const parsed = parseConductor(snap.conductorJson);
   const hasConductor = !!parsed && parsed.steps.length > 0;
 
   const structure: ConductorStep[] = hasConductor
     ? parsed!.steps
     : stepsFromStatusOnly(statusSteps).filter((s) => !isImproveId(s.id));
 
-  // §6.1: when auto_improve is off, the Phase 0 self-improvement pass is fully
-  // disabled — no improvement cards anywhere. The conductor's flag is the source
-  // of truth; status.json may also carry it (set by the writer at run start).
+  // Phase 0 is parked for v3: keep the code path, but leave it off unless a
+  // conductor/status file explicitly opts in.
   const statusAutoImprove = (status as { auto_improve?: boolean }).auto_improve;
   const autoImprove =
-    statusAutoImprove !== undefined ? statusAutoImprove !== false : parsed?.autoImprove ?? true;
+    statusAutoImprove !== undefined ? statusAutoImprove !== false : parsed?.autoImprove === true;
 
   const improveSteps = autoImprove ? buildImproveSteps(statusSteps) : [];
 
@@ -348,7 +306,6 @@ function buildModelImpl(snap: Snapshot): BoardModel {
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),
       loop: buildLoop(s, st),
-      approvalState: buildApproval(s, st),
       // include loop sub-step beats so the stall/freeball check + cards see them
       heartbeat: [...buildHeartbeat(st), ...collectSubBeats(st)].sort((a, b) =>
         a.at < b.at ? -1 : a.at > b.at ? 1 : 0,

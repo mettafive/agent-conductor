@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import yaml from "js-yaml";
 import { discoverConductor, loadConductor, mergeKnowledge, saveConductor, SCOPES } from "./knowledge.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -473,7 +472,7 @@ export async function runLoop(args) {
 // the insight: this-conductor (auto-appliable in Phase 0) | upstream | template |
 // tooling | corpus. A repeat sighting bumps `observed` and escalates the status
 // (emerging → proven at 3×). Structural types (new_step/remove_step/reorder)
-// need human approval, so they never auto-apply.
+// are parked while Phase 0 is behind an explicit flag, so they never auto-apply.
 export async function runSuggest(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
@@ -481,7 +480,7 @@ export async function runSuggest(args) {
         "         [--current X] [--proposed Y] [--note Z] [--conductor <file>]\n" +
         `  --scope (required): ${SCOPES.join(" | ")}\n` +
         "  Appends to the conductor's knowledge: section. this-conductor insights with\n" +
-        "  current/proposed auto-apply once proven; structural types need approval.",
+        "  current/proposed auto-apply once proven; structural types stay parked in Phase 0.",
     );
     return true;
   }
@@ -596,13 +595,13 @@ export async function runKnowledge(args) {
   return true;
 }
 
-// conductor-board status-init <conductor.yaml> [--run-id ID]
+// conductor-board status-init <conductor.json> [--run-id ID]
 export async function runStatusInit(args) {
   const [conductorPath] = positionals(args);
-  if (!conductorPath) return fail("usage: conductor-board status-init <conductor.yaml>");
+  if (!conductorPath) return fail("usage: conductor-board status-init <conductor.json>");
   let doc;
   try {
-    doc = yaml.load(fs.readFileSync(path.resolve(process.cwd(), conductorPath), "utf8"));
+    doc = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), conductorPath), "utf8"));
   } catch (e) {
     return fail(`could not read conductor: ${e.message}`);
   }
@@ -627,18 +626,17 @@ export async function runStatusInit(args) {
     (typeof flag(args, ["--run-name"]) === "string" && flag(args, ["--run-name"])) ||
     `${nameSlug}-run-${priorRuns + 1}-${tsShort}`;
 
-  // §6.1 — auto_improve (default on). When off, the Phase 0 self-improvement
-  // pass is fully disabled: no improvement cards injected at all.
-  const autoImprove = doc.auto_improve !== false;
+  // Phase 0 self-improvement is parked in v3. Keep the old machinery behind an
+  // explicit flag so it can come back in a simpler form later.
+  const autoImprove = doc.auto_improve === true;
 
   const steps = {};
   let improvements = 0;
 
   if (autoImprove) {
-    // Phase 0 (§10.2): auto-inject improvement cards from PROVEN this-conductor
-    // knowledge BEFORE the workflow steps. Entries with current/proposed apply
-    // automatically; structural ones (new_step/remove_step/reorder) are flagged
-    // for human approval. A _validate card closes the phase.
+    // Phase 0 (§10.2, disabled by default): auto-inject improvement cards from
+    // PROVEN this-conductor knowledge BEFORE the workflow steps. A _validate
+    // card closes the phase.
     const STRUCTURAL = new Set(["new_step", "remove_step", "reorder"]);
     const knowledge = (Array.isArray(doc.knowledge) ? doc.knowledge : []).filter(
       (k) => k && typeof k === "object" && k.title,

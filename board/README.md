@@ -17,7 +17,7 @@ Board live at http://localhost:3042 — watching .conductor/status.json
 
 ```bash
 npx conductor-board                         # serve the live board (default)
-npx conductor-board init                    # scaffold .conductor/conductor.yaml
+npx conductor-board init                    # scaffold .conductor/conductor.json
 npx conductor-board init --name w --steps 4 # non-interactive scaffold
 npx conductor-board validate [path]         # check a conductor against the spec
 npx conductor-board --help                  # all commands + options
@@ -28,8 +28,8 @@ npx conductor-board --help                  # all commands + options
 - **Watches** `.conductor/status.json` via `fs.watch` and streams changes to the
   browser over **Server-Sent Events** — no polling, no WebSocket.
 - **Merges** the live status with the conductor definition (auto-discovered next
-  to the status file) so cards show the full picture: instruction, gate criteria,
-  soft/hard split, `requires`, conditions, outputs.
+  to the status file) so cards show the full picture: instruction, gate,
+  `requires`, conditions, outputs.
 - **Renders** a board with columns **Pending → Running → Gate Check → Done** and a
   **Failed** side column. Cards animate between columns as status changes.
 - **Archives** every completed/failed run to `.conductor/history/` and shows a
@@ -40,14 +40,14 @@ npx conductor-board --help                  # all commands + options
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--path`, `-p` | `.conductor/status.json` | Path to the status file |
-| `--conductor`, `-c` | auto-discovered | Path to the conductor `.yaml` |
+| `--conductor`, `-c` | auto-discovered | Path to the conductor `.json` |
 | `--port` | `3042` | Port to serve on (walks forward if taken) |
 | `--no-open` | — | Don't open the browser — CI / headless only (it opens by default) |
 | `--help`, `-h` | — | Show help |
 
 ```bash
 npx conductor-board --path ./run/status.json --port 3001
-npx conductor-board --conductor ./workflows/review.yaml
+npx conductor-board --conductor ./workflows/review.json
 ```
 
 The board reads `status.json` for live **state** and the conductor file for step
@@ -67,14 +67,14 @@ runs archive cleanly instead of overwriting each other.
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/state` | current `{ status, conductorYaml }` snapshot |
+| `GET /api/state` | current `{ status, conductorJson }` snapshot |
 | `GET /history` | summaries of archived runs, newest first |
 | `GET /history/:filename` | one full archived run (also resolves by `run_id`) |
 | `GET /events` | SSE stream of `update` and `history` events |
 
 ## Card anatomy
 
-- Step ID, first line of the instruction, and soft/hard gate badges
+- Step ID, first line of the instruction, and gate status
 - Attempt counter (`×2`) when a step has been retried
 - Condition steps show a fork icon and the branch taken
 - Loop steps (`type: loop`) show an `n/total` iterations bar; expand to see each
@@ -86,7 +86,7 @@ runs archive cleanly instead of overwriting each other.
 
 ```
 .conductor/status.json ──fs.watch──┐
-.conductor/conductor.yaml ─────────┤
+.conductor/conductor.json ─────────┤
                                    ▼
                        server (zero-dep node:http)
                           ├── serves dist/ (React app)
@@ -95,10 +95,7 @@ runs archive cleanly instead of overwriting each other.
                        browser: parse + merge + render
 ```
 
-The **board server has zero runtime dependencies** — plain `node:http`, `fs`, and
-`fs.watch`. YAML is parsed in the browser, so the server never needs a parser. The
-package's only dependency is `js-yaml`, used by the `validate` command (it has no
-dependencies of its own, so `npx` stays instant).
+The board server uses plain `node:http`, `fs`, and `fs.watch`. Conductors are JSON, so both the server and browser parse them with built-in JSON support.
 
 ## Develop
 
@@ -111,7 +108,7 @@ npm start                  # serve the board (node bin/cli.js)
 npm run simulate -- --fail security-audit                 # one run, with a retry
 npm run simulate -- --fatal coverage-check                # a run that ends failed
 npm run simulate -- --loop                                # keep archiving runs
-npm run simulate -- ../examples/batch-review.yaml --fail critique   # a loop run
+npm run simulate -- ../examples/batch-review.json --fail critique   # a loop run
 ```
 
 `scripts/simulate.js` is a dev-only tool that walks a conductor and writes

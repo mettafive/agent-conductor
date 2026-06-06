@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import yaml from "js-yaml";
+import { parseCardsJson } from "./cards.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -58,7 +58,7 @@ function nameLints(steps, acc = []) {
       acc.push(`step "${s.id}" still has its scaffold name — rename to a verb-object headline (e.g. claim-batch, ship-and-verify)`);
     else if (SHRUG.has(String(s.id).toLowerCase()))
       acc.push(`step "${s.id}" is vague — name the phase + its deliverable, in verb-object form`);
-    if (/TODO/.test(JSON.stringify([s.instruction ?? "", s.gate ?? ""])))
+    if (/TODO/.test(JSON.stringify([s.instruction ?? ""])))
       acc.push(`step "${s.id}" still contains a TODO — fill it in before running`);
     const labels = commandSignatures(s.instruction);
     if (labels.length >= 2)
@@ -71,18 +71,11 @@ function nameLints(steps, acc = []) {
   return acc;
 }
 
-function gateOk(g) {
-  if (typeof g === "string") return true;
-  return g && typeof g === "object" && typeof g.check === "string";
-}
+const EXPLICIT_GATE_FIELDS = ["gate", "gates", "command", "check", "agent", "prompt"];
 
-function countGates(steps, acc) {
-  for (const s of steps) {
-    for (const g of s.gate ?? []) {
-      if (typeof g === "string") acc.soft++;
-      else if (g && typeof g === "object" && typeof g.check === "string") acc.hard++;
-    }
-    if (s.type === "loop" && Array.isArray(s.steps)) countGates(s.steps, acc);
+function rejectExplicitGateFields(obj, label, errors) {
+  for (const field of EXPLICIT_GATE_FIELDS) {
+    if (obj?.[field] !== undefined) errors.push(`${label} uses removed field "${field}"`);
   }
 }
 
@@ -96,9 +89,11 @@ function validateSubSteps(loop, errors) {
     }
     if (seen.has(sub.id)) errors.push(`Loop "${loop.id}" has duplicate sub-step id "${sub.id}"`);
     seen.add(sub.id);
+    if (!sub.title) errors.push(`Loop sub-step "${sub.id}" has no title`);
     if (!sub.instruction) errors.push(`Loop sub-step "${sub.id}" has no instruction`);
-    for (const g of sub.gate ?? []) {
-      if (!gateOk(g)) errors.push(`Loop sub-step "${sub.id}" has a malformed gate criterion`);
+    rejectExplicitGateFields(sub, `Loop sub-step "${sub.id}"`, errors);
+    if (sub.requires !== undefined && !Array.isArray(sub.requires)) {
+      errors.push(`Loop sub-step "${sub.id}" has requires but it is not a list`);
     }
   }
 }
@@ -109,8 +104,6 @@ function findOrphans(steps, ids) {
   const indexById = new Map(steps.map((s, i) => [s.id, i]));
   const successors = (s, i) => {
     if (s.type === "condition") return [s.if_true, s.if_false].filter(Boolean);
-    if (s.type === "approval")
-      return [s.approval?.actions?.approve, s.approval?.actions?.reject].filter(Boolean);
     if (s.then) return [s.then];
     const next = steps[i + 1];
     return next ? [next.id] : [];
@@ -147,13 +140,17 @@ function hasRequiresCycle(steps, ids) {
 
 export function validateConductor(doc) {
   const errors = [];
-  if (!doc || typeof doc !== "object") return ["File is empty or not a YAML mapping"];
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["File is empty or not a JSON object"];
 
   for (const key of ["conductor", "name", "description", "steps"]) {
     if (doc[key] === undefined) errors.push(`Missing required top-level key "${key}"`);
   }
   if (doc.conductor !== undefined && !SEMVER.test(String(doc.conductor))) {
     errors.push(`"conductor" must be a semver version (e.g. 1.1.0), got "${doc.conductor}"`);
+  }
+  if (doc.max_attempts !== undefined) {
+    const n = Number(doc.max_attempts);
+    if (!Number.isInteger(n) || n < 1) errors.push(`"max_attempts" must be a positive integer`);
   }
 
   const steps = Array.isArray(doc.steps) ? doc.steps : [];
@@ -173,27 +170,14 @@ export function validateConductor(doc) {
     if (!s || !s.id) continue;
     const isCond = s.type === "condition";
     const isLoop = s.type === "loop";
-    const isApproval = s.type === "approval";
 
-    if (!isLoop && !isApproval && !s.instruction)
-      errors.push(`Step "${s.id}" has no instruction`);
+    if (s.type === "approval") errors.push(`Step "${s.id}" uses removed type "approval"`);
 
-    if (isApproval) {
-      if (!s.approval || typeof s.approval !== "object") {
-        errors.push(`Approval step "${s.id}" is missing the "approval" block`);
-      } else {
-        const approve = s.approval.actions?.approve;
-        const reject = s.approval.actions?.reject;
-        if (approve && !ids.has(approve))
-          errors.push(`Approval "${s.id}" references unknown step "${approve}" in actions.approve`);
-        if (reject && !ids.has(reject))
-          errors.push(`Approval "${s.id}" references unknown step "${reject}" in actions.reject`);
-      }
-    }
+    if (!s.title) errors.push(`Step "${s.id}" has no title`);
+    if (!s.instruction) errors.push(`Step "${s.id}" has no instruction`);
+    if (!Array.isArray(s.requires)) errors.push(`Step "${s.id}" must define requires as a list (use [] for no dependencies)`);
 
-    for (const g of s.gate ?? []) {
-      if (!gateOk(g)) errors.push(`Step "${s.id}" has a malformed gate criterion`);
-    }
+    rejectExplicitGateFields(s, `Step "${s.id}"`, errors);
 
     if (isCond) {
       if (!s.if_true) errors.push(`Step "${s.id}" is a condition but missing if_true`);
@@ -228,16 +212,35 @@ export function validateConductor(doc) {
     errors.push("Circular dependency detected in requires");
   }
 
-  for (const orphan of findOrphans(steps, ids)) {
-    errors.push(`Step "${orphan}" is unreachable`);
-  }
-
   return errors;
+}
+
+function cardCoverageErrors(doc, conductorFile) {
+  const cardsPath = path.join(path.dirname(conductorFile), "cards.json");
+  if (!fs.existsSync(cardsPath)) return [];
+  let cards;
+  try {
+    cards = parseCardsJson(fs.readFileSync(cardsPath, "utf8"));
+  } catch (e) {
+    return [`could not parse cards.json: ${e.message}`];
+  }
+  const steps = Array.isArray(doc.steps) ? doc.steps : [];
+  const present = new Set();
+  const collect = (list) => {
+    for (const s of list || []) {
+      if (s?.id) present.add(s.id);
+      if (s?.type === "loop" && Array.isArray(s.steps)) collect(s.steps);
+    }
+  };
+  collect(steps);
+  return cards
+    .filter((card) => card.id && !present.has(card.id))
+    .map((card) => `cards.json card "${card.id}" is missing from conductor.json`);
 }
 
 export async function runValidate(args) {
   const fileArg = args.find((a) => !a.startsWith("-"));
-  const file = path.resolve(process.cwd(), fileArg || ".conductor/conductor.yaml");
+  const file = path.resolve(process.cwd(), fileArg || ".conductor/conductor.json");
 
   if (!fs.existsSync(file)) {
     console.error(red(`✗ No conductor file at ${path.relative(process.cwd(), file)}`));
@@ -246,31 +249,25 @@ export async function runValidate(args) {
 
   let doc;
   try {
-    doc = yaml.load(fs.readFileSync(file, "utf8"));
+    doc = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (e) {
-    console.error(red(`✗ Could not parse YAML: ${e.message}`));
+    console.error(red(`✗ Could not parse JSON: ${e.message}`));
     return false;
   }
 
-  const errors = validateConductor(doc);
+  const errors = [...validateConductor(doc), ...cardCoverageErrors(doc, file)];
   console.log("");
   if (errors.length === 0) {
     const steps = Array.isArray(doc.steps) ? doc.steps : [];
-    const acc = { soft: 0, hard: 0 };
-    countGates(steps, acc);
     const conditions = steps.filter((s) => s.type === "condition").length;
     const loops = steps.filter((s) => s.type === "loop").length;
-    const approvals = steps.filter((s) => s.type === "approval").length;
     const part = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     console.log(green(`✓ ${path.basename(file)} is valid`));
     console.log(
       dim(
         `  ${part(steps.length, "step", "steps")}, ` +
-          `${part(acc.soft, "soft gate", "soft gates")}, ` +
-          `${part(acc.hard, "hard gate", "hard gates")}, ` +
           `${part(conditions, "condition", "conditions")}, ` +
-          `${part(loops, "loop", "loops")}, ` +
-          `${part(approvals, "approval", "approvals")}`,
+          `${part(loops, "loop", "loops")}`,
       ),
     );
     const hints = nameLints(steps);

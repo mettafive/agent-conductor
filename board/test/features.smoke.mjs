@@ -4,19 +4,20 @@
  * Where loops.smoke.ts goes deep on one feature (loop rendering), this goes WIDE:
  * 50+ real-world scenarios a future user will actually hit, each invoking
  * `node bin/cli.js …` exactly as a user/agent would and asserting on the real
- * exit code + stdout/stderr + the on-disk status.json / conductor.yaml.
+ * exit code + stdout/stderr + the on-disk status.json / conductor.json.
  *
  * Coverage map (feature → scenarios):
- *   init        scaffold, flags, clamp, --force refuse/overwrite, generated-yaml-validates
- *   validate    every VALID shape (linear/loop/condition/approval/parallel/DAG) +
+ *   init        scaffold, flags, clamp, --force refuse/overwrite, generated-json-validates
+ *   validate    every VALID shape (linear/loop/condition/parallel/DAG) +
  *               every INVALID path the validator can emit (16 distinct rules)
  *   status-init linear, run-id, goal, auto_improve off, Phase-0 injection, loop type
  *   step/gate   running/done/failed transitions, current_step, gate states, errors
  *   heartbeat   append, insight tags, finalBeat handoff, loop-sub bubble, errors
- *   check       board-sync pass + every stale/desync/Phase-0 failure
- *   complete    hard-gate pass/fail, soft-attest, loop-coverage guard, sub-step
+ *   check       independent instruction checker + heuristic fallback
+ *   complete    checker pass/fail, retry loop, circuit breaker, loop-coverage guard, sub-step
  *   loop        loop-scope frontload, multiword guard, sequential guard, parallel exempt
  *   knowledge   suggest (+scope validation), --min gate, --min-scopes gate
+ *   cards       card-design artifact validation: required fields, ids, forbidden fields
  *   lifecycle   one realistic init→validate→status-init→run→complete→finish run
  *
  * Run:  node test/features.smoke.mjs    (from board/)
@@ -46,7 +47,11 @@ function assert(cond, msg) {
 /** Run the real CLI. Returns { code, out } — out = stdout+stderr merged on EVERY
  *  path (warnings go to stderr even on exit 0, so we must always capture both). */
 function cli(args, cwd) {
-  const r = spawnSync("node", [CLI, ...args], { cwd, encoding: "utf8" });
+  const r = spawnSync("node", [CLI, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, OPENAI_API_KEY: "" },
+  });
   return { code: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
@@ -55,10 +60,10 @@ function tmpdir() {
   fs.mkdirSync(path.join(d, ".conductor"), { recursive: true });
   return d;
 }
-/** Write a conductor.yaml into <tmp>/.conductor and return tmp. */
-function withConductor(yamlStr) {
+/** Write a conductor.json into <tmp>/.conductor and return tmp. */
+function withConductor(jsonStr) {
   const tmp = tmpdir();
-  fs.writeFileSync(path.join(tmp, ".conductor", "conductor.yaml"), yamlStr);
+  fs.writeFileSync(path.join(tmp, ".conductor", "conductor.json"), jsonStr);
   return tmp;
 }
 const status = (tmp) => JSON.parse(fs.readFileSync(path.join(tmp, ".conductor", "status.json"), "utf8"));
@@ -70,60 +75,89 @@ const writeFile = (tmp, rel, body) => {
 };
 
 // ── reusable conductor fixtures ─────────────────────────────────────────────
-const LINEAR = `conductor: 2.0.0
-name: linear-flow
-description: A simple three-step linear workflow.
-steps:
-  - id: gather
-    instruction: Gather the inputs.
-    gate:
-      - "inputs gathered"
-  - id: build
-    instruction: Build the thing.
-    requires: [gather]
-    gate:
-      - "build succeeds"
-  - id: ship
-    instruction: Ship it.
-    requires: [build]
-    gate:
-      - check: "true"
-        name: smoke
-`;
+const LINEAR = `{
+  "conductor": "3.0.0",
+  "name": "linear-flow",
+  "description": "A simple three-step linear workflow.",
+  "steps": [
+    {
+      "id": "gather",
+      "title": "Gather",
+      "instruction": "Gather the inputs.",
+      "requires": []
+    },
+    {
+      "id": "build",
+      "title": "Build",
+      "instruction": "Build the thing.",
+      "requires": [
+        "gather"
+      ]
+    },
+    {
+      "id": "ship",
+      "title": "Ship",
+      "instruction": "Ship it.",
+      "requires": [
+        "build"
+      ]
+    }
+  ]
+}`;
 
-const LOOP = `conductor: 2.0.0
-name: loop-flow
-description: A loop over items.
-steps:
-  - id: run
-    type: loop
-    over: items
-    as: item
-    steps:
-      - id: work
-        instruction: "Do work for {item}."
-        gate:
-          - "{item} done"
-`;
+const LOOP = `{
+  "conductor": "3.0.0",
+  "name": "loop-flow",
+  "description": "A loop over items.",
+  "steps": [
+    {
+      "id": "run",
+      "title": "Run",
+      "instruction": "Run work over items.",
+      "type": "loop",
+      "over": "items",
+      "as": "item",
+      "requires": [],
+      "steps": [
+        {
+          "id": "work",
+          "title": "Work",
+          "instruction": "Do work for {item}.",
+          "requires": []
+        }
+      ]
+    }
+  ]
+}`;
 
-const PARALLEL_LOOP = LOOP.replace("    as: item\n", "    as: item\n    parallel: true\n");
+const json = (doc) => JSON.stringify(doc, null, 2);
+const mutateDoc = (src, fn) => {
+  const doc = JSON.parse(src);
+  fn(doc);
+  return json(doc);
+};
+const stepCount = (src) => JSON.parse(src).steps.length;
+
+const PARALLEL_LOOP = mutateDoc(LOOP, (doc) => {
+  doc.steps[0].parallel = true;
+});
 
 // ── scenarios ────────────────────────────────────────────────────────────────
 const scenarios = [];
 const test = (name, fn) => scenarios.push({ name, fn });
 
 // helper: validate-only assertions
-function expectValid(yamlStr) {
+function expectValid(jsonStr) {
   const tmp = tmpdir();
-  const p = writeFile(tmp, "c.yaml", yamlStr);
+  const p = writeFile(tmp, "c.json", jsonStr);
   const r = cli(["validate", p], tmp);
   fs.rmSync(tmp, { recursive: true, force: true });
   assert(r.code === 0, `expected valid (exit 0), got exit ${r.code}:\n${r.out}`);
   assert(/is valid/.test(r.out), `expected "is valid" in output:\n${r.out}`);
 }
-function expectInvalid(yamlStr, substr) {
+function expectInvalid(jsonStr, substr) {
   const tmp = tmpdir();
-  const p = writeFile(tmp, "c.yaml", yamlStr);
+  const p = writeFile(tmp, "c.json", jsonStr);
   const r = cli(["validate", p], tmp);
   fs.rmSync(tmp, { recursive: true, force: true });
   assert(r.code !== 0, `expected INVALID (non-zero exit) but got exit 0:\n${r.out}`);
@@ -135,10 +169,10 @@ test("init: --name + --steps scaffolds N steps and the result validates", () => 
   const tmp = tmpdir();
   const r = cli(["init", "--name", "my-wf", "--steps", "4", "--description", "demo"], tmp);
   assert(r.code === 0, `init failed: ${r.out}`);
-  const f = path.join(tmp, ".conductor", "conductor.yaml");
-  assert(fs.existsSync(f), "conductor.yaml not created");
+  const f = path.join(tmp, ".conductor", "conductor.json");
+  assert(fs.existsSync(f), "conductor.json not created");
   const body = fs.readFileSync(f, "utf8");
-  assert((body.match(/- id: step-/g) || []).length === 4, `expected 4 steps, got:\n${body}`);
+  assert(stepCount(body) === 4, `expected 4 steps, got:\n${body}`);
   const v = cli(["validate", f], tmp);
   assert(v.code === 0, `scaffolded conductor did not validate:\n${v.out}`);
 });
@@ -147,22 +181,22 @@ test("init: --steps 1 produces a single-step conductor", () => {
   const tmp = tmpdir();
   const r = cli(["init", "--name", "one", "--steps", "1"], tmp);
   assert(r.code === 0, r.out);
-  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.yaml"), "utf8");
-  assert((body.match(/- id: step-/g) || []).length === 1, `expected 1 step:\n${body}`);
+  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.json"), "utf8");
+  assert(stepCount(body) === 1, `expected 1 step:\n${body}`);
 });
 
 test("init: --steps 99 clamps to 50", () => {
   const tmp = tmpdir();
   cli(["init", "--name", "big", "--steps", "99"], tmp);
-  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.yaml"), "utf8");
-  assert((body.match(/- id: step-/g) || []).length === 50, "expected clamp to 50 steps");
+  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.json"), "utf8");
+  assert(stepCount(body) === 50, "expected clamp to 50 steps");
 });
 
 test("init: --steps 0 falls back to the 3-step default", () => {
   const tmp = tmpdir();
   cli(["init", "--name", "zero", "--steps", "0"], tmp);
-  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.yaml"), "utf8");
-  assert((body.match(/- id: step-/g) || []).length === 3, "expected fallback to 3 steps");
+  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.json"), "utf8");
+  assert(stepCount(body) === 3, "expected fallback to 3 steps");
 });
 
 test("init: refuses to overwrite an existing conductor without --force", () => {
@@ -178,8 +212,8 @@ test("init: --force overwrites an existing conductor", () => {
   cli(["init", "--name", "a", "--steps", "2"], tmp);
   const r = cli(["init", "--name", "b", "--steps", "5", "--force"], tmp);
   assert(r.code === 0, `--force init should succeed: ${r.out}`);
-  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.yaml"), "utf8");
-  assert((body.match(/- id: step-/g) || []).length === 5, "overwrite should reflect new --steps");
+  const body = fs.readFileSync(path.join(tmp, ".conductor", "conductor.json"), "utf8");
+  assert(stepCount(body) === 5, "overwrite should reflect new --steps");
 });
 
 // ── VALIDATE: valid shapes ────────────────────────────────────────────────────
@@ -187,297 +221,384 @@ test("validate: linear 3-step conductor is valid", () => expectValid(LINEAR));
 test("validate: loop conductor is valid", () => expectValid(LOOP));
 test("validate: parallel loop (parallel: true) is valid", () => expectValid(PARALLEL_LOOP));
 test("validate: parallel: auto is valid", () =>
-  expectValid(LOOP.replace("    as: item\n", "    as: item\n    parallel: auto\n")));
+  expectValid(mutateDoc(LOOP, (doc) => {
+    doc.steps[0].parallel = "auto";
+  })));
 test("validate: condition step with both branches is valid", () =>
-  expectValid(`conductor: 2.0.0
-name: cond
-description: branch.
-steps:
-  - id: decide
-    type: condition
-    instruction: Decide.
-    if_true: yes-path
-    if_false: no-path
-  - id: yes-path
-    instruction: Do yes.
-    gate: ["ok"]
-  - id: no-path
-    instruction: Do no.
-    gate: ["ok"]
-`));
-test("validate: approval step with approve/reject targets is valid", () =>
-  expectValid(`conductor: 2.0.0
-name: appr
-description: approve.
-steps:
-  - id: review
-    type: approval
-    approval:
-      actions:
-        approve: ship
-        reject: halt
-  - id: ship
-    instruction: Ship.
-    gate: ["ok"]
-  - id: halt
-    instruction: Stop.
-    gate: ["ok"]
-`));
+  expectValid(`{
+  "conductor": "3.0.0",
+  "name": "cond",
+  "description": "branch.",
+  "steps": [
+    {
+      "id": "decide",
+      "title": "Decide",
+      "type": "condition",
+      "instruction": "Decide.",
+      "requires": [],
+      "if_true": "yes-path",
+      "if_false": "no-path"
+    },
+    {
+      "id": "yes-path",
+      "title": "Yes path",
+      "instruction": "Do yes.",
+      "requires": [
+        "decide"
+      ]
+    },
+    {
+      "id": "no-path",
+      "title": "No path",
+      "instruction": "Do no.",
+      "requires": [
+        "decide"
+      ]
+    }
+  ]
+}`));
 test("validate: acyclic requires DAG is valid", () =>
-  expectValid(`conductor: 2.0.0
-name: dag
-description: dag.
-steps:
-  - id: a
-    instruction: A.
-    gate: ["ok"]
-  - id: b
-    instruction: B.
-    requires: [a]
-    gate: ["ok"]
-  - id: c
-    instruction: C.
-    requires: [a, b]
-    gate: ["ok"]
-`));
-test("validate: mixed hard + soft gates report correct counts", () => {
+  expectValid(`{
+  "conductor": "3.0.0",
+  "name": "dag",
+  "description": "dag.",
+  "steps": [
+    {
+      "id": "a",
+      "title": "A",
+      "instruction": "A.",
+      "requires": []
+    },
+    {
+      "id": "b",
+      "title": "B",
+      "instruction": "B.",
+      "requires": [
+        "a"
+      ]
+    },
+    {
+      "id": "c",
+      "title": "C",
+      "instruction": "C.",
+      "requires": [
+        "a",
+        "b"
+      ]
+    }
+  ]
+}`));
+test("validate: summary reports steps without gate counts", () => {
   const tmp = tmpdir();
-  const p = writeFile(tmp, "c.yaml", LINEAR);
+  const p = writeFile(tmp, "c.json", LINEAR);
   const r = cli(["validate", p], tmp);
   assert(r.code === 0, r.out);
-  assert(/1 hard gate/.test(r.out), `expected 1 hard gate counted:\n${r.out}`);
-  assert(/soft gate/.test(r.out), `expected soft gates counted:\n${r.out}`);
+  assert(/3 steps/.test(r.out), `expected steps counted:\n${r.out}`);
+  assert(!/gates|soft|hard/.test(r.out), `expected no explicit gate/soft/hard vocabulary:\n${r.out}`);
 });
 
 // ── VALIDATE: invalid paths (one rule each) ───────────────────────────────────
 test("validate: missing top-level name is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-description: no name.
-steps:
-  - id: a
-    instruction: A.
-`, 'Missing required top-level key "name"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "description": "no name.",
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A."
+    }
+  ]
+}`, 'Missing required top-level key "name"'));
 
 test("validate: missing conductor version is rejected", () =>
-  expectInvalid(`name: x
-description: y.
-steps:
-  - id: a
-    instruction: A.
-`, 'Missing required top-level key "conductor"'));
+  expectInvalid(json({
+    name: "x",
+    description: "y.",
+    steps: [{ id: "a", title: "A", instruction: "A.", requires: [] }],
+  }), 'Missing required top-level key "conductor"'));
 
 test("validate: non-semver conductor version is rejected", () =>
-  expectInvalid(`conductor: "2.0"
-name: x
-description: y.
-steps:
-  - id: a
-    instruction: A.
-`, "semver"));
+  expectInvalid(`{
+  "conductor": "2.0",
+  "name": "x",
+  "description": "y.",
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A."
+    }
+  ]
+}`, "semver"));
 
 test("validate: duplicate step id is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: dup
-description: d.
-steps:
-  - id: a
-    instruction: A.
-  - id: a
-    instruction: A2.
-`, 'Duplicate step id "a"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "dup",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A."
+    },
+    {
+      "id": "a",
+      "instruction": "A2."
+    }
+  ]
+}`, 'Duplicate step id "a"'));
 
 test("validate: step with no instruction is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: noinst
-description: d.
-steps:
-  - id: a
-    gate: ["ok"]
-`, "no instruction"));
+  expectInvalid(`{
+  "conductor": "3.0.0",
+  "name": "noinst",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "gate": {
+        "command": "true"
+      }
+    }
+  ]
+}`, "no instruction"));
 
-test("validate: malformed gate criterion is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: badgate
-description: d.
-steps:
-  - id: a
-    instruction: A.
-    gate:
-      - notcheck: "oops"
-`, "malformed gate"));
+test("validate: explicit gate field is rejected", () =>
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "badgate",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "title": "A",
+      "instruction": "A.",
+      "requires": [],
+      "gate": {
+        "command": "true"
+      }
+    }
+  ]
+}`, 'uses removed field "gate"'));
 
 test("validate: condition missing if_true is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: c
-description: d.
-steps:
-  - id: a
-    type: condition
-    instruction: A.
-    if_false: b
-  - id: b
-    instruction: B.
-    gate: ["ok"]
-`, "missing if_true"));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "c",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "condition",
+      "instruction": "A.",
+      "if_false": "b"
+    },
+    {
+      "id": "b",
+      "instruction": "B."
+    }
+  ]
+}`, "missing if_true"));
 
 test("validate: condition missing if_false is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: c
-description: d.
-steps:
-  - id: a
-    type: condition
-    instruction: A.
-    if_true: b
-  - id: b
-    instruction: B.
-    gate: ["ok"]
-`, "missing if_false"));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "c",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "condition",
+      "instruction": "A.",
+      "if_true": "b"
+    },
+    {
+      "id": "b",
+      "instruction": "B."
+    }
+  ]
+}`, "missing if_false"));
 
 test("validate: loop missing 'over' is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: l
-description: d.
-steps:
-  - id: a
-    type: loop
-    as: item
-    steps:
-      - id: w
-        instruction: W.
-`, 'missing "over"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "l",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "loop",
+      "as": "item",
+      "steps": [
+        {
+          "id": "w",
+          "instruction": "W."
+        }
+      ]
+    }
+  ]
+}`, 'missing "over"'));
 
 test("validate: loop missing 'as' is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: l
-description: d.
-steps:
-  - id: a
-    type: loop
-    over: items
-    steps:
-      - id: w
-        instruction: W.
-`, 'missing "as"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "l",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "loop",
+      "over": "items",
+      "steps": [
+        {
+          "id": "w",
+          "instruction": "W."
+        }
+      ]
+    }
+  ]
+}`, 'missing "as"'));
 
 test("validate: loop with no sub-steps is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: l
-description: d.
-steps:
-  - id: a
-    type: loop
-    over: items
-    as: item
-    steps: []
-`, "no sub-steps"));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "l",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "loop",
+      "over": "items",
+      "as": "item",
+      "steps": []
+    }
+  ]
+}`, "no sub-steps"));
 
 test("validate: loop sub-step missing instruction is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: l
-description: d.
-steps:
-  - id: a
-    type: loop
-    over: items
-    as: item
-    steps:
-      - id: w
-        gate: ["ok"]
-`, "no instruction"));
+  expectInvalid(`{
+  "conductor": "3.0.0",
+  "name": "l",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "loop",
+      "over": "items",
+      "as": "item",
+      "steps": [
+        {
+          "id": "w",
+          "gate": {
+            "command": "true"
+          }
+        }
+      ]
+    }
+  ]
+}`, "no instruction"));
 
 test("validate: loop with invalid 'parallel' value is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: l
-description: d.
-steps:
-  - id: a
-    type: loop
-    over: items
-    as: item
-    parallel: sometimes
-    steps:
-      - id: w
-        instruction: W.
-`, 'invalid "parallel"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "l",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "type": "loop",
+      "over": "items",
+      "as": "item",
+      "parallel": "sometimes",
+      "steps": [
+        {
+          "id": "w",
+          "instruction": "W."
+        }
+      ]
+    }
+  ]
+}`, 'invalid "parallel"'));
 
-test("validate: approval missing the approval block is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: a
-description: d.
-steps:
-  - id: r
-    type: approval
-`, 'missing the "approval" block'));
+test("validate: removed approval step type is rejected", () =>
+  expectInvalid(`{
+  "conductor": "3.0.0",
+  "name": "a",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "r",
+      "type": "approval"
+    }
+  ]
+}`, 'uses removed type "approval"'));
 
 test("validate: unknown 'then' target is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: a
-description: d.
-steps:
-  - id: a
-    instruction: A.
-    then: nowhere
-    gate: ["ok"]
-`, 'unknown step "nowhere"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "a",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A.",
+      "then": "nowhere"
+    }
+  ]
+}`, 'unknown step "nowhere"'));
 
 test("validate: unknown 'requires' target is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: a
-description: d.
-steps:
-  - id: a
-    instruction: A.
-    requires: [ghost]
-    gate: ["ok"]
-`, 'unknown step "ghost"'));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "a",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A.",
+      "requires": [
+        "ghost"
+      ]
+    }
+  ]
+}`, 'unknown step "ghost"'));
 
 test("validate: circular requires dependency is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: cyc
-description: d.
-steps:
-  - id: a
-    instruction: A.
-    requires: [b]
-    gate: ["ok"]
-  - id: b
-    instruction: B.
-    requires: [a]
-    gate: ["ok"]
-`, "Circular dependency"));
-
-test("validate: unreachable (orphan) step is rejected", () =>
-  expectInvalid(`conductor: 2.0.0
-name: orph
-description: d.
-steps:
-  - id: a
-    instruction: A.
-    then: c
-    gate: ["ok"]
-  - id: b
-    instruction: B (unreachable).
-    gate: ["ok"]
-  - id: c
-    instruction: C.
-    gate: ["ok"]
-`, "unreachable"));
+  expectInvalid(`{
+  "conductor": "2.0.0",
+  "name": "cyc",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A.",
+      "requires": [
+        "b"
+      ]
+    },
+    {
+      "id": "b",
+      "instruction": "B.",
+      "requires": [
+        "a"
+      ]
+    }
+  ]
+}`, "Circular dependency"));
 
 test("validate: empty file is rejected", () => {
   const tmp = tmpdir();
-  const p = writeFile(tmp, "c.yaml", "");
+  const p = writeFile(tmp, "c.json", "");
   const r = cli(["validate", p], tmp);
   assert(r.code !== 0, "empty file should be invalid");
 });
 
-test("validate: unparseable YAML is rejected with a parse error", () =>
+test("validate: unparseable JSON is rejected with a parse error", () =>
   expectInvalid(`name: "[unclosed
   bad: : :`, "parse"));
 
 test("validate: nonexistent file path errors clearly", () => {
   const tmp = tmpdir();
-  const r = cli(["validate", path.join(tmp, "nope.yaml")], tmp);
+  const r = cli(["validate", path.join(tmp, "nope.json")], tmp);
   assert(r.code !== 0, "missing file should error");
   assert(/No conductor file/.test(r.out), `expected "No conductor file":\n${r.out}`);
 });
@@ -485,7 +606,7 @@ test("validate: nonexistent file path errors clearly", () => {
 // ── STATUS-INIT ───────────────────────────────────────────────────────────────
 test("status-init: linear conductor → all steps pending, running, goal carried", () => {
   const tmp = withConductor(LINEAR);
-  const r = cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  const r = cli(["status-init", ".conductor/conductor.json"], tmp);
   assert(r.code === 0, r.out);
   const s = status(tmp);
   assert(s.status === "running", `expected status running, got ${s.status}`);
@@ -498,53 +619,66 @@ test("status-init: linear conductor → all steps pending, running, goal carried
 
 test("status-init: custom --run-id is honored", () => {
   const tmp = withConductor(LINEAR);
-  cli(["status-init", ".conductor/conductor.yaml", "--run-id", "RUN-XYZ"], tmp);
+  cli(["status-init", ".conductor/conductor.json", "--run-id", "RUN-XYZ"], tmp);
   assert(status(tmp).run_id === "RUN-XYZ", "custom run_id not used");
 });
 
 test("status-init: run_name follows {slug}-run-N-{ts}", () => {
   const tmp = withConductor(LINEAR);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   assert(/^linear-flow-run-1-/.test(status(tmp).run_name), `run_name format off: ${status(tmp).run_name}`);
 });
 
 test("status-init: auto_improve:false injects NO _improve cards even with proven knowledge", () => {
-  const tmp = withConductor(`conductor: 2.0.0
-name: ai-off
-description: d.
-auto_improve: false
-knowledge:
-  - title: Always tag prices
-    scope: this-conductor
-    status: proven
-    current: untagged
-    proposed: tagged
-steps:
-  - id: a
-    instruction: A.
-    gate: ["ok"]
-`);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  const tmp = withConductor(`{
+  "conductor": "3.0.0",
+  "name": "ai-off",
+  "description": "d.",
+  "auto_improve": false,
+  "knowledge": [
+    {
+      "title": "Always tag prices",
+      "scope": "this-conductor",
+      "status": "proven",
+      "current": "untagged",
+      "proposed": "tagged"
+    }
+  ],
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A."
+    }
+  ]
+}`);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   const ids = Object.keys(status(tmp).steps);
   assert(!ids.some((i) => i.startsWith("_improve")), `expected no _improve cards, got: ${ids.join(",")}`);
 });
 
-test("status-init: Phase-0 injects improvement cards from proven this-conductor knowledge", () => {
-  const tmp = withConductor(`conductor: 2.0.0
-name: ai-on
-description: d.
-knowledge:
-  - title: Always tag prices
-    scope: this-conductor
-    status: proven
-    current: untagged
-    proposed: tagged
-steps:
-  - id: a
-    instruction: A.
-    gate: ["ok"]
-`);
-  const r = cli(["status-init", ".conductor/conductor.yaml"], tmp);
+test("status-init: Phase-0 injects improvement cards only when explicitly enabled", () => {
+  const tmp = withConductor(`{
+  "conductor": "3.0.0",
+  "name": "ai-on",
+  "description": "d.",
+  "auto_improve": true,
+  "knowledge": [
+    {
+      "title": "Always tag prices",
+      "scope": "this-conductor",
+      "status": "proven",
+      "current": "untagged",
+      "proposed": "tagged"
+    }
+  ],
+  "steps": [
+    {
+      "id": "a",
+      "instruction": "A."
+    }
+  ]
+}`);
+  const r = cli(["status-init", ".conductor/conductor.json"], tmp);
   assert(/Phase 0 improvement/.test(r.out), `expected Phase 0 improvement note:\n${r.out}`);
   const ids = Object.keys(status(tmp).steps);
   assert(ids.includes("_improve::read-knowledge"), "missing _improve::read-knowledge");
@@ -554,7 +688,7 @@ steps:
 
 test("status-init: loop step registers with type 'loop' and an iterations map", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   const st = status(tmp).steps.run;
   assert(st.type === "loop", `expected type loop, got ${st.type}`);
   assert(st.iterations && typeof st.iterations === "object", "missing iterations map");
@@ -564,7 +698,7 @@ test("status-init: loop step registers with type 'loop' and an iterations map", 
 // ── STEP / GATE ───────────────────────────────────────────────────────────────
 function initLinear() {
   const tmp = withConductor(LINEAR);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   return tmp;
 }
 
@@ -648,7 +782,7 @@ test("heartbeat: --final --to records a finalBeat handoff", () => {
 
 test("heartbeat: loop sub-step beat bubbles to the loop parent tagged iter+sub", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "x", "y"], tmp);
   cli(["heartbeat", "run", "working x", "--iteration", "x", "--sub", "work"], tmp);
   const beats = status(tmp).steps.run.heartbeat;
@@ -662,31 +796,31 @@ test("heartbeat: errors when status.json is missing", () => {
   assert(r.code !== 0, "heartbeat should fail without status.json");
 });
 
-// ── CHECK (board-sync) ────────────────────────────────────────────────────────
-test("check: passes when the step is current with a fresh heartbeat", () => {
+// ── CHECK (independent instruction checker) ───────────────────────────────────
+test("check: records a provisional pass when output exists and no LLM is configured", () => {
   const tmp = initLinear();
   cli(["step", "gather", "running"], tmp);
-  cli(["heartbeat", "gather", "working"], tmp);
-  const r = cli(["check", "gather"], tmp);
-  assert(r.code === 0, `board-sync check should pass:\n${r.out}`);
-  assert(/board-sync/.test(r.out), `expected board-sync output:\n${r.out}`);
+  const r = cli(["check", "gather", "--output", "Gathered source notes."], tmp);
+  assert(r.code === 0, `checker should pass with output:\n${r.out}`);
+  assert(/checker PASS/.test(r.out), `expected checker pass output:\n${r.out}`);
+  assert(status(tmp).steps.gather.gate_detail[0].passed === true, "checker result not recorded");
 });
 
-test("check: fails a running step with no heartbeats", () => {
+test("check: fails when no output is recorded", () => {
   const tmp = initLinear();
   cli(["step", "gather", "running"], tmp);
   const r = cli(["check", "gather"], tmp);
-  assert(r.code !== 0, "check should fail with no heartbeat");
-  assert(/no heartbeat/.test(r.out), `expected no-heartbeat error:\n${r.out}`);
+  assert(r.code !== 0, "check should fail with no output");
+  assert(/no output/.test(r.out), `expected no-output error:\n${r.out}`);
+  assert(status(tmp).steps.gather.gate_detail[0].passed === false, "failed checker result not recorded");
 });
 
-test("check: fails when current_step is a different step", () => {
+test("check: reads output from a file", () => {
   const tmp = initLinear();
-  cli(["step", "gather", "running"], tmp);
-  cli(["heartbeat", "gather", "working"], tmp);
-  const r = cli(["check", "build"], tmp); // build isn't current
-  assert(r.code !== 0, "check should fail on desynced current_step");
-  assert(/current_step/.test(r.out), `expected current_step mismatch error:\n${r.out}`);
+  const file = writeFile(tmp, "artifact.md", "Built artifact.");
+  const r = cli(["check", "build", "--output-file", file], tmp);
+  assert(r.code === 0, `checker should pass from output file:\n${r.out}`);
+  assert(/artifact.md/.test(r.out), `expected output file source:\n${r.out}`);
 });
 
 test("check: fails on an unknown step id", () => {
@@ -696,69 +830,122 @@ test("check: fails on an unknown step id", () => {
   assert(/no step "ghost"/.test(r.out), `expected unknown-step error:\n${r.out}`);
 });
 
-test("check: blocks a workflow step while Phase-0 improvement cards are open", () => {
-  const tmp = withConductor(`conductor: 2.0.0
-name: p0
-description: d.
-knowledge:
-  - title: Tag prices
-    scope: this-conductor
-    status: proven
-    current: untagged
-    proposed: tagged
-steps:
-  - id: work
-    instruction: W.
-    gate: ["ok"]
-`);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp); // injects open _improve cards
-  cli(["step", "work", "running"], tmp);
-  cli(["heartbeat", "work", "starting"], tmp);
-  const r = cli(["check", "work"], tmp);
-  assert(r.code !== 0, "check should block while Phase 0 is open");
-  assert(/Phase 0 not complete/.test(r.out), `expected Phase 0 block:\n${r.out}`);
-});
-
 // ── COMPLETE ──────────────────────────────────────────────────────────────────
-test("complete: a passing hard gate advances the step to done (🔒 verified)", () => {
+test("complete: a passing checker result advances the step to done", () => {
   const tmp = initLinear();
-  const r = cli(["complete", "ship"], tmp); // ship has hard gate: true
-  assert(r.code === 0, `complete should pass on hard gate true:\n${r.out}`);
-  assert(/All gates passed/.test(r.out), `expected pass message:\n${r.out}`);
+  cli(["gate-result", "ship", "--passed", "--evidence", "output satisfies the instruction"], tmp);
+  const r = cli(["complete", "ship"], tmp);
+  assert(r.code === 0, `complete should pass on checker result:\n${r.out}`);
+  assert(/Checker passed/.test(r.out), `expected pass message:\n${r.out}`);
   assert(status(tmp).steps.ship.status === "done", "ship not marked done");
 });
 
-test("complete: a failing hard gate does NOT advance the step", () => {
-  const tmp = withConductor(`conductor: 2.0.0
-name: hardfail
-description: d.
-steps:
-  - id: a
-    instruction: A.
-    gate:
-      - check: "false"
-        name: nope
-`);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+test("complete: a failing checker result does NOT advance the step", () => {
+  const tmp = withConductor(`{
+  "conductor": "3.0.0",
+  "name": "checkerfail",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "a",
+      "title": "A",
+      "instruction": "A.",
+      "requires": []
+    }
+  ]
+}`);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
+  cli(["gate-result", "a", "--failed", "--evidence", "missing the requested artifact"], tmp);
   const r = cli(["complete", "a"], tmp);
-  assert(r.code !== 0, "complete should fail on failing hard gate");
-  assert(/Hard gate.*failed/.test(r.out), `expected hard-gate-failed message:\n${r.out}`);
+  assert(r.code !== 0, "complete should fail on failing checker result");
+  assert(/Checker failed/.test(r.out), `expected checker-failed message:\n${r.out}`);
   assert(status(tmp).steps.a.status !== "done", "step should not be done");
+  assert(status(tmp).steps.a.attempt === 2, "attempt should increment after failed completion");
+  assert(/missing the requested artifact/.test(status(tmp).steps.a.last_feedback), "feedback not stored");
 });
 
-test("complete: a soft-only gate requires --attest-soft", () => {
-  const tmp = initLinear(); // gather has only a soft gate
-  const r1 = cli(["complete", "gather"], tmp);
-  assert(r1.code !== 0, "soft gate should not auto-pass");
-  assert(/not attested/.test(r1.out), `expected not-attested message:\n${r1.out}`);
-  const r2 = cli(["complete", "gather", "--attest-soft"], tmp);
-  assert(r2.code === 0, `--attest-soft should pass:\n${r2.out}`);
-  assert(status(tmp).steps.gather.status === "done", "gather not done after attest");
+test("complete: without a checker result is rejected", () => {
+  const tmp = withConductor(`{
+  "conductor": "3.0.0",
+  "name": "checker",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "review",
+      "title": "Review",
+      "instruction": "Review the output.",
+      "requires": []
+    }
+  ]
+}`);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
+  const before = cli(["complete", "review"], tmp);
+  assert(before.code !== 0 && /no checker result/.test(before.out), `expected missing checker result:\n${before.out}`);
+});
+
+test("gate-result: records checker verdict before complete", () => {
+  const tmp = withConductor(`{
+  "conductor": "3.0.0",
+  "name": "checker",
+  "description": "d.",
+  "steps": [
+    {
+      "id": "review",
+      "title": "Review",
+      "instruction": "Review the output.",
+      "requires": []
+    }
+  ]
+}`);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
+  const record = cli(["gate-result", "review", "--passed", "--evidence", "checked by independent agent"], tmp);
+  assert(record.code === 0, `gate-result should pass:\n${record.out}`);
+  const after = cli(["complete", "review"], tmp);
+  assert(after.code === 0, `complete should consume checker result:\n${after.out}`);
+  assert(status(tmp).steps.review.status === "done", "review not done");
+});
+
+test("feedback: returns latest failure and attempts remaining", () => {
+  const tmp = initLinear();
+  cli(["gate-result", "gather", "--failed", "--evidence", "missing source notes"], tmp);
+  cli(["complete", "gather"], tmp);
+  const r = cli(["feedback", "gather"], tmp);
+  assert(r.code === 0, `feedback should be available after failed completion:\n${r.out}`);
+  assert(/Attempt 1\/5/.test(r.out), `expected attempt count:\n${r.out}`);
+  assert(/missing source notes/.test(r.out), `expected failure reason:\n${r.out}`);
+  assert(/attempts_remaining: 4/.test(r.out), `expected remaining attempts:\n${r.out}`);
+});
+
+test("feedback: escalates on third and fourth failures", () => {
+  const tmp = initLinear();
+  for (let i = 1; i <= 3; i++) {
+    cli(["gate-result", "gather", "--failed", "--evidence", `issue ${i}`], tmp);
+    cli(["complete", "gather"], tmp);
+  }
+  const third = cli(["feedback", "gather"], tmp);
+  assert(/failed three times/.test(third.out), `expected third-attempt escalation:\n${third.out}`);
+  cli(["gate-result", "gather", "--failed", "--evidence", "issue 4"], tmp);
+  cli(["complete", "gather"], tmp);
+  const fourth = cli(["feedback", "gather"], tmp);
+  assert(/Final warning/.test(fourth.out), `expected fourth-attempt warning:\n${fourth.out}`);
+});
+
+test("complete: fifth failed checker result trips circuit breaker", () => {
+  const tmp = initLinear();
+  for (let i = 1; i <= 5; i++) {
+    cli(["gate-result", "gather", "--failed", "--evidence", `issue ${i}`], tmp);
+    cli(["complete", "gather"], tmp);
+  }
+  const s = status(tmp);
+  assert(s.steps.gather.status === "failed", "step should fail after fifth failed attempt");
+  assert(s.status === "failed", "run should fail after fifth failed attempt");
+  const again = cli(["complete", "gather"], tmp);
+  assert(again.code !== 0 && /exhausted/.test(again.out), `expected exhausted refusal:\n${again.out}`);
 });
 
 test("complete: loop-coverage guard blocks while an iteration is incomplete", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "a", "b"], tmp);
   cli(["loop", "run", "a", "work", "done"], tmp); // a done, b untouched
   const r = cli(["complete", "run"], tmp);
@@ -768,10 +955,11 @@ test("complete: loop-coverage guard blocks while an iteration is incomplete", ()
 
 test("complete: loop completes once every iteration is done", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "a", "b"], tmp);
   cli(["loop", "run", "a", "work", "done"], tmp);
   cli(["loop", "run", "b", "work", "done"], tmp);
+  cli(["gate-result", "run", "--passed", "--evidence", "all scoped iterations are done"], tmp);
   const r = cli(["complete", "run"], tmp);
   assert(r.code === 0, `loop complete should pass once all iters done:\n${r.out}`);
 });
@@ -779,7 +967,7 @@ test("complete: loop completes once every iteration is done", () => {
 // ── LOOP machinery ────────────────────────────────────────────────────────────
 test("loop-scope: frontloads every item as an iteration and sets total", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   const r = cli(["loop-scope", "run", "a", "b", "c"], tmp);
   assert(r.code === 0, r.out);
   const st = status(tmp).steps.run;
@@ -789,7 +977,7 @@ test("loop-scope: frontloads every item as an iteration and sets total", () => {
 
 test("loop-scope: warns when one quoted item hides multiple tokens (still scopes 1)", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   const r = cli(["loop-scope", "run", "a b c"], tmp);
   assert(/space-separated tokens/.test(r.out), `expected multiword warning:\n${r.out}`);
   assert(Object.keys(status(tmp).steps.run.iterations).length === 1, "should scope as ONE iteration");
@@ -797,7 +985,7 @@ test("loop-scope: warns when one quoted item hides multiple tokens (still scopes
 
 test("loop: sequential loop refuses an out-of-order iteration", () => {
   const tmp = withConductor(LOOP); // no parallel → sequential
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "first", "second", "third"], tmp);
   const r = cli(["loop", "run", "second", "work", "running"], tmp); // skip 'first'
   assert(r.code !== 0, "sequential loop should refuse out-of-order start");
@@ -807,7 +995,7 @@ test("loop: sequential loop refuses an out-of-order iteration", () => {
 
 test("loop: sequential loop allows the genuine next-in-line iteration", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "first", "second"], tmp);
   const r = cli(["loop", "run", "first", "work", "running"], tmp);
   assert(r.code === 0, `first iteration should be allowed:\n${r.out}`);
@@ -815,7 +1003,7 @@ test("loop: sequential loop allows the genuine next-in-line iteration", () => {
 
 test("loop: parallel loop is EXEMPT from the order guard", () => {
   const tmp = withConductor(PARALLEL_LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "first", "second", "third"], tmp);
   const r = cli(["loop", "run", "third", "work", "running"], tmp); // out of order, but parallel
   assert(r.code === 0, `parallel loop should allow out-of-order:\n${r.out}`);
@@ -823,7 +1011,7 @@ test("loop: parallel loop is EXEMPT from the order guard", () => {
 
 test("loop: completing all sub-steps of an iteration bumps completed, partials don't", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "a", "b"], tmp);
   cli(["loop", "run", "a", "work", "done"], tmp);
   assert(status(tmp).steps.run.completed === 1, "completed should be 1 after a finishes");
@@ -834,7 +1022,7 @@ test("loop: completing all sub-steps of an iteration bumps completed, partials d
 
 test("loop-scope: duplicate items are deduped so total == distinct iterations", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   const r = cli(["loop-scope", "run", "a", "a", "b"], tmp);
   assert(/duplicate item/.test(r.out), `expected duplicate warning:\n${r.out}`);
   const st = status(tmp).steps.run;
@@ -845,7 +1033,7 @@ test("loop-scope: duplicate items are deduped so total == distinct iterations", 
 
 test("loop-scope: re-scoping is additive and keeps total == iteration count", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "a", "b", "c"], tmp);
   cli(["loop-scope", "run", "a", "b"], tmp); // re-scope with fewer
   const st = status(tmp).steps.run;
@@ -854,7 +1042,7 @@ test("loop-scope: re-scoping is additive and keeps total == iteration count", ()
 
 test("loop: a typo'd (undeclared) sub-step warns and does NOT falsely complete the iteration", () => {
   const tmp = withConductor(LOOP); // declared sub-step is 'work'
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "a"], tmp);
   const r = cli(["loop", "run", "a", "phantom-sub", "done"], tmp); // typo — real 'work' never done
   assert(/not a declared sub-step/.test(r.out), `expected undeclared-sub warning:\n${r.out}`);
@@ -865,7 +1053,7 @@ test("loop: a typo'd (undeclared) sub-step warns and does NOT falsely complete t
 
 test("loop: completion is judged on declared sub-steps (real sub done → counts)", () => {
   const tmp = withConductor(LOOP);
-  cli(["status-init", ".conductor/conductor.yaml"], tmp);
+  cli(["status-init", ".conductor/conductor.json"], tmp);
   cli(["loop-scope", "run", "a"], tmp);
   cli(["loop", "run", "a", "work", "done"], tmp); // the real declared sub
   const st = status(tmp).steps.run;
@@ -877,8 +1065,8 @@ test("suggest: writes a learning into the conductor's knowledge store", () => {
   const tmp = withConductor(LINEAR);
   const r = cli(["suggest", "Cache the price list", "--scope", "this-conductor"], tmp);
   assert(r.code === 0, `suggest should succeed:\n${r.out}`);
-  const doc = fs.readFileSync(path.join(tmp, ".conductor", "conductor.yaml"), "utf8");
-  assert(/knowledge:/.test(doc) && /Cache the price list/.test(doc), "knowledge not written to conductor");
+  const doc = fs.readFileSync(path.join(tmp, ".conductor", "conductor.json"), "utf8");
+  assert(JSON.parse(doc).knowledge?.[0]?.title === "Cache the price list", "knowledge not written to conductor");
 });
 
 test("suggest: --scope is required", () => {
@@ -923,108 +1111,168 @@ test("cli: an unknown command errors with a non-zero exit", () => {
 });
 
 // ── REAL-WORLD CAPSTONE: a full run, init → finish ────────────────────────────
-test("lifecycle: init → validate → status-init → run a step under board-sync → complete", () => {
+test("lifecycle: init → validate → status-init → check → complete", () => {
   const tmp = tmpdir();
-  // 1) scaffold + replace with a real 2-step conductor (one soft, one hard gate)
+  // 1) scaffold + replace with a real 2-step conductor
   assert(cli(["init", "--name", "release", "--steps", "2"], tmp).code === 0, "init failed");
-  const real = `conductor: 2.0.0
-name: release
-description: Ship a release safely.
-steps:
-  - id: prepare
-    instruction: Prepare the release notes.
-    gate:
-      - "notes drafted"
-  - id: publish
-    instruction: Publish.
-    requires: [prepare]
-    gate:
-      - check: "true"
-        name: published
-`;
-  fs.writeFileSync(path.join(tmp, ".conductor", "conductor.yaml"), real);
+  const real = `{
+  "conductor": "3.0.0",
+  "name": "release",
+  "description": "Ship a release safely.",
+  "steps": [
+    {
+      "id": "prepare",
+      "title": "Prepare",
+      "instruction": "Prepare the release notes.",
+      "requires": []
+    },
+    {
+      "id": "publish",
+      "title": "Publish",
+      "instruction": "Publish.",
+      "requires": [
+        "prepare"
+      ]
+    }
+  ]
+}`;
+  fs.writeFileSync(path.join(tmp, ".conductor", "conductor.json"), real);
   // 2) validate
-  assert(cli(["validate", ".conductor/conductor.yaml"], tmp).code === 0, "validate failed");
+  assert(cli(["validate", ".conductor/conductor.json"], tmp).code === 0, "validate failed");
   // 3) status-init
-  assert(cli(["status-init", ".conductor/conductor.yaml"], tmp).code === 0, "status-init failed");
-  // 4) drive 'prepare' with a live board-sync gate, attest its soft gate
+  assert(cli(["status-init", ".conductor/conductor.json"], tmp).code === 0, "status-init failed");
+  // 4) drive 'prepare' through checker and completion
   cli(["step", "prepare", "running"], tmp);
   cli(["heartbeat", "prepare", "drafting notes"], tmp);
-  assert(cli(["check", "prepare"], tmp).code === 0, "board-sync check should pass mid-step");
-  assert(cli(["complete", "prepare", "--attest-soft"], tmp).code === 0, "prepare complete failed");
-  // 5) drive 'publish' with a verified hard gate
+  assert(cli(["check", "prepare", "--output", "release notes prepared"], tmp).code === 0, "prepare checker failed");
+  assert(cli(["complete", "prepare"], tmp).code === 0, "prepare complete failed");
+  // 5) drive 'publish' through checker and completion
   cli(["step", "publish", "running"], tmp);
   cli(["heartbeat", "publish", "publishing"], tmp);
+  assert(cli(["check", "publish", "--output", "published artifact exists"], tmp).code === 0, "publish checker failed");
   assert(cli(["complete", "publish"], tmp).code === 0, "publish complete failed");
   // 6) both steps done
   const s = status(tmp);
   assert(s.steps.prepare.status === "done" && s.steps.publish.status === "done", "not all steps done");
 });
 
-// ── coverage: every work-unit must have a card (the folded-phase guard) ────────
+// ── coverage: every designed card must be present in the conductor ─────────────
 
 // A conductor that FOLDS the paid recon into pick-batch (the real treatment-readability bug).
-const FOLDED = `conductor: 2.2.0
-name: tr
-description: d
-steps:
-  - id: setup-branch
-    instruction: branch
-    gate: ["ok"]
-  - id: pick-batch
-    instruction: |
-      FIRST prefetch the paid recon:
-        npx tsx scripts/tr.ts prefetch-popular --count 25
-      THEN claim the batch:
-        npx tsx scripts/tr.ts next --count 5
-    gate: ["ok"]
-  - id: report
-    instruction: report
-    gate: ["ok"]
-`;
-// The work-unit ledger read-skill WOULD emit — the recon is its own line.
-const LEDGER = `# analysis
-## work-units
-- id: setup-branch          kind: gateable
-- id: buy-dataforseo-recon  kind: divider
-- id: pick-batch            kind: gateable
-- id: report                kind: divider
-`;
+const FOLDED = json({
+  conductor: "3.0.0",
+  name: "tr",
+  description: "d",
+  steps: [
+    { id: "setup-branch", title: "Setup branch", instruction: "branch", requires: [] },
+    {
+      id: "pick-batch",
+      title: "Pick batch",
+      instruction:
+        "FIRST prefetch the paid recon:\n" +
+        "  npx tsx scripts/tr.ts prefetch-popular --count 25\n" +
+        "THEN claim the batch:\n" +
+        "  npx tsx scripts/tr.ts next --count 5\n",
+      requires: ["setup-branch"],
+    },
+    { id: "report", title: "Report", instruction: "report", requires: ["pick-batch"] },
+  ],
+});
+const COVERAGE_CARDS = json([
+  { id: "setup-branch", title: "Setup branch", instruction: "Create the branch." },
+  { id: "buy-dataforseo-recon", title: "Buy DataForSEO recon", instruction: "Prefetch paid recon." },
+  { id: "pick-batch", title: "Pick batch", instruction: "Claim the batch." },
+  { id: "report", title: "Report", instruction: "Report the result." },
+]);
 
-test("coverage: fails (exit 1) and names the work-unit folded into another card", () => {
+test("coverage: fails (exit 1) and names cards missing from the conductor", () => {
   const tmp = tmpdir();
-  const a = writeFile(tmp, ".conductor/skill-analysis.md", LEDGER);
-  const c = writeFile(tmp, ".conductor/conductor.yaml", FOLDED);
-  const r = cli(["coverage", "--analysis", a, "--conductor", c], tmp);
-  assert(r.code === 1, `expected exit 1 on a folded phase, got ${r.code}:\n${r.out}`);
-  assert(/buy-dataforseo-recon/.test(r.out), `expected the orphan named:\n${r.out}`);
-  assert(/NO card/i.test(r.out), `expected a "no card" message:\n${r.out}`);
+  const cards = writeFile(tmp, ".conductor/cards.json", COVERAGE_CARDS);
+  const c = writeFile(tmp, ".conductor/conductor.json", FOLDED);
+  const r = cli(["coverage", "--cards", cards, "--conductor", c], tmp);
+  assert(r.code === 1, `expected exit 1 on a missing card, got ${r.code}:\n${r.out}`);
+  assert(/buy-dataforseo-recon/.test(r.out), `expected the missing card named:\n${r.out}`);
+  assert(/missing from conductor/.test(r.out), `expected a missing-card message:\n${r.out}`);
 });
 
-test("coverage: passes (exit 0) once every work-unit — incl. loop sub-steps — has a card", () => {
+test("coverage: passes (exit 0) once every card — incl. loop sub-steps — is present", () => {
   const tmp = tmpdir();
-  const fixed = FOLDED
-    .replace("  - id: pick-batch", "  - id: buy-dataforseo-recon\n    instruction: buy\n    gate: [\"ok\"]\n  - id: pick-batch")
-    // and add a loop whose sub-step is a ledger work-unit, to prove sub-steps count
-    .replace("  - id: report\n    instruction: report\n    gate: [\"ok\"]\n",
-      "  - id: polish-and-ship\n    type: loop\n    over: xs\n    as: x\n    steps:\n      - id: report\n        instruction: report\n        gate: [\"ok\"]\n");
-  const a = writeFile(tmp, ".conductor/skill-analysis.md", LEDGER);
-  const c = writeFile(tmp, ".conductor/conductor.yaml", fixed);
-  const r = cli(["coverage", "--analysis", a, "--conductor", c], tmp);
-  assert(r.code === 0, `expected exit 0 when all work-units have a card, got ${r.code}:\n${r.out}`);
-  assert(/all 4 work-units have a card/.test(r.out), `expected the all-covered message:\n${r.out}`);
+  const fixed = mutateDoc(FOLDED, (doc) => {
+    doc.steps.splice(1, 0, {
+      id: "buy-dataforseo-recon",
+      title: "Buy DataForSEO recon",
+      instruction: "buy",
+      requires: ["setup-branch"],
+    });
+    doc.steps = doc.steps.filter((s) => s.id !== "report");
+    doc.steps.push({
+      id: "polish-and-ship",
+      title: "Polish and ship",
+      instruction: "Polish and ship.",
+      type: "loop",
+      over: "xs",
+      as: "x",
+      requires: ["pick-batch"],
+      steps: [{ id: "report", title: "Report", instruction: "report", requires: [] }],
+    });
+  });
+  const cards = writeFile(tmp, ".conductor/cards.json", COVERAGE_CARDS);
+  const c = writeFile(tmp, ".conductor/conductor.json", fixed);
+  const r = cli(["coverage", "--cards", cards, "--conductor", c], tmp);
+  assert(r.code === 0, `expected exit 0 when all cards are present, got ${r.code}:\n${r.out}`);
+  assert(/all 4 cards are present/.test(r.out), `expected the all-covered message:\n${r.out}`);
 });
 
-test("coverage: errors clearly when the work-unit ledger is missing", () => {
+test("coverage: errors clearly when cards.json is missing", () => {
   const tmp = tmpdir();
-  const c = writeFile(tmp, ".conductor/conductor.yaml", FOLDED);
-  const r = cli(["coverage", "--analysis", path.join(tmp, "nope.md"), "--conductor", c], tmp);
-  assert(r.code === 1 && /no work-unit ledger/i.test(r.out), `expected a missing-ledger error:\n${r.out}`);
+  const c = writeFile(tmp, ".conductor/conductor.json", FOLDED);
+  const r = cli(["coverage", "--cards", path.join(tmp, "nope.json"), "--conductor", c], tmp);
+  assert(r.code === 1 && /no cards\.json/i.test(r.out), `expected a missing-cards error:\n${r.out}`);
+});
+
+// ── cards: card-design output before dependencies exist ────────────────
+
+const CARDS_OK = json([
+  {
+    id: "research-treatment",
+    title: "Research treatment",
+    instruction: "Gather source-backed treatment evidence for later mapping.",
+  },
+  {
+    id: "write-page",
+    title: "Write page",
+    instruction: "Write the owner-facing treatment page draft.",
+  },
+]);
+
+test("cards: passes when entries have id/title/instruction only", () => {
+  const tmp = tmpdir();
+  const cards = writeFile(tmp, ".conductor/cards.json", CARDS_OK);
+  const skill = writeFile(tmp, "skill.md", "Create a treatment page.");
+  const r = cli(["cards", cards, "--skill", skill], tmp);
+  assert(r.code === 0, `expected valid cards to pass:\n${r.out}`);
+  assert(/2 cards valid/.test(r.out), `expected card count:\n${r.out}`);
+});
+
+test("cards: rejects duplicate, non-kebab, missing instruction, gate, and dependency fields", () => {
+  const tmp = tmpdir();
+  const cards = writeFile(tmp, ".conductor/cards.json", json([
+    { id: "Bad_ID", title: "Bad id", instruction: "Done.", gate: { command: "true" } },
+    { id: "write-page", title: "Write page" },
+    { id: "write-page", title: "Duplicate page", instruction: "Duplicate.", dependencies: ["Bad_ID"] },
+  ]));
+  const r = cli(["cards", cards], tmp);
+  assert(r.code === 1, `expected invalid cards to fail:\n${r.out}`);
+  assert(/must be kebab-case/.test(r.out), `expected kebab-case error:\n${r.out}`);
+  assert(/missing instruction/.test(r.out), `expected missing instruction error:\n${r.out}`);
+  assert(/forbidden field "gate"/.test(r.out), `expected gate forbidden:\n${r.out}`);
+  assert(/forbidden field "dependencies"/.test(r.out), `expected dependencies forbidden:\n${r.out}`);
+  assert(/duplicate id "write-page"/.test(r.out), `expected duplicate id error:\n${r.out}`);
 });
 
 test("validate: backstop warns (exit 0) when one step bundles 2+ distinct tool commands", () => {
   const tmp = tmpdir();
-  const c = writeFile(tmp, "c.yaml", FOLDED);
+  const c = writeFile(tmp, "c.json", FOLDED);
   const r = cli(["validate", c], tmp);
   assert(r.code === 0, `backstop is a warning, must not fail validation: exit ${r.code}\n${r.out}`);
   assert(/pick-batch.*bundles 2 distinct commands/.test(r.out), `expected the folded-phase warning:\n${r.out}`);
@@ -1033,22 +1281,26 @@ test("validate: backstop warns (exit 0) when one step bundles 2+ distinct tool c
 
 test("validate: backstop stays quiet for a single-command step (no false positive)", () => {
   const tmp = tmpdir();
-  const ok = `conductor: 2.2.0
-name: t
-description: d
-steps:
-  - id: claim-batch
-    instruction: |
-      Claim the batch:
-        npx tsx scripts/tr.ts next --count 5
-    gate: ["ok"]
-  - id: setup-branch
-    instruction: |
-      mkdir -p runs/today
-      git switch -C work origin/main
-    gate: ["ok"]
-`;
-  const c = writeFile(tmp, "c.yaml", ok);
+  const ok = json({
+    conductor: "3.0.0",
+    name: "t",
+    description: "d",
+    steps: [
+      {
+        id: "claim-batch",
+        title: "Claim batch",
+        instruction: "Claim the batch:\n  npx tsx scripts/tr.ts next --count 5\n",
+        requires: [],
+      },
+      {
+        id: "setup-branch",
+        title: "Setup branch",
+        instruction: "mkdir -p runs/today\ngit switch -C work origin/main\n",
+        requires: [],
+      },
+    ],
+  });
+  const c = writeFile(tmp, "c.json", ok);
   const r = cli(["validate", c], tmp);
   assert(r.code === 0, `expected valid:\n${r.out}`);
   assert(!/bundles \d+ distinct commands/.test(r.out), `single-command + scaffolding steps must not warn:\n${r.out}`);

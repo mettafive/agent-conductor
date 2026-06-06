@@ -10,7 +10,7 @@ const MAIN: Col[] = ["pending", "running", "gate", "done"];
 const LABEL: Record<Col, string> = {
   pending: "Pending",
   running: "Running",
-  gate: "Gate Check",
+  gate: "Checking",
   done: "Done",
   failed: "Failed",
 };
@@ -30,7 +30,6 @@ export function IterationKanban({
   notes?: DeveloperNote[];
 }) {
   const iter = loopStep.loop?.iterations.find((it) => it.item === item);
-  const defById = new Map((loopStep.subSteps ?? []).map((d) => [d.id, d]));
   const beats = loopStep.heartbeat.filter((h) => h.iteration === item);
 
   if (!iter) {
@@ -94,7 +93,6 @@ export function IterationKanban({
                         loopId={loopStep.id}
                         item={item}
                         sub={s}
-                        def={defById.get(s.id)}
                         beats={beats}
                         workflow={workflow}
                         notes={notes}

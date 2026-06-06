@@ -207,24 +207,6 @@ export function App() {
     setSummaryReady(false);
   }, [liveModel.overallStatus, liveModel.runId, selectedRun]);
 
-  // human approval — write the decisions to status.json; the agent routes on them
-  const applyApproval = async (
-    stepId: string,
-    decisions: { label: string; decision: "approved" | "rejected" }[],
-  ) => {
-    if (!activeWf) return { ok: false };
-    try {
-      const r = await fetch(`/api/workflow/${encodeURIComponent(activeWf)}/approve`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ step: stepId, decisions }),
-      });
-      return { ok: r.ok };
-    } catch {
-      return { ok: false };
-    }
-  };
-
   const viewing = selectedRun !== null;
   const model: BoardModel | null = viewing ? (record ? buildModel(record.snapshot) : null) : liveModel;
 
@@ -234,19 +216,6 @@ export function App() {
     Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0
   );
   const showBoard = viewing ? !!record : liveStarted;
-
-  // §6.1/§7: improvement runs silently. Only a STRUCTURAL change (add/remove/
-  // reorder step) that still needs a human surfaces as a card.
-  const structuralPending =
-    model?.autoImprove && !viewing
-      ? model.steps.find(
-          (s) =>
-            s.phase === "improve" &&
-            s.improve?.structural === true &&
-            s.column !== "done" &&
-            !s.approvalState?.decided,
-        )
-      : undefined;
 
   // Auto-follow: with nothing selected on the live run, the main area tracks the
   // active step (Part 3) — the view follows the action, no clicking needed.
@@ -291,7 +260,6 @@ export function App() {
     follow,
     iterSel,
     selectedStepObj,
-    structuralPending,
     followItem,
     showSummary,
     now,
@@ -304,9 +272,7 @@ export function App() {
   const viewKey = `${activeWf}:${selectedRun ?? "live"}:${
         showSummary
           ? "sum"
-          : structuralPending && liveFollow
-            ? `imp:${structuralPending.id}`
-            : liveFollow
+          : liveFollow
               ? `follow:${follow?.id ?? "none"}:${followItem ?? ""}`
               : (selectedStep ?? selectedStepObj?.id ?? "none")
       }`;
@@ -381,15 +347,13 @@ export function App() {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.16, ease: "easeOut" }}
                   className={
-                    liveFollow && !showSummary && !structuralPending && !followInLoop
+                    liveFollow && !showSummary && !followInLoop
                       ? "h-full"
                       : "board-scroll h-full overflow-y-auto"
                   }
                 >
                   {showSummary ? (
                     <SummaryView model={model} />
-                  ) : structuralPending && liveFollow ? (
-                    <ImprovementCard step={structuralPending} onApprove={applyApproval} />
                   ) : liveFollow ? (
                     followInLoop ? (
                       <IterationKanban loopStep={follow!} item={followItem!} workflow={liveModel.workflow} notes={liveModel.developerNotes} />
@@ -402,8 +366,6 @@ export function App() {
                     <SelectedView
                       step={selectedStepObj}
                       iterSel={iterSel}
-                      viewing={viewing}
-                      onApprove={applyApproval}
                       onBackToOverview={(id) => setSelectedStep(id)}
                       onOpenIteration={(loopId, item) => setSelectedStep(`${loopId}::${item}`)}
                       workflow={viewing ? undefined : model.workflow}
@@ -489,8 +451,6 @@ function statusOf(entry: WorkflowEntry | undefined): string | undefined {
 function SelectedView({
   step,
   iterSel,
-  viewing,
-  onApprove,
   onBackToOverview,
   onOpenIteration,
   workflow,
@@ -498,11 +458,6 @@ function SelectedView({
 }: {
   step: BoardStep | null;
   iterSel: string[] | null;
-  viewing: boolean;
-  onApprove: (
-    stepId: string,
-    decisions: { label: string; decision: "approved" | "rejected" }[],
-  ) => Promise<{ ok: boolean }>;
   onBackToOverview: (loopId: string) => void;
   onOpenIteration: (loopId: string, item: string) => void;
   workflow?: string;
@@ -516,7 +471,7 @@ function SelectedView({
     );
   }
   if (step.phase === "improve") {
-    return <ImprovementCard step={step} onApprove={viewing ? undefined : onApprove} />;
+    return <ImprovementCard step={step} />;
   }
   if (iterSel && step.isLoop) {
     return (
@@ -532,7 +487,7 @@ function SelectedView({
   if (step.isLoop) {
     return <LoopOverview loopStep={step} onOpenIteration={(item) => onOpenIteration(step.id, item)} />;
   }
-  return <StepDetail step={step} onApprove={viewing ? undefined : onApprove} workflow={workflow} notes={notes} />;
+  return <StepDetail step={step} workflow={workflow} notes={notes} />;
 }
 
 function Idle() {
@@ -552,7 +507,6 @@ function buildHeader({
   follow,
   iterSel,
   selectedStepObj,
-  structuralPending,
   followItem,
   showSummary,
   now,
@@ -564,7 +518,6 @@ function buildHeader({
   follow: BoardStep | null;
   iterSel: string[] | null;
   selectedStepObj: BoardStep | null;
-  structuralPending?: BoardStep;
   followItem?: string;
   showSummary: boolean;
   now: number;
@@ -580,10 +533,6 @@ function buildHeader({
       timer: dur,
       timerPrefix: dur ? (record?.status === "failed" ? "failed ·" : "completed ·") : undefined,
     };
-  }
-
-  if (structuralPending && liveFollow) {
-    return { label: `improvement · ${structuralPending.improve?.title ?? structuralPending.id}` };
   }
 
   if (liveFollow) {

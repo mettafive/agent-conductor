@@ -1,0 +1,47 @@
+{
+  "conductor": "3.0.0",
+  "name": "code-review",
+  "description": "Review a pull request — security, style, and a written verdict.",
+  "inputs": [
+    "pr_number"
+  ],
+  "steps": [
+    {
+      "id": "read-pr",
+      "instruction": "Read the full diff for PR #{pr_number}. Summarize what changed and why.\n",
+      "output": "summary",
+      "title": "Read Pr",
+      "requires": []
+    },
+    {
+      "id": "assess-security",
+      "instruction": "Decide whether this PR touches auth, secrets, input handling, or anything\nnetwork-facing.\n",
+      "type": "condition",
+      "if_true": "security-review",
+      "if_false": "style-check",
+      "title": "Assess Security",
+      "requires": []
+    },
+    {
+      "id": "security-review",
+      "instruction": "Audit the changed files against the OWASP top 10. Flag each issue with a\nfile:line and a concrete fix.\n",
+      "then": "style-check",
+      "title": "Security Review",
+      "requires": []
+    },
+    {
+      "id": "style-check",
+      "instruction": "Check the diff against the project's conventions and formatting.\n",
+      "title": "Style Check",
+      "requires": []
+    },
+    {
+      "id": "write-review",
+      "instruction": "Write the review: a verdict (approve / request changes), grouped findings,\nand the single most important thing to fix first.\n",
+      "requires": [
+        "style-check"
+      ],
+      "title": "Write Review"
+    }
+  ]
+}

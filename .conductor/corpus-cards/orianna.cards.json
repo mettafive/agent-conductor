@@ -1,0 +1,22 @@
+[
+  {
+    "id": "define-report-inputs",
+    "title": "Define report inputs",
+    "instruction": "Confirm report period, audience, departments, required KPI categories, and fetch mock KPI data for the current and previous periods."
+  },
+  {
+    "id": "validate-normalize-kpis",
+    "title": "Validate and normalize KPIs",
+    "instruction": "Validate KPI data for freshness, missing values, duplicate rows, and unit consistency, then normalize values into common formats such as currency, percentage, count, or duration."
+  },
+  {
+    "id": "analyze-metric-changes",
+    "title": "Analyze metric changes",
+    "instruction": "Calculate period-over-period changes, flag material movements, detect anomalies using thresholds, unusual swings, or missing expected activity, and write department notes explaining what changed and why it matters."
+  },
+  {
+    "id": "publish-report-package",
+    "title": "Publish report package",
+    "instruction": "Draft the executive summary with wins, risks, and decisions needed; draft the distribution email with highlights and owner-specific follow-ups; archive report metadata through MOCK_REPORT_API; and return KPI summary, anomaly list, department notes, email draft, archive result, and data gaps."
+  }
+]

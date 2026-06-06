@@ -2,18 +2,16 @@
 //
 // Responsibilities:
 //   1. Serve the built React app (dist/) over plain HTTP.
-//   2. Expose GET /api/state — a snapshot of { conductorYaml, status }.
+//   2. Expose GET /api/state — a snapshot of { conductorJson, status }.
 //   3. Stream GET /events (Server-Sent Events) — pushes a fresh snapshot every
 //      time .conductor/status.json (or the conductor file) changes on disk.
 //
-// The server never parses YAML (keeps it dependency-free) — it ships the raw
-// conductor text to the browser, which parses it client-side.
+// The server ships the raw conductor JSON to the browser, which parses it client-side.
 
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import yaml from "js-yaml";
 import { validateConductor } from "../cli/validate.js";
 
 const readBody = (req) =>
@@ -48,15 +46,13 @@ function applyMutations(doc, suggestions) {
         break;
       case "new_gate":
         if (step && sug.proposed != null) {
-          step.gate = Array.isArray(step.gate) ? step.gate : [];
-          step.gate.push(sug.proposed);
+          step.gate = sug.proposed;
         }
         break;
       case "new_step":
         doc.steps.push({
           id: sug.step || `step-${doc.steps.length + 1}`,
           instruction: sug.proposed || "TODO",
-          gate: ["TODO: add a gate criterion"],
         });
         break;
       case "remove_step":
@@ -95,19 +91,11 @@ function discoverConductor(statusPath, explicit) {
   if (explicit) return fs.existsSync(explicit) ? explicit : null;
   const dir = path.dirname(statusPath);
   const candidates = [
-    path.join(dir, "conductor.yaml"),
-    path.join(dir, "conductor.yml"),
+    path.join(dir, "conductor.json"),
   ];
   for (const c of candidates) if (fs.existsSync(c)) return c;
-  // any *.yaml / *.yml sitting next to the status file
-  if (fs.existsSync(dir)) {
-    const yaml = fs
-      .readdirSync(dir)
-      .find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-    if (yaml) return path.join(dir, yaml);
-  }
   // fall back to a conductor file in the working directory
-  for (const c of ["conductor.yaml", "conductor.yml"]) {
+  for (const c of ["conductor.json"]) {
     const p = path.resolve(process.cwd(), c);
     if (fs.existsSync(p)) return p;
   }
@@ -116,7 +104,7 @@ function discoverConductor(statusPath, explicit) {
 
 function readSnapshot(statusPath, conductorPath) {
   let status = null;
-  let conductorYaml = null;
+  let conductorJson = null;
   try {
     if (fs.existsSync(statusPath)) {
       status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
@@ -126,14 +114,14 @@ function readSnapshot(statusPath, conductorPath) {
   }
   try {
     if (conductorPath && fs.existsSync(conductorPath)) {
-      conductorYaml = fs.readFileSync(conductorPath, "utf8");
+      conductorJson = fs.readFileSync(conductorPath, "utf8");
     }
   } catch {
     /* conductor optional — board degrades gracefully */
   }
   return {
     status,
-    conductorYaml,
+    conductorJson,
     statusPath,
     conductorPath: conductorPath ?? null,
   };
@@ -231,7 +219,7 @@ function archiveIfDone(historyDir, snapshot, archived) {
     archived_at: new Date().toISOString(),
     done,
     total,
-    snapshot: { status, conductorYaml: snapshot.conductorYaml ?? null },
+    snapshot: { status, conductorJson: snapshot.conductorJson ?? null },
   };
 
   try {
@@ -425,7 +413,7 @@ function consolidateProven(wf) {
 
   let doc;
   try {
-    doc = yaml.load(fs.readFileSync(wf.conductorPath, "utf8"));
+    doc = JSON.parse(fs.readFileSync(wf.conductorPath, "utf8"));
   } catch {
     return false;
   }
@@ -468,7 +456,7 @@ function consolidateProven(wf) {
 
   if (docChanged) {
     try {
-      fs.writeFileSync(wf.conductorPath, yaml.dump(doc, { lineWidth: 100 }));
+      fs.writeFileSync(wf.conductorPath, JSON.stringify(doc, null, 2) + "\n");
     } catch (e) {
       console.warn(`[conductor-board] could not write knowledge: ${e.message}`);
     }
@@ -521,7 +509,7 @@ function serveStatic(req, res) {
   fs.createReadStream(filePath).pipe(res);
 }
 
-/** Best-effort workflow name without parsing YAML (keeps the server dep-free). */
+/** Best-effort workflow name from status/conductor paths. */
 function workflowName(statusPath, conductorPath, dir) {
   try {
     if (fs.existsSync(statusPath)) {
@@ -575,8 +563,8 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
       if (!entry.isDirectory() || entry.name === "history") continue;
       const dir = path.join(conductorDir, entry.name);
       const sp = path.join(dir, "status.json");
-      const cp = fs.existsSync(path.join(dir, "conductor.yaml"))
-        ? path.join(dir, "conductor.yaml")
+      const cp = fs.existsSync(path.join(dir, "conductor.json"))
+        ? path.join(dir, "conductor.json")
         : discoverConductor(sp, null);
       if (fs.existsSync(sp) || (cp && fs.existsSync(cp))) {
         add(workflowName(sp, cp, dir), dir, sp, cp);
@@ -747,7 +735,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
             total: wfSteps.length,
             started_at: snap.status?.started_at ?? null,
             runs: listHistory(wf.historyDir).length,
-            hasConductor: !!snap.conductorYaml,
+            hasConductor: !!snap.conductorJson,
           };
         }),
       );
@@ -798,7 +786,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
 
         let doc;
         try {
-          doc = yaml.load(original);
+          doc = JSON.parse(original);
         } catch (e) {
           return json(res, 500, { error: `conductor parse error: ${e.message}` });
         }
@@ -810,7 +798,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
           return json(res, 422, { error: `would be invalid: ${errors[0]}`, errors });
         }
         try {
-          fs.writeFileSync(wf.conductorPath, yaml.dump(doc, { lineWidth: 100 }));
+          fs.writeFileSync(wf.conductorPath, JSON.stringify(doc, null, 2) + "\n");
         } catch (e) {
           try {
             fs.writeFileSync(wf.conductorPath, original); // rollback
@@ -859,56 +847,6 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       return;
     }
 
-    // human approval — record the decisions into status.json (§4.4)
-    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/approve$/))) {
-      const wf = findWf(decodeURIComponent(m[1]));
-      if (!wf) return json(res, 404, { error: "not found" });
-      readBody(req).then((bodyStr) => {
-        let body;
-        try {
-          body = JSON.parse(bodyStr || "{}");
-        } catch {
-          return json(res, 400, { error: "invalid request body" });
-        }
-        const stepId = body.step;
-        const decisions = Array.isArray(body.decisions) ? body.decisions : [];
-        let status;
-        try {
-          status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
-        } catch {
-          return json(res, 500, { error: "could not read status.json" });
-        }
-        const step = status.steps && status.steps[stepId];
-        if (!step) return json(res, 404, { error: `no such step "${stepId}"` });
-
-        step.approval = step.approval || {};
-        const items = Array.isArray(step.approval.items) ? step.approval.items : [];
-        const byLabel = new Map(items.map((i) => [i.label, i]));
-        for (const d of decisions) {
-          if (!d || !d.label) continue;
-          const dec = d.decision === "approved" ? "approved" : "rejected";
-          if (byLabel.has(d.label)) byLabel.get(d.label).decision = dec;
-          else {
-            const it = { label: d.label, decision: dec };
-            items.push(it);
-            byLabel.set(d.label, it);
-          }
-        }
-        step.approval.items = items;
-        step.approval.decided_at = new Date().toISOString();
-        const anyRejected = items.some((i) => i.decision === "rejected");
-        step.approval.resolution = anyRejected ? "rejected" : "approved";
-        step.gate = anyRejected ? "rejected" : "approved";
-
-        try {
-          fs.writeFileSync(wf.statusPath, JSON.stringify(status, null, 2));
-        } catch (e) {
-          return json(res, 500, { error: `write failed: ${e.message}` });
-        }
-        return json(res, 200, { ok: true, resolution: step.approval.resolution });
-      });
-      return;
-    }
     // "Up next" — the human asks to continue to the next queued batch. We can't spawn an agent from
     // the board, so we record the request in status.json; the orchestrator/loop picks up next_requested.
     if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/next$/))) {
@@ -1009,7 +947,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     // ---- backwards-compatible single-workflow API (primary = first found) ----
     const primary = wfs()[0];
     if (url === "/api/state") {
-      return json(res, 200, primary ? snapshotFor(primary) : { status: null, conductorYaml: null });
+      return json(res, 200, primary ? snapshotFor(primary) : { status: null, conductorJson: null });
     }
     if (url === "/history") {
       return json(res, 200, primary ? listHistory(primary.historyDir) : []);

@@ -8,7 +8,7 @@ interface Props {
   className?: string;
 }
 
-export function CodeBlock({ code, lang = "yaml", filename, className }: Props) {
+export function CodeBlock({ code, lang = "json", filename, className }: Props) {
   const [html, setHtml] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const id = useId();

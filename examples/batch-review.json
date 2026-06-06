@@ -1,0 +1,54 @@
+{
+  "conductor": "3.0.0",
+  "name": "batch-review",
+  "description": "A loop workflow. Discovers a list of changed files, then reviews each one through the same checked sub-sequence. Shows type: loop with over / as.\n",
+  "inputs": [
+    "pr_number"
+  ],
+  "steps": [
+    {
+      "id": "collect-files",
+      "instruction": "List every file changed in PR #{pr_number}.\n",
+      "output": "changed_files",
+      "title": "Collect Files",
+      "requires": []
+    },
+    {
+      "id": "review-each-file",
+      "type": "loop",
+      "over": "changed_files",
+      "as": "file",
+      "steps": [
+        {
+          "id": "read",
+          "instruction": "Read {file} and summarize what changed and why.\n",
+          "title": "Read",
+          "requires": []
+        },
+        {
+          "id": "critique",
+          "instruction": "Review {file} for bugs, unsafe patterns, and style drift.\n",
+          "title": "Critique",
+          "requires": []
+        },
+        {
+          "id": "verdict",
+          "instruction": "Give {file} a verdict: approve, or request changes with reasons.\n",
+          "title": "Verdict",
+          "requires": []
+        }
+      ],
+      "title": "Review Each File",
+      "instruction": "Complete Review Each File.",
+      "requires": []
+    },
+    {
+      "id": "summarize",
+      "instruction": "Roll the per-file verdicts up into one review for PR #{pr_number}.\n",
+      "requires": [
+        "review-each-file"
+      ],
+      "title": "Summarize"
+    }
+  ]
+}

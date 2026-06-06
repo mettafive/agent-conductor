@@ -4,12 +4,11 @@ import { fmtDur } from "../lib/format";
 import { renderNote } from "../lib/heartbeat";
 import { GateList } from "./GateList";
 import { HeartbeatTimeline } from "./HeartbeatTimeline";
-import { ApprovalCard, type Decision } from "./ApprovalCard";
 import { Led } from "./Led";
 
 const COL_LABEL: Record<string, string> = {
   running: "Running",
-  gate: "Gate Check",
+  gate: "Checking",
   done: "Done",
   failed: "Failed",
   pending: "Pending",
@@ -18,24 +17,14 @@ const COL_LABEL: Record<string, string> = {
 /** The active non-loop step, shown large and centred in the main area. */
 export function StepDetail({
   step,
-  onApprove,
   workflow,
   notes,
 }: {
   step: BoardStep;
-  onApprove?: (stepId: string, decisions: Decision[]) => Promise<{ ok: boolean }> | void;
   workflow?: string;
   notes?: DeveloperNote[];
 }) {
   const now = useNow(1000);
-
-  if (step.isApproval && step.approvalState) {
-    return (
-      <div className="mx-auto max-w-2xl px-6 py-8">
-        <ApprovalCard step={step} onDecide={onApprove ?? (() => {})} />
-      </div>
-    );
-  }
 
   const finalBeat = step.heartbeat.find((h) => h.finalBeat);
   const latest = step.heartbeat.at(-1);

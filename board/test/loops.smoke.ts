@@ -10,8 +10,8 @@
  * a sub-step to `done` moves its column and bumps `completed`.
  *
  * It exercises the REAL machinery — no mocks:
- *   - `node bin/cli.js validate <yaml>`            (cli/validate.js)
- *   - `node bin/cli.js status-init <yaml>`         (cli/writer.js → runStatusInit)
+ *   - `node bin/cli.js validate <json>`            (cli/validate.js)
+ *   - `node bin/cli.js status-init <json>`         (cli/writer.js → runStatusInit)
  *   - `node bin/cli.js loop-scope <loop> <item…>`  (cli/writer.js → runLoopScope)
  *   - `node bin/cli.js loop <loop> <item> <sub> done`
  *   - buildModel(parseConductor + merge)           (src/lib/parse.ts + merge.ts)
@@ -23,7 +23,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import yaml from "js-yaml";
 
 import { buildModel } from "../src/lib/merge";
 import type { BoardStep, Snapshot } from "../src/lib/types";
@@ -41,7 +40,7 @@ const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 
 interface Shape {
   name: string;
-  yaml: string;
+  json: string;
   loopId: string;
   subIds: string[];
   items: string[];
@@ -71,40 +70,28 @@ const DOMAINS = [
   { wf: "enrichment", over: "queue", as: "candidate", subs: ["enrich"], items: ["c-01", "c-02", "c-03", "c-04", "c-05", "c-06", "c-07", "c-08"] },
 ];
 
-function indent(text: string, spaces: number): string {
-  const pad = " ".repeat(spaces);
-  return text
-    .split("\n")
-    .map((l) => (l.length ? pad + l : l))
-    .join("\n");
-}
-
-/** Render one loop step block (the loop itself) as YAML text. */
-function renderLoopStep(s: Shape, opts: { withChecks: boolean; parallel: Shape["parallel"] }): string {
-  const lines: string[] = [];
-  lines.push(`  - id: ${s.loopId}`);
-  lines.push(`    type: loop`);
-  lines.push(`    over: ${s.over}`);
-  lines.push(`    as: ${s.as}`);
-  if (opts.parallel !== undefined) lines.push(`    parallel: ${opts.parallel}`);
-  lines.push(`    steps:`);
-  s.subIds.forEach((subId, i) => {
-    lines.push(`      - id: ${subId}`);
-    lines.push(`        instruction: "${subId} for {${s.as}} (sub ${i + 1})."`);
-    // hard check gate on some sub-steps when requested; always at least one soft gate.
-    lines.push(`        gate:`);
-    lines.push(`          - "${subId} completed for {${s.as}}"`);
-    if (opts.withChecks && i % 2 === 0) {
-      lines.push(`          - check: "test -n '{${s.as}}'"`);
-      lines.push(`            name: ${subId}-check`);
-    }
-  });
-  return lines.join("\n");
-}
-
 interface ShapeFull extends Shape {
   over: string;
   as: string;
+}
+
+function loopStep(s: ShapeFull, parallel: Shape["parallel"]) {
+  return {
+    id: s.loopId,
+    title: s.loopId,
+    instruction: `Run ${s.loopId} over ${s.over}.`,
+    type: "loop",
+    over: s.over,
+    as: s.as,
+    ...(parallel !== undefined ? { parallel } : {}),
+    requires: [],
+    steps: s.subIds.map((subId, i) => ({
+      id: subId,
+      title: subId,
+      instruction: `${subId} for {${s.as}} (sub ${i + 1}).`,
+      requires: [],
+    })),
+  };
 }
 
 function makeShapes(): ShapeFull[] {
@@ -118,7 +105,6 @@ function makeShapes(): ShapeFull[] {
     const parChoice = i % 4; // 0 seq(undef), 1 false, 2 true, 3 auto
     const parallel: Shape["parallel"] =
       parChoice === 0 ? undefined : parChoice === 1 ? false : parChoice === 2 ? true : "auto";
-    const withChecks = i % 3 !== 0; // ~2/3 carry hard check gates
     // loop position: 0 = only step; 1 = right after a setup step; 2 = deep in flow.
     const position = i % 3;
     const loopIsOnlyStep = position === 0;
@@ -134,8 +120,8 @@ function makeShapes(): ShapeFull[] {
     const loopId = `loop-${slug(dom.wf)}-${i}`;
 
     const s: ShapeFull = {
-      name: `${dom.wf} #${i} (${subCount} sub × ${itemCount} iter, parallel=${String(parallel)}, checks=${withChecks}, pos=${["only", "after-setup", "deep"][position]})`,
-      yaml: "",
+      name: `${dom.wf} #${i} (${subCount} sub × ${itemCount} iter, parallel=${String(parallel)}, pos=${["only", "after-setup", "deep"][position]})`,
+      json: "",
       loopId,
       subIds,
       items,
@@ -145,55 +131,43 @@ function makeShapes(): ShapeFull[] {
       as,
     };
 
-    // Assemble surrounding steps based on position.
-    const head: string[] = [
-      `conductor: 1.1.0`,
-      `name: ${slug(dom.wf)}-${i}`,
-      `description: Smoke shape ${i} — a ${itemCount}-item loop with ${subCount} sub-steps.`,
-      `inputs:`,
-      `  - ${over}`,
-      `steps:`,
-    ];
-
-    const stepBlocks: string[] = [];
+    const steps: any[] = [];
     if (position === 1 || position === 2) {
-      stepBlocks.push(
-        [
-          `  - id: setup`,
-          `    instruction: "Prepare the run and resolve the ${over} list."`,
-          `    output: ${over}`,
-          `    gate:`,
-          `      - "${over} resolved to a non-empty list"`,
-        ].join("\n"),
-      );
+      steps.push({
+        id: "setup",
+        title: "Setup",
+        instruction: `Prepare the run and resolve the ${over} list.`,
+        requires: [],
+        output: over,
+      });
     }
     if (position === 2) {
-      stepBlocks.push(
-        [
-          `  - id: warm-context`,
-          `    instruction: "Read prior insights before iterating."`,
-          `    requires:`,
-          `      - setup`,
-          `    gate:`,
-          `      - "Insights ledger read"`,
-        ].join("\n"),
-      );
+      steps.push({
+        id: "warm-context",
+        title: "Warm context",
+        instruction: "Read prior insights before iterating.",
+        requires: ["setup"],
+      });
     }
 
-    stepBlocks.push(renderLoopStep(s, { withChecks, parallel }));
+    steps.push(loopStep(s, parallel));
 
     if (position === 2) {
-      stepBlocks.push(
-        [
-          `  - id: finalize`,
-          `    instruction: "Open a PR summarizing the loop's results."`,
-          `    gate:`,
-          `      - "PR opened"`,
-        ].join("\n"),
-      );
+      steps.push({
+        id: "finalize",
+        title: "Finalize",
+        instruction: "Open a PR summarizing the loop's results.",
+        requires: [s.loopId],
+      });
     }
 
-    s.yaml = head.join("\n") + "\n" + stepBlocks.join("\n") + "\n";
+    s.json = JSON.stringify({
+      conductor: "3.0.0",
+      name: `${slug(dom.wf)}-${i}`,
+      description: `Smoke shape ${i} — a ${itemCount}-item loop with ${subCount} sub-steps.`,
+      inputs: [over],
+      steps,
+    }, null, 2);
     shapes.push(s);
   }
 
@@ -224,7 +198,7 @@ function cli(args: string[], cwd: string): { ok: boolean; out: string } {
 function snapshotFrom(statusPath: string, conductorPath: string): Snapshot {
   return {
     status: JSON.parse(fs.readFileSync(statusPath, "utf8")),
-    conductorYaml: fs.readFileSync(conductorPath, "utf8"),
+    conductorJson: fs.readFileSync(conductorPath, "utf8"),
     statusPath,
     conductorPath,
   };
@@ -241,19 +215,20 @@ function runShape(shape: ShapeFull): Outcome {
   try {
     const conductorDir = path.join(tmp, ".conductor");
     fs.mkdirSync(conductorDir, { recursive: true });
-    const yamlPath = path.join(conductorDir, "conductor.yaml");
+    const jsonPath = path.join(conductorDir, "conductor.json");
     const statusPath = path.join(conductorDir, "status.json");
-    fs.writeFileSync(yamlPath, shape.yaml);
+    fs.writeFileSync(jsonPath, shape.json);
 
     // 1) validate via the REAL CLI
-    const v = cli(["validate", yamlPath], tmp);
-    assert(v.ok, `validate failed:\n${shape.yaml}\n--- cli output ---\n${v.out}`);
+    const v = cli(["validate", jsonPath], tmp);
+    assert(v.ok, `validate failed:\n${shape.json}\n--- cli output ---\n${v.out}`);
 
     // 2) status-init — loop step must register as type: "loop"
     // auto_improve off keeps the status focused on workflow steps for the test.
-    const initYaml = shape.yaml.replace(/^description:/m, "auto_improve: false\ndescription:");
-    fs.writeFileSync(yamlPath, initYaml);
-    const init = cli(["status-init", yamlPath, "--path", statusPath], tmp);
+    const initDoc = JSON.parse(shape.json);
+    initDoc.auto_improve = false;
+    fs.writeFileSync(jsonPath, JSON.stringify(initDoc, null, 2));
+    const init = cli(["status-init", jsonPath, "--path", statusPath], tmp);
     assert(init.ok, `status-init failed: ${init.out}`);
     const status0 = JSON.parse(fs.readFileSync(statusPath, "utf8"));
     const loopStatus0 = status0.steps?.[shape.loopId];
@@ -289,7 +264,7 @@ function runShape(shape: ShapeFull): Outcome {
     );
 
     // 4) buildModel (REAL parse + merge) — BoardStep must be a fully wired loop
-    const model1 = buildModel(snapshotFrom(statusPath, yamlPath));
+    const model1 = buildModel(snapshotFrom(statusPath, jsonPath));
     const loopBoard = model1.steps.find((s) => s.id === shape.loopId) as BoardStep | undefined;
     assert(loopBoard, `buildModel: no BoardStep for "${shape.loopId}"`);
     assert(loopBoard.isLoop === true, `buildModel: BoardStep.isLoop !== true`);
@@ -328,7 +303,7 @@ function runShape(shape: ShapeFull): Outcome {
       const r = cli(["loop", shape.loopId, target, subId, "done", "--path", statusPath], tmp);
       assert(r.ok, `loop ${target}/${subId} done failed: ${r.out}`);
     }
-    const model2 = buildModel(snapshotFrom(statusPath, yamlPath));
+    const model2 = buildModel(snapshotFrom(statusPath, jsonPath));
     const loopBoard2 = model2.steps.find((s) => s.id === shape.loopId) as BoardStep;
     const doneIter = loopBoard2.loop!.iterations.find((it) => it.item === target)!;
     assert(doneIter.done === true, `after done: iteration "${target}" not marked done`);
@@ -352,7 +327,7 @@ function runShape(shape: ShapeFull): Outcome {
       const partialItem = shape.items[1];
       const r = cli(["loop", shape.loopId, partialItem, shape.subIds[0], "done", "--path", statusPath], tmp);
       assert(r.ok, `loop ${partialItem}/${shape.subIds[0]} done failed: ${r.out}`);
-      const model3 = buildModel(snapshotFrom(statusPath, yamlPath));
+      const model3 = buildModel(snapshotFrom(statusPath, jsonPath));
       const lb3 = model3.steps.find((s) => s.id === shape.loopId) as BoardStep;
       assert(
         lb3.loop!.completed === 1,
@@ -372,14 +347,14 @@ function runShape(shape: ShapeFull): Outcome {
 // ── runner ──────────────────────────────────────────────────────────────────
 
 function main() {
-  // sanity: the conductor YAML must parse (catch generator bugs early)
+  // sanity: the conductor JSON must parse (catch generator bugs early)
   const shapes = makeShapes();
   for (const s of shapes) {
     try {
-      yaml.load(s.yaml);
+      JSON.parse(s.json);
     } catch (e) {
-      console.error(red(`generator produced invalid YAML for ${s.name}: ${(e as Error).message}`));
-      console.error(s.yaml);
+      console.error(red(`generator produced invalid JSON for ${s.name}: ${(e as Error).message}`));
+      console.error(s.json);
       process.exit(2);
     }
   }

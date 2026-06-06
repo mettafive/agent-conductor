@@ -1,0 +1,52 @@
+{
+  "conductor": "3.0.0",
+  "name": "blog-post",
+  "description": "Research, write, and optimize a blog post.",
+  "inputs": [
+    "topic",
+    "audience",
+    "word_count"
+  ],
+  "steps": [
+    {
+      "id": "research",
+      "instruction": "Research {topic} for an audience of {audience}.\nFind at least 5 credible sources with specific data points.\n",
+      "output": "research",
+      "title": "Research",
+      "requires": []
+    },
+    {
+      "id": "outline",
+      "instruction": "Turn the research into an outline: a hook, 3–5 sections, and a takeaway.\n",
+      "requires": [
+        "research"
+      ],
+      "output": "outline",
+      "title": "Outline"
+    },
+    {
+      "id": "write",
+      "instruction": "Write the post from the outline, in a voice that fits {audience}.\nTarget roughly {word_count} words.\n",
+      "requires": [
+        "outline"
+      ],
+      "title": "Write"
+    },
+    {
+      "id": "edit",
+      "instruction": "Tighten the draft: cut filler, fix weak transitions, vary sentence length.\n",
+      "requires": [
+        "write"
+      ],
+      "title": "Edit"
+    },
+    {
+      "id": "seo-check",
+      "instruction": "Add a title tag, meta description, and headings. Work {topic} in naturally.\n",
+      "requires": [
+        "edit"
+      ],
+      "title": "Seo Check"
+    }
+  ]
+}

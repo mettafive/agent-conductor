@@ -23,7 +23,6 @@ export default defineConfig({
       output: {
         manualChunks: {
           motion: ["framer-motion"],
-          yaml: ["js-yaml"],
         },
       },
     },

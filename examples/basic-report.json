@@ -1,0 +1,44 @@
+{
+  "conductor": "3.0.0",
+  "name": "basic-report",
+  "description": "A simple linear research report — research, outline, write, review.",
+  "inputs": [
+    "topic",
+    "audience"
+  ],
+  "steps": [
+    {
+      "id": "research",
+      "instruction": "Research {topic} for an audience of {audience}.\nGather credible, recent sources and capture the key facts and tensions.\n",
+      "output": "sources",
+      "title": "Research",
+      "requires": []
+    },
+    {
+      "id": "outline",
+      "instruction": "Using {sources}, draft a structured outline for the report:\nan intro, 3–5 body sections, and a conclusion.\n",
+      "requires": [
+        "research"
+      ],
+      "output": "outline",
+      "title": "Outline"
+    },
+    {
+      "id": "write",
+      "instruction": "Write the full report from {outline}, citing {sources} inline.\nMatch the tone to the {audience}.\n",
+      "requires": [
+        "outline"
+      ],
+      "output": "draft",
+      "title": "Write"
+    },
+    {
+      "id": "review",
+      "instruction": "Critically review {draft}. Fix weak transitions, unsupported claims,\nand anything that reads like filler. Produce the final report.\n",
+      "requires": [
+        "write"
+      ],
+      "title": "Review"
+    }
+  ]
+}

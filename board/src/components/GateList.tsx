@@ -5,8 +5,7 @@ import { Led } from "./Led";
 import { AppearIcon } from "./Appear";
 
 /** Pass / fail / not-yet mark — thin SVG icons that ease in, + a pending LED.
- *  `tone` lets the check inherit the surrounding pill colour (so an attested pass
- *  reads amber, a verified pass reads mint) instead of forcing its own. */
+ *  `tone` lets the check inherit the surrounding pill colour. */
 function Mark({ passed, size = 13, tone = false }: { passed?: boolean | null; size?: number; tone?: boolean }) {
   if (passed === true)
     return (
@@ -28,9 +27,8 @@ function Mark({ passed, size = 13, tone = false }: { passed?: boolean | null; si
 }
 
 /**
- * The gate criteria for a step or sub-step. Shared by the active card, step
- * detail and iteration cards so the look is identical everywhere. The
- * verified/attested distinction is a small text label rather than a 🔒/✋ emoji.
+ * The checker result for a step or sub-step. Shared by the active card, step
+ * detail and iteration cards so the look is identical everywhere.
  */
 export function GateList({
   criteria,
@@ -39,27 +37,18 @@ export function GateList({
 }: {
   criteria: GateCriterion[];
   bordered?: boolean;
-  /** The owning step/sub-step is done. A done step's gates all passed to advance, so any
+  /** The owning step/sub-step is done. A done step's checker passed to advance, so any
    *  criterion left unrecorded renders as passed — never a stale/"dead" pending check. */
   settled?: boolean;
 }) {
-  if (criteria.length === 0) return null;
+  const list = criteria.length ? criteria : [{ text: "pending checker result", name: "Pending checker result", passed: null }];
   return (
     <div className={bordered ? "mt-4 border-t border-line pt-3" : ""}>
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-mist">gate</div>
-      {criteria.map((c, i) => {
+      <div className="mb-2 font-mono text-[10px] uppercase tracking-wide text-mist">checker</div>
+      {list.map((c, i) => {
         // On a settled (done) step, an unrecorded criterion is shown as passed, not pending.
         const passed = c.passed ?? (settled ? true : null);
-        // A passed criterion is either verified (gate-runner observed it) or merely attested by
-        // the agent. We keep that trust signal — but as a tint on the kind pill + a tooltip, never
-        // as a word competing with the criterion text for the horizontal line.
-        const attested = passed === true && !c.verified;
-        const pill =
-          c.kind === "hard"
-            ? attested
-              ? "border-amber/30 text-amber/90" // hard, but only attested — softer amber
-              : "border-mint/30 text-mint" // hard + verified
-            : "border-line-2 text-mist"; // soft (judgment) — neutral
+        const pill = passed === false ? "border-rose/30 text-rose" : passed === true ? "border-mint/30 text-mint" : "border-line-2 text-mist";
         return (
           <motion.div
             key={i}
@@ -72,20 +61,19 @@ export function GateList({
                 criterion text's horizontal space. */}
             <div className="flex items-center gap-1.5">
               <span
-                title={c.verified ? "verified by the gate-runner" : attested ? "attested by the agent" : undefined}
+                title={c.checker ? `checked by ${c.checker}` : undefined}
                 className={`inline-flex items-center gap-1 rounded border px-1.5 py-px font-mono text-[9px] leading-none ${pill}`}
               >
                 <Mark passed={passed} size={10} tone />
-                {c.kind}
+                check
               </span>
-              {c.kind === "hard" && typeof c.exitCode === "number" && (
-                <span className="font-mono text-[9px] text-mist">exit {c.exitCode}</span>
-              )}
+              {c.checker && <span className="font-mono text-[9px] text-mist">{c.checker}</span>}
             </div>
             {/* criterion text — its own full-width line, never squeezed into a narrow column. */}
             <div className="mt-1 font-mono text-[11.5px] leading-snug text-mist-2">
-              {c.kind === "hard" && c.name ? c.name : c.text}
+              {c.name ?? c.text}
             </div>
+            {c.evidence && <div className="mt-1 text-[11px] leading-snug text-dim">{c.evidence}</div>}
           </motion.div>
         );
       })}
