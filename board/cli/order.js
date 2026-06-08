@@ -136,7 +136,7 @@ function workflowEdges(workflow) {
   return out;
 }
 
-function applyLockedEdges(workflow, lockedEdges) {
+export function applyLockedEdges(workflow, lockedEdges) {
   if (!lockedEdges.size) return { workflow, restored: [] };
   const next = {
     ...workflow,
@@ -170,7 +170,7 @@ function violationEdgeKeys(check, workflow) {
   return keys;
 }
 
-function updateLockedEdges(lockedEdges, workflow, check, attempt) {
+export function updateLockedEdges(lockedEdges, workflow, check, attempt) {
   const violated = violationEdgeKeys(check, workflow);
   for (const key of violated) lockedEdges.delete(key);
   const approved = check.approved_edges?.length
@@ -186,6 +186,10 @@ function updateLockedEdges(lockedEdges, workflow, check, attempt) {
 
 function lockedEdgesList(lockedEdges) {
   return [...lockedEdges.values()].sort((a, b) => a.to - b.to || a.from - b.from);
+}
+
+export function listLockedEdges(lockedEdges) {
+  return lockedEdgesList(lockedEdges);
 }
 
 function orderComposerPrompt({ cards, previousWorkflow, checkerFeedback, lockedEdges, attempt, maxAttempts }) {
@@ -311,6 +315,44 @@ ${JSON.stringify(cards, null, 2)}
 
 Candidate workflow:
 ${JSON.stringify(workflow, null, 2)}`;
+}
+
+export async function checkWorkflowWithDependencyGuard(workflow, {
+  cards,
+  lockedEdges = new Map(),
+  attempt = 1,
+  maxAttempts = 5,
+  model = DEFAULT_MODEL,
+  updateLocks = true,
+} = {}) {
+  const validationErrors = validateConductor(workflow);
+  if (validationErrors.length) {
+    return {
+      check: {
+        verdict: "FAIL",
+        passed: false,
+        feedback: "workflow failed structural validation",
+        blocking_issues: validationErrors.map((e) => ({ problem: e, required_repair: e })),
+        approved_edges: [],
+      },
+      lockedEdges,
+    };
+  }
+  const checkPrompt = orderCheckerPrompt({
+    cards,
+    workflow,
+    lockedEdges: lockedEdgesList(lockedEdges),
+    attempt,
+    maxAttempts,
+  });
+  const rawCheck = await callModel(checkPrompt, {
+    role: "order-checker",
+    attempt,
+    model,
+  });
+  const check = normalizeCheck(extractJson(rawCheck));
+  if (updateLocks) updateLockedEdges(lockedEdges, workflow, check, attempt);
+  return { check, lockedEdges };
 }
 
 function sampleAuditItems(workflow, sampleSize) {

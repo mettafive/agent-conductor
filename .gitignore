@@ -15,6 +15,8 @@ npm-debug.log*
 .vscode/
 
 # conductor runtime state (any depth) — but NOT conductor.json, which users commit
+.conductor/
+**/.conductor/
 .conductor/status.json
 **/.conductor/status.json
 .conductor/server.json

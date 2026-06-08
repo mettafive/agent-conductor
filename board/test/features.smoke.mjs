@@ -1883,13 +1883,24 @@ test("integrate: ignores applied knowledge and resolves same-card duplicates", (
   }, null, 2));
   const r = withDecomposeFixtures(tmp, {
     "integration-1.json": {
-      cards: [
-        { title: "Run SEO research", instruction: "Run SEO research." },
-        { title: "Create treatment image", instruction: "Create one approved treatment image for each page in the family, parent plus every child." },
-      ],
       changes: [
-        { type: "edit", card: 1, title: "Create treatment image", change: "Preserved per-page image scope.", knowledge_id: "K-002" },
+        {
+          type: "edit_instruction",
+          card: 1,
+          title: "Create treatment image",
+          new_instruction: "Create one approved treatment image for each page in the family, parent plus every child.",
+          change: "Preserved per-page image scope.",
+          knowledge_id: "K-002",
+        },
       ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "All open image-scope knowledge items are handled.",
+      passed_patches: [
+        { knowledge_id: "K-002", kind: "edit_instruction", reason: "Instruction preserves per-page image scope." },
+      ],
+      failed_patches: [],
     },
   }, () => cli(["integrate", "--dir", ".conductor/seo-skill", "--skill", "SKILL.md", "--run-id", "run-2"], tmp));
   assert(r.code === 0, `integration should pass:\n${r.out}`);
@@ -1897,9 +1908,914 @@ test("integrate: ignores applied knowledge and resolves same-card duplicates", (
   const byId = Object.fromEntries(knowledge.items.map((item) => [item.id, item]));
   assert(byId["K-001"].status === "applied" && byId["K-001"].applied_in === "prior-run", `applied item should not be reprocessed:\n${JSON.stringify(byId["K-001"], null, 2)}`);
   assert(byId["K-002"].status === "applied" && byId["K-002"].applied_in === "run-2", `primary item not applied:\n${JSON.stringify(byId["K-002"], null, 2)}`);
-  assert(byId["K-003"].status === "applied" && byId["K-003"].resolved_by === "K-002", `duplicate item not resolved:\n${JSON.stringify(byId["K-003"], null, 2)}`);
+  assert(byId["K-003"].status === "applied" && byId["K-003"].applied_as === "tier-1:edit-card-1", `duplicate item should be folded into the shipped card edit:\n${JSON.stringify(byId["K-003"], null, 2)}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  assert(/each page/.test(cards[1].instruction) && /parent/.test(cards[1].instruction), `duplicate learning should be present in shipped instruction:\n${cards[1].instruction}`);
   const artifact = fs.readFileSync(path.join(root, "runs", "run-2", "artifacts", "integration.md"), "utf8");
   assert(/2 open knowledge items reviewed/.test(artifact), `integration should review only open items:\n${artifact}`);
+});
+
+test("integrate: patch guard preserves card order and dependencies", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "guarded-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, "SKILL.md", "# Guarded Skill\n\nImprove an existing workflow without changing order.");
+  writeFile(tmp, ".conductor/guarded-skill/cards.json", JSON.stringify([
+    { title: "Collect facts", instruction: "Collect facts." },
+    { title: "Draft page", instruction: "Draft the page from facts." },
+    { title: "Review page", instruction: "Review the finished page." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/guarded-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "guarded-skill",
+    description: "Guarded skill.",
+    steps: [
+      { title: "Collect facts", instruction: "Collect facts.", requires: [] },
+      { title: "Draft page", instruction: "Draft the page from facts.", requires: [0] },
+      { title: "Review page", instruction: "Review the finished page.", requires: [1] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/guarded-skill/knowledge.json", JSON.stringify({
+    items: [
+      {
+        id: "K-010",
+        source_card: 1,
+        title: "Add source citations",
+        detail: "Drafting should include source citations.",
+        status: "open",
+      },
+    ],
+  }, null, 2));
+  const beforeCards = fs.readFileSync(path.join(root, "cards.json"), "utf8");
+  const beforeWorkflow = fs.readFileSync(path.join(root, "workflow.json"), "utf8");
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      cards: [
+        { title: "Collect facts", instruction: "Collect facts." },
+        { title: "Draft page", instruction: "Draft the page from facts and include source citations." },
+      ],
+      workflow: {
+        conductor: "3.0.0",
+        name: "guarded-skill",
+        steps: [
+          { title: "Draft page", instruction: "Draft the page from facts and include source citations.", requires: [] },
+        ],
+      },
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 1,
+          title: "Draft page",
+          new_instruction: "Draft the page from facts and include source citations.",
+          change: "Added source citation requirement.",
+          knowledge_id: "K-010",
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Instruction edit addresses the learning and no structural change is accepted.",
+      passed_patches: [
+        { knowledge_id: "K-010", kind: "edit_instruction", reason: "The draft instruction now requires citations." },
+      ],
+      failed_patches: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/guarded-skill", "--skill", "SKILL.md", "--run-id", "run-3"], tmp));
+  assert(r.code === 0, `integration should ignore full-card/full-workflow payload and apply only patch:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  const originalCards = JSON.parse(beforeCards);
+  const originalWorkflow = JSON.parse(beforeWorkflow);
+  assert(cards.length === originalCards.length, `card count changed:\n${JSON.stringify(cards, null, 2)}`);
+  assert(workflow.steps.length === originalWorkflow.steps.length, `workflow step count changed:\n${JSON.stringify(workflow, null, 2)}`);
+  assert(cards[0].instruction === originalCards[0].instruction, "unpatched card 0 changed");
+  assert(cards[2].instruction === originalCards[2].instruction, "unpatched card 2 changed");
+  assert(workflow.steps[1].instruction === "Draft the page from facts and include source citations.", "declared patch was not applied");
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify(originalWorkflow.steps.map((step) => step.requires)), `dependencies changed:\n${JSON.stringify(workflow.steps, null, 2)}`);
+});
+
+test("integrate: checker retry locks passed patches and repairs failed items", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "loop-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, "SKILL.md", "# Loop Skill\n\nImprove cards from learned run facts.");
+  writeFile(tmp, ".conductor/loop-skill/cards.json", JSON.stringify([
+    { title: "Run research", instruction: "Run treatment research." },
+    { title: "Write proposal", instruction: "Write the page proposal." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/loop-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "loop-skill",
+    description: "Loop skill.",
+    steps: [
+      { title: "Run research", instruction: "Run treatment research.", requires: [] },
+      { title: "Write proposal", instruction: "Write the page proposal.", requires: [0] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/loop-skill/knowledge.json", JSON.stringify({
+    items: [
+      {
+        id: "K-101",
+        source_card: 0,
+        title: "Known keyword cache",
+        detail: "Use the existing keyword cache before running external research.",
+        status: "open",
+      },
+      {
+        id: "K-102",
+        source_card: 1,
+        title: "Mention synonym variants",
+        detail: "The proposal should include synonym variants in headings and FAQs.",
+        status: "open",
+      },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 0,
+          title: "Run research",
+          new_instruction: "Use the existing keyword cache before running external treatment research.",
+          change: "Added keyword cache shortcut.",
+          knowledge_id: "K-101",
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "FAIL",
+      feedback: "One learning item is still unhandled.",
+      passed_patches: [
+        { knowledge_id: "K-101", kind: "edit_instruction", reason: "Keyword cache shortcut is woven into the research instruction." },
+      ],
+      failed_patches: [
+        { knowledge_id: "K-102", feedback: "Synonym variants were not addressed.", required_repair: "Patch card 1 to include synonym variants in headings and FAQs." },
+      ],
+      repair_prompt: "Keep K-101 exactly. Add an edit_instruction patch for K-102 on card 1.",
+    },
+    "integration-2.json": {
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 1,
+          title: "Write proposal",
+          new_instruction: "Write the page proposal, including synonym variants in headings and FAQs where they match real search intent.",
+          change: "Added synonym variants to proposal requirements.",
+          knowledge_id: "K-102",
+        },
+      ],
+    },
+    "integration-checker-2.json": {
+      verdict: "PASS",
+      feedback: "Both learning items are now handled.",
+      passed_patches: [
+        { knowledge_id: "K-101", kind: "edit_instruction", reason: "Locked keyword cache patch preserved." },
+        { knowledge_id: "K-102", kind: "edit_instruction", reason: "Proposal instruction includes synonym variants." },
+      ],
+      failed_patches: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/loop-skill", "--skill", "SKILL.md", "--run-id", "run-4"], tmp));
+
+  assert(r.code === 0, `integration retry loop should pass:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  assert(/keyword cache/.test(cards[0].instruction), `locked K-101 patch was not preserved:\n${JSON.stringify(cards, null, 2)}`);
+  assert(/synonym variants/.test(cards[1].instruction), `K-102 repair was not applied:\n${JSON.stringify(cards, null, 2)}`);
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify([[], [0]]), `dependencies changed:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items.every((item) => item.status === "applied"), `all knowledge should be applied:\n${JSON.stringify(knowledge, null, 2)}`);
+  const summary = JSON.parse(fs.readFileSync(path.join(root, "runs", "run-4", "integration-summary.json"), "utf8"));
+  assert(summary.attempts === 2, `expected two integration attempts:\n${JSON.stringify(summary, null, 2)}`);
+});
+
+test("integrate: combines multiple insights for one card into one instruction edit", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "combine-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, "SKILL.md", "# Combine Skill\n\nImprove one card from multiple comments.");
+  writeFile(tmp, ".conductor/combine-skill/cards.json", JSON.stringify([
+    { title: "Validate metadata", instruction: "Validate the title and meta description against the page proposal." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/combine-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "combine-skill",
+    description: "Combine skill.",
+    steps: [
+      { title: "Validate metadata", instruction: "Validate the title and meta description against the page proposal.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/combine-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-201", source_card: 0, title: "Synonym variants", detail: "Include synonym variants in the validation.", status: "open" },
+      { id: "K-202", source_card: 0, title: "Canonical URL", detail: "Verify the canonical URL is public HTTPS.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 0,
+          title: "Validate metadata",
+          knowledge_ids: ["K-201", "K-202"],
+          new_instruction: "Validate the title and meta description against the page proposal, including synonym variants in the validation and verifying the canonical URL is public HTTPS.",
+          change: "Added synonym and canonical checks.",
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Combined card edit preserves the original validation and includes both insights.",
+      passed_patches: [
+        { card: 0, knowledge_ids: ["K-201", "K-202"], reason: "Both insights are present and the original validation remains." },
+      ],
+      failed_patches: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/combine-skill", "--skill", "SKILL.md", "--run-id", "run-5"], tmp));
+
+  assert(r.code === 0, `combined same-card integration should pass:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  assert(/synonym variants/.test(cards[0].instruction), `synonym insight missing:\n${cards[0].instruction}`);
+  assert(/canonical URL is public HTTPS/.test(cards[0].instruction), `canonical insight missing:\n${cards[0].instruction}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items.every((item) => item.status === "applied"), `both insights should be applied:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: ledger invariant rejects applied knowledge not present in shipped instruction", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "ledger-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, "SKILL.md", "# Ledger Skill\n\nKeep cards and knowledge aligned.");
+  writeFile(tmp, ".conductor/ledger-skill/cards.json", JSON.stringify([
+    { title: "Validate metadata", instruction: "Validate metadata." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/ledger-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "ledger-skill",
+    description: "Ledger skill.",
+    steps: [
+      { title: "Validate metadata", instruction: "Validate metadata.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/ledger-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-301", source_card: 0, title: "Synonyms", detail: "Include synonym variants.", status: "open" },
+      { id: "K-302", source_card: 0, title: "Canonical", detail: "Verify canonical HTTPS.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 0,
+          title: "Validate metadata",
+          knowledge_ids: ["K-301", "K-302"],
+          new_instruction: "Validate metadata and include synonym variants.",
+          change: "Claims to add both insights but only includes one.",
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Bad checker fixture says this passed.",
+      passed_patches: [
+        { card: 0, knowledge_ids: ["K-301", "K-302"], reason: "incorrect fixture" },
+      ],
+      failed_patches: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/ledger-skill", "--skill", "SKILL.md", "--run-id", "run-6"], tmp));
+
+  assert(r.code !== 0, `ledger mismatch should fail loudly:\n${r.out}`);
+  assert(/ledger check failed/.test(r.out), `expected ledger error:\n${r.out}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items.every((item) => item.status === "open"), `knowledge should remain open after rejected integration:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: checker rejects edits that drop prior requirements", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "preserve-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, "SKILL.md", "# Preserve Skill\n\nDo not lose original requirements.");
+  writeFile(tmp, ".conductor/preserve-skill/cards.json", JSON.stringify([
+    { title: "Write proposal", instruction: "Write the proposal and cite all source documents." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/preserve-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "preserve-skill",
+    description: "Preserve skill.",
+    steps: [
+      { title: "Write proposal", instruction: "Write the proposal and cite all source documents.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/preserve-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-401", source_card: 0, title: "Use FAQ language", detail: "Use FAQ language from Search Console.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 0,
+          title: "Write proposal",
+          knowledge_ids: ["K-401"],
+          new_instruction: "Write the proposal using FAQ language from Search Console.",
+          change: "Drops source citation requirement.",
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "FAIL",
+      feedback: "The edit drops the original source-citation requirement.",
+      failed_patches: [
+        { card: 0, knowledge_ids: ["K-401"], problem: "Original citation requirement was lost.", required_repair: "Preserve source citations while adding FAQ language." },
+      ],
+      repair_prompt: "Preserve the citation requirement and add FAQ language.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/preserve-skill", "--skill", "SKILL.md", "--run-id", "run-7", "--max-attempts", "1"], tmp));
+
+  assert(r.code !== 0, `checker should reject dropped prior requirements:\n${r.out}`);
+});
+
+test("integrate: checker rejects structural smuggling in instruction edit", () => {
+  const tmp = tmpdir();
+  fs.mkdirSync(path.join(tmp, ".conductor", "structural-skill"), { recursive: true });
+  writeFile(tmp, "SKILL.md", "# Structural Skill\n\nImage scope needs structural follow-up.");
+  writeFile(tmp, ".conductor/structural-skill/cards.json", JSON.stringify([
+    { title: "Create image", instruction: "Create one approved treatment image." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/structural-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "structural-skill",
+    description: "Structural skill.",
+    steps: [
+      { title: "Create image", instruction: "Create one approved treatment image.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/structural-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-501", source_card: 0, title: "Per page image scope", detail: "Produce one image per treatment page.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        {
+          type: "edit_instruction",
+          card: 0,
+          title: "Create image",
+          knowledge_ids: ["K-501"],
+          new_instruction: "Create one approved treatment image per treatment page.",
+          change: "Changes cardinality from one image to per-page images.",
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "FAIL",
+      feedback: "The edit changes the card cardinality and needs structural handling outside tier 1.",
+      failed_patches: [
+        { card: 0, knowledge_ids: ["K-501"], problem: "Cardinality changed from one image to per-page images.", required_repair: "Reject in tier 1; do not apply as instruction-only integration." },
+      ],
+      repair_prompt: "Dismiss or defer this insight until structural edits are enabled.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/structural-skill", "--skill", "SKILL.md", "--run-id", "run-8", "--max-attempts", "1"], tmp));
+
+  assert(r.code !== 0, `structural smuggling should fail:\n${r.out}`);
+});
+
+test("integrate: no open insights is idempotent", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "idempotent-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/idempotent-skill/cards.json", JSON.stringify([
+    { title: "Run research", instruction: "Run research." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/idempotent-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "idempotent-skill",
+    description: "Idempotent skill.",
+    steps: [
+      { title: "Run research", instruction: "Run research.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/idempotent-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-601", source_card: 0, title: "Already applied", detail: "Already applied.", status: "applied" },
+    ],
+  }, null, 2));
+  const beforeCards = fs.readFileSync(path.join(root, "cards.json"), "utf8");
+  const beforeWorkflow = fs.readFileSync(path.join(root, "workflow.json"), "utf8");
+  const r = cli(["integrate", "--dir", ".conductor/idempotent-skill", "--run-id", "run-9"], tmp);
+  assert(r.code === 0, `idempotent integration should pass:\n${r.out}`);
+  assert(fs.readFileSync(path.join(root, "cards.json"), "utf8") === beforeCards, "cards changed despite no open insights");
+  assert(fs.readFileSync(path.join(root, "workflow.json"), "utf8") === beforeWorkflow, "workflow changed despite no open insights");
+});
+
+test("integrate: order insight can move a dependency edge after instruction loop", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "order-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/order-skill/cards.json", JSON.stringify([
+    { title: "Research", instruction: "Research the page." },
+    { title: "Draft", instruction: "Draft the page." },
+    { title: "Validate", instruction: "Validate against research." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/order-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "order-skill",
+    description: "Order skill.",
+    steps: [
+      { title: "Research", instruction: "Research the page.", requires: [] },
+      { title: "Draft", instruction: "Draft the page.", requires: [0] },
+      { title: "Validate", instruction: "Validate against research.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/order-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-701", source_card: 2, tag: "order", title: "Validate after research", detail: "Validate must run after Research.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-order-1.json": {
+      changes: [
+        { type: "edit_order", knowledge_ids: ["K-701"], requires: { card: 2, add: [0], remove: [] }, change: "Make Validate wait for Research." },
+      ],
+    },
+    "order-checker-1.json": { verdict: "PASS", feedback: "The graph is safe.", approved_edges: [{ from: 0, to: 1 }, { from: 0, to: 2 }] },
+    "integration-order-checker-1.json": {
+      verdict: "PASS",
+      feedback: "The delta matches the insight.",
+      passed: [{ knowledge_id: "K-701", reason: "Validate now waits for Research." }],
+      failed: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/order-skill", "--run-id", "run-order-1"], tmp));
+
+  assert(r.code === 0, `order integration should pass:\n${r.out}`);
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(workflow.steps[2].requires.includes(0), `validate should require research:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "applied" && /tier-2:edit-order/.test(knowledge.items[0].applied_as), `order item should be applied:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: order coverage rejects valid but wrong dependency edge", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "wrong-order-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/wrong-order-skill/cards.json", JSON.stringify([
+    { title: "Research", instruction: "Research the page." },
+    { title: "Draft", instruction: "Draft the page." },
+    { title: "Validate", instruction: "Validate against research." },
+  ], null, 2));
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "wrong-order-skill",
+    description: "Wrong order skill.",
+    steps: [
+      { title: "Research", instruction: "Research the page.", requires: [] },
+      { title: "Draft", instruction: "Draft the page.", requires: [0] },
+      { title: "Validate", instruction: "Validate against research.", requires: [] },
+    ],
+  };
+  writeFile(tmp, ".conductor/wrong-order-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/wrong-order-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-702", source_card: 2, tag: "order", title: "Validate after research", detail: "Validate must run after Research, not Draft.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-order-1.json": {
+      changes: [
+        { type: "edit_order", knowledge_ids: ["K-702"], requires: { card: 2, add: [1], remove: [] }, change: "Incorrectly make Validate wait for Draft." },
+      ],
+    },
+    "order-checker-1.json": { verdict: "PASS", feedback: "The graph is coherent.", approved_edges: [{ from: 0, to: 1 }, { from: 1, to: 2 }] },
+    "integration-order-checker-1.json": {
+      verdict: "FAIL",
+      feedback: "Legal graph, wrong insight.",
+      failed: [{ knowledge_id: "K-702", problem: "The insight asked for Research -> Validate, not Draft -> Validate.", required_repair: "Add 0 to card 2 requires." }],
+      repair_prompt: "Use the requested research edge.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/wrong-order-skill", "--run-id", "run-order-2", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `unresolved order item should be honestly dismissed, not fail the whole integration:\n${r.out}`);
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify(workflowDoc.steps.map((step) => step.requires)), `wrong legal edge should not ship:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed" && /can't reorder/.test(knowledge.items[0].dismissed_reason), `order item should be dismissed with reason:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: impossible order cycle is dismissed and workflow stays unchanged", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "cycle-order-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/cycle-order-skill/cards.json", JSON.stringify([
+    { title: "A", instruction: "Do A." },
+    { title: "B", instruction: "Do B." },
+  ], null, 2));
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "cycle-order-skill",
+    description: "Cycle order skill.",
+    steps: [
+      { title: "A", instruction: "Do A.", requires: [1] },
+      { title: "B", instruction: "Do B.", requires: [] },
+    ],
+  };
+  writeFile(tmp, ".conductor/cycle-order-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/cycle-order-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-703", source_card: 1, tag: "order", title: "B after A", detail: "B must run after A.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-order-1.json": {
+      changes: [
+        { type: "edit_order", knowledge_ids: ["K-703"], requires: { card: 1, add: [0], remove: [] }, change: "This would create a cycle." },
+      ],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/cycle-order-skill", "--run-id", "run-order-3", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `cycle should be dismissed honestly:\n${r.out}`);
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify(workflowDoc.steps.map((step) => step.requires)), `cycle edge should not ship:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed" && /Circular dependency|can't reorder/.test(knowledge.items[0].dismissed_reason), `cycle item should be dismissed with concrete reason:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: non-order knowledge cannot smuggle requires changes", () => {
+  const tmp = tmpdir();
+  fs.mkdirSync(path.join(tmp, ".conductor", "smuggle-order-skill"), { recursive: true });
+  writeFile(tmp, ".conductor/smuggle-order-skill/cards.json", JSON.stringify([
+    { title: "Research", instruction: "Research." },
+    { title: "Draft", instruction: "Draft." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/smuggle-order-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "smuggle-order-skill",
+    description: "Smuggle order skill.",
+    steps: [
+      { title: "Research", instruction: "Research.", requires: [] },
+      { title: "Draft", instruction: "Draft.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/smuggle-order-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-704", source_card: 1, title: "Mention sources", detail: "Draft should mention sources.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        { type: "edit_order", knowledge_ids: ["K-704"], requires: { card: 1, add: [0], remove: [] }, change: "Illegally changes order for a non-order item." },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Bad fixture incorrectly approves smuggling.",
+      passed_patches: [{ knowledge_id: "K-704", reason: "bad fixture" }],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/smuggle-order-skill", "--run-id", "run-order-4"], tmp));
+
+  assert(r.code !== 0, `requires smuggling should be mechanically rejected:\n${r.out}`);
+  assert(/unsupported integration change type|only edit_instruction/.test(r.out), `expected edit_order rejection:\n${r.out}`);
+});
+
+test("integrate: atomic insight with instruction and order does not commit edit when order fails", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "atomic-order-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/atomic-order-skill/cards.json", JSON.stringify([
+    { title: "A", instruction: "Do A." },
+    { title: "B", instruction: "Do B." },
+  ], null, 2));
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "atomic-order-skill",
+    description: "Atomic order skill.",
+    steps: [
+      { title: "A", instruction: "Do A.", requires: [1] },
+      { title: "B", instruction: "Do B.", requires: [] },
+    ],
+  };
+  writeFile(tmp, ".conductor/atomic-order-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/atomic-order-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-705", source_card: 1, tags: ["instruction", "order"], title: "B uses A output", detail: "B should mention A output and run after A.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        { type: "edit_instruction", card: 1, knowledge_ids: ["K-705"], new_instruction: "Do B after using A output.", change: "Mentions A output." },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Instruction facet is good.",
+      passed_patches: [{ card: 1, knowledge_ids: ["K-705"], reason: "Instruction mentions A output." }],
+    },
+    "integration-order-1.json": {
+      changes: [
+        { type: "edit_order", knowledge_ids: ["K-705"], requires: { card: 1, add: [0], remove: [] }, change: "This would create a cycle." },
+      ],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/atomic-order-skill", "--run-id", "run-order-5", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `atomic failed order should dismiss the whole item:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  assert(cards[1].instruction === "Do B.", `instruction facet should not commit alone:\n${JSON.stringify(cards, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed", `atomic item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: add-card insight appends at next index and wires edges", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "add-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/add-skill/cards.json", JSON.stringify([
+    { title: "Research", instruction: "Research the page." },
+    { title: "Upload image", instruction: "Upload the image." },
+  ], null, 2));
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "add-skill",
+    description: "Add skill.",
+    steps: [
+      { title: "Research", instruction: "Research the page.", requires: [] },
+      { title: "Upload image", instruction: "Upload the image.", requires: [0] },
+    ],
+  };
+  writeFile(tmp, ".conductor/add-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/add-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-801", source_card: 1, tag: "add-card", title: "Compress images before upload", detail: "Add a card that compresses images before upload.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-add-1.json": {
+      changes: [
+        {
+          type: "add_card",
+          knowledge_ids: ["K-801"],
+          card: {
+            title: "Compress images",
+            instruction: "Compress images before upload and write .conductor/artifacts/<card-index>-<slugified-card-title>.md with commands, output files, and verification proof.",
+          },
+          requires: { self: [0], dependents: [{ card: 1, add_requires: ["N"] }] },
+          change: "Added compression before upload.",
+        },
+      ],
+    },
+    "integration-add-quality-1.json": {
+      verdict: "PASS",
+      feedback: "Card is concrete.",
+      passed: [{ knowledge_id: "K-801", reason: "New card is verifiable." }],
+      failed: [],
+    },
+    "order-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Placement is safe.",
+      approved_edges: [{ from: 0, to: 1 }, { from: 0, to: 2 }, { from: 2, to: 1 }],
+    },
+    "integration-add-checker-1.json": {
+      verdict: "PASS",
+      feedback: "The added card matches the insight.",
+      passed: [{ knowledge_id: "K-801", reason: "Compression card was added." }],
+      failed: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/add-skill", "--run-id", "run-add-1"], tmp));
+
+  assert(r.code === 0, `add-card integration should pass:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(cards.length === 3 && workflow.steps.length === 3, `length invariant failed:\n${JSON.stringify({ cards, workflow }, null, 2)}`);
+  assert(cards[0].title === "Research" && cards[1].title === "Upload image", "existing card indexes changed");
+  assert(cards[2].title === "Compress images", `new card should append at index 2:\n${JSON.stringify(cards, null, 2)}`);
+  assert(JSON.stringify(workflow.steps[2].requires) === JSON.stringify([0]), `new card self requires wrong:\n${JSON.stringify(workflow, null, 2)}`);
+  assert(workflow.steps[1].requires.includes(2), `dependent should require appended card:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "applied" && knowledge.items[0].applied_card === 2, `add item should be applied with card index:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: add coverage rejects valid but wrong new card", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "wrong-add-skill");
+  fs.mkdirSync(root, { recursive: true });
+  const cardsDoc = [
+    { title: "Research", instruction: "Research." },
+    { title: "Publish", instruction: "Publish." },
+  ];
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "wrong-add-skill",
+    description: "Wrong add skill.",
+    steps: [
+      { title: "Research", instruction: "Research.", requires: [] },
+      { title: "Publish", instruction: "Publish.", requires: [0] },
+    ],
+  };
+  writeFile(tmp, ".conductor/wrong-add-skill/cards.json", JSON.stringify(cardsDoc, null, 2));
+  writeFile(tmp, ".conductor/wrong-add-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/wrong-add-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-802", source_card: 1, tag: "add-card", title: "Add image compression", detail: "Add a card for image compression before publish.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-add-1.json": {
+      changes: [
+        {
+          type: "add_card",
+          knowledge_ids: ["K-802"],
+          card: {
+            title: "Check spelling",
+            instruction: "Check spelling and write .conductor/artifacts/<card-index>-<slugified-card-title>.md with corrections and proof.",
+          },
+          requires: { self: [0], dependents: [{ card: 1, add_requires: ["N"] }] },
+        },
+      ],
+    },
+    "integration-add-quality-1.json": { verdict: "PASS", feedback: "Card is valid.", passed: [{ knowledge_id: "K-802", reason: "valid card" }] },
+    "order-checker-1.json": { verdict: "PASS", feedback: "Graph is valid.", approved_edges: [{ from: 0, to: 2 }, { from: 2, to: 1 }] },
+    "integration-add-checker-1.json": {
+      verdict: "FAIL",
+      feedback: "Valid card, wrong insight.",
+      failed: [{ knowledge_id: "K-802", problem: "Insight asked for image compression, not spelling.", required_repair: "Add an image compression card." }],
+      repair_prompt: "Add image compression.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/wrong-add-skill", "--run-id", "run-add-2", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `wrong add should be dismissed honestly:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(cards.length === cardsDoc.length, `wrong card should not append:\n${JSON.stringify(cards, null, 2)}`);
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify(workflowDoc.steps.map((step) => step.requires)), `workflow should stay unchanged:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed" && /can't add card/.test(knowledge.items[0].dismissed_reason), `add item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: add-card cycle placement is dismissed and graph unchanged", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "cycle-add-skill");
+  fs.mkdirSync(root, { recursive: true });
+  const cardsDoc = [
+    { title: "A", instruction: "Do A." },
+    { title: "B", instruction: "Do B." },
+  ];
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "cycle-add-skill",
+    description: "Cycle add skill.",
+    steps: [
+      { title: "A", instruction: "Do A.", requires: [] },
+      { title: "B", instruction: "Do B.", requires: [0] },
+    ],
+  };
+  writeFile(tmp, ".conductor/cycle-add-skill/cards.json", JSON.stringify(cardsDoc, null, 2));
+  writeFile(tmp, ".conductor/cycle-add-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/cycle-add-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-803", source_card: 0, tag: "add-card", title: "Add impossible middle card", detail: "Add a card between A and B.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-add-1.json": {
+      changes: [
+        {
+          type: "add_card",
+          knowledge_ids: ["K-803"],
+          card: {
+            title: "Middle proof",
+            instruction: "Produce middle proof and write .conductor/artifacts/<card-index>-<slugified-card-title>.md with proof.",
+          },
+          requires: { self: [1], dependents: [{ card: 1, add_requires: ["N"] }] },
+        },
+      ],
+    },
+    "integration-add-quality-1.json": { verdict: "PASS", feedback: "Card is valid.", passed: [{ knowledge_id: "K-803", reason: "valid card" }] },
+  }, () => cli(["integrate", "--dir", ".conductor/cycle-add-skill", "--run-id", "run-add-3", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `cycle add should be dismissed honestly:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(cards.length === 2, `cycle card should not append:\n${JSON.stringify(cards, null, 2)}`);
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify(workflowDoc.steps.map((step) => step.requires)), `cycle graph should not ship:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed", `cycle item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: non-add knowledge cannot smuggle add_card", () => {
+  const tmp = tmpdir();
+  fs.mkdirSync(path.join(tmp, ".conductor", "smuggle-add-skill"), { recursive: true });
+  writeFile(tmp, ".conductor/smuggle-add-skill/cards.json", JSON.stringify([
+    { title: "Research", instruction: "Research." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/smuggle-add-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "smuggle-add-skill",
+    description: "Smuggle add skill.",
+    steps: [
+      { title: "Research", instruction: "Research.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/smuggle-add-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-804", source_card: 0, title: "Mention sources", detail: "Research should mention sources.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        {
+          type: "add_card",
+          knowledge_ids: ["K-804"],
+          card: { title: "Extra", instruction: "Write .conductor/artifacts/<card-index>-<slugified-card-title>.md." },
+          requires: { self: [], dependents: [] },
+        },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Bad fixture incorrectly approves smuggling.",
+      passed_patches: [{ knowledge_id: "K-804", reason: "bad fixture" }],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/smuggle-add-skill", "--run-id", "run-add-4"], tmp));
+
+  assert(r.code !== 0, `add smuggling should be mechanically rejected:\n${r.out}`);
+  assert(/unsupported integration change type|only edit_instruction/.test(r.out), `expected add_card rejection:\n${r.out}`);
+});
+
+test("integrate: atomic instruction plus add-card does not commit edit when add fails", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "atomic-add-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/atomic-add-skill/cards.json", JSON.stringify([
+    { title: "Publish", instruction: "Publish the page." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/atomic-add-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "atomic-add-skill",
+    description: "Atomic add skill.",
+    steps: [
+      { title: "Publish", instruction: "Publish the page.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/atomic-add-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-805", source_card: 0, tags: ["instruction", "add-card"], title: "Compress before publish", detail: "Publish should mention compression and add a compression card.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        { type: "edit_instruction", card: 0, knowledge_ids: ["K-805"], new_instruction: "Publish the page after compression.", change: "Mentions compression." },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Instruction facet passed.",
+      passed_patches: [{ card: 0, knowledge_ids: ["K-805"], reason: "Instruction mentions compression." }],
+    },
+    "integration-add-1.json": {
+      changes: [
+        {
+          type: "add_card",
+          knowledge_ids: ["K-805"],
+          card: { title: "Compression", instruction: "Think about compression." },
+          requires: { self: [], dependents: [] },
+        },
+      ],
+    },
+    "integration-add-quality-1.json": {
+      verdict: "FAIL",
+      feedback: "Card has no verifiable receipt.",
+      failed: [{ knowledge_id: "K-805", problem: "No receipt.", required_repair: "Require the markdown receipt and proof." }],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/atomic-add-skill", "--run-id", "run-add-5", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `failed add facet should dismiss whole insight:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  assert(cards.length === 1 && cards[0].instruction === "Publish the page.", `instruction should not commit alone and no card should append:\n${JSON.stringify(cards, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed", `atomic item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
 });
 
 test("test: runs a clean temp structural E2E and cleans up", () => {
