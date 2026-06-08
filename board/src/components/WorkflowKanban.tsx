@@ -30,6 +30,13 @@ interface ArtifactContent extends ArtifactFile {
   max_preview_size?: number;
 }
 
+interface SettledSnapshot {
+  runId?: string;
+  model: BoardModel;
+  steps: BoardStep[];
+  notes?: DeveloperNote[];
+}
+
 const LABEL: Record<Col, string> = {
   pending: "Pending",
   running: "Running",
@@ -1652,38 +1659,60 @@ export function WorkflowKanban({
   notes?: DeveloperNote[];
 }) {
   const [settledView, setSettledView] = useState<"summary" | "board">("summary");
+  const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
   const rawSteps = model.steps.filter((s) => s.phase === "workflow");
   const rawSettled = model.overallStatus === "done" || model.overallStatus === "failed";
   const steps = useDwellSteps(rawSteps, rawSteps.length > 0, false);
   const settled =
     rawSettled && steps.every((s) => s.column === "done" || s.column === "failed");
-  const cols: Col[] = steps.some((s) => s.column === "failed") ? [...BASE_COLS, "failed"] : BASE_COLS;
-  const maxAttempts = model.maxAttempts;
-  const compileLifecycle = isCompileLifecycle(model, steps);
   const [compileArtifactStep, setCompileArtifactStep] = useState<BoardStep | null>(null);
 
-  if (settled && steps.length > 0) {
+  useEffect(() => {
+    if (settled && steps.length > 0) {
+      setSettledSnapshot((prev) => {
+        if (prev && prev.runId === model.runId && prev.model === model && prev.steps === steps && prev.notes === notes) {
+          return prev;
+        }
+        return { runId: model.runId, model, steps, notes };
+      });
+      return;
+    }
+    setSettledSnapshot((prev) => {
+      if (prev && model.runId && prev.runId && model.runId !== prev.runId) return null;
+      return prev;
+    });
+  }, [settled, steps, model, notes]);
+
+  const latchedSettled = !settled && !!settledSnapshot && (!model.runId || model.runId === settledSnapshot.runId);
+  const displayModel = settled ? model : latchedSettled ? settledSnapshot.model : model;
+  const displaySteps = settled ? steps : latchedSettled ? settledSnapshot.steps : steps;
+  const displayNotes = settled ? notes : latchedSettled ? settledSnapshot.notes : notes;
+  const cols: Col[] = displaySteps.some((s) => s.column === "failed") ? [...BASE_COLS, "failed"] : BASE_COLS;
+  const maxAttempts = displayModel.maxAttempts;
+  const compileLifecycle = isCompileLifecycle(displayModel, displaySteps);
+
+  if ((settled || latchedSettled) && displaySteps.length > 0) {
     return (
       <LayoutGroup>
         <div className="board-scroll h-full overflow-y-auto">
-          <CompletionHeader model={model} steps={steps} view={settledView} onView={setSettledView} />
+          <CompletionHeader model={displayModel} steps={displaySteps} view={settledView} onView={setSettledView} />
           {settledView === "summary" && compileLifecycle && (
-            <CompileCompletePanel model={model} steps={steps} onOpenArtifact={setCompileArtifactStep} />
+            <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} />
           )}
           {settledView === "summary" && !compileLifecycle && (
             <ExecutionCompletePanel
-              model={model}
-              steps={steps}
-              notes={notes}
+              model={displayModel}
+              steps={displaySteps}
+              notes={displayNotes}
             />
           )}
           {settledView === "summary" ? (
-            <CompletionTimeline model={model} steps={steps} maxAttempts={maxAttempts} />
+            <CompletionTimeline model={displayModel} steps={displaySteps} maxAttempts={maxAttempts} />
           ) : (
             <div>
               <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
                 {cols.map((col) => {
-                  const inCol = steps.filter((s) => s.column === col);
+                  const inCol = displaySteps.filter((s) => s.column === col);
                   return (
                     <section key={col} className="min-w-0">
                       <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
@@ -1697,9 +1726,9 @@ export function WorkflowKanban({
                             <WorkflowCard
                               key={step.id}
                               step={step}
-                              steps={steps}
-                              model={model}
-                              notes={notes}
+                              steps={displaySteps}
+                              model={displayModel}
+                              notes={displayNotes}
                               maxAttempts={maxAttempts}
                             />
                           ))}
