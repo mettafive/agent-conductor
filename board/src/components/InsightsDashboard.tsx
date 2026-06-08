@@ -35,6 +35,7 @@ function groupByCard(items: KnowledgeEntry[]) {
 function Row({ k }: { k: KnowledgeEntry }) {
   const [open, setOpen] = useState(false);
   const detail = k.detail || k.note || k.current || k.proposed;
+  const note = k.note && k.note !== k.detail ? k.note : undefined;
   return (
     <div className="rounded-lg border border-line bg-panel/40 px-3 py-2">
       <button onClick={() => detail && setOpen((o) => !o)} className="flex w-full items-start gap-2 text-left">
@@ -76,7 +77,7 @@ function Row({ k }: { k: KnowledgeEntry }) {
       {open && detail && (
         <div className="mt-2 space-y-1 border-t border-line/60 pt-2 pl-6">
           {k.detail && <p className="text-[11px] leading-snug text-mist-2">{k.detail}</p>}
-          {k.note && <p className="text-[11px] leading-snug text-mist-2">{k.note}</p>}
+          {note && <p className="text-[11px] leading-snug text-mist-2">{note}</p>}
           {k.current && (
             <p className="font-mono text-[10.5px] text-rose/80">
               <span className="text-line-2">− </span>

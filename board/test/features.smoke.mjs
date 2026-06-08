@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BOARD = path.resolve(HERE, "..");
 const CLI = path.join(BOARD, "bin", "cli.js");
+const PKG = JSON.parse(fs.readFileSync(path.join(BOARD, "package.json"), "utf8"));
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -1348,7 +1349,7 @@ test("cli: --version prints the package version", () => {
   const tmp = tmpdir();
   const r = cli(["--version"], tmp);
   assert(r.code === 0, `version should pass:\n${r.out}`);
-  assert(/^3\.0\.0\s*$/.test(r.out), `expected 3.0.0, got:\n${r.out}`);
+  assert(r.out.trim() === PKG.version, `expected ${PKG.version}, got:\n${r.out}`);
 });
 
 // ── REAL-WORLD CAPSTONE: a full run, init → finish ────────────────────────────
