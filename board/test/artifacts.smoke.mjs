@@ -6,7 +6,7 @@
  *
  * The invariant under test:
  *   Done requires a checker pass plus a durable markdown receipt at
- *   .conductor/artifacts/<card>.md. Non-text files such as images and PDFs are
+ *   .conductor/artifacts/<card-index>-<slugified-card-title>.md. Non-text files such as images and PDFs are
  *   supporting artifacts referenced from the receipt.
  */
 import { spawnSync } from "node:child_process";
@@ -82,12 +82,30 @@ function setupCase(testCase) {
 }
 
 function normalizeArtifactPath(artifactPath) {
-  return artifactPath || ".conductor/artifacts/0.md";
+  return artifactPath || null;
+}
+
+function slugTitle(title) {
+  return String(title || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-") || "card";
+}
+
+function receiptName(testCase, id = "0") {
+  return `${id}-${slugTitle(testCase.title || "Produce Output")}.md`;
+}
+
+function receiptPath(testCase) {
+  return normalizeArtifactPath(testCase.artifactPath) || `.conductor/artifacts/${receiptName(testCase)}`;
 }
 
 function writeArtifactAndSupport(tmp, testCase) {
   if (testCase.artifact !== false) {
-    writeFile(tmp, normalizeArtifactPath(testCase.artifactPath), testCase.artifactBody || artifactBody(testCase));
+    writeFile(tmp, receiptPath(testCase), testCase.artifactBody || artifactBody(testCase));
   }
   for (const support of testCase.support || []) {
     writeFile(tmp, path.join(".conductor", "artifacts", support.path), support.body);
@@ -131,7 +149,7 @@ function runCase(testCase) {
 
     const checkArgs = ["check", "0"];
     if (testCase.outputFile !== false) {
-      checkArgs.push("--output-file", testCase.outputFile || normalizeArtifactPath(testCase.artifactPath));
+      checkArgs.push("--output-file", testCase.outputFile || receiptPath(testCase));
     }
     const checked = cli(checkArgs, tmp);
     if (testCase.expectCheckFail) {
@@ -167,7 +185,7 @@ function runCase(testCase) {
     const step = st.steps["0"];
     assert(st.status === "done", `run should be done:\n${JSON.stringify(st, null, 2)}`);
     assert(step.status === "done", "step should be done");
-    assert(step.artifact === (testCase.expectedArtifact || artifactRel(testCase.artifactPath)), `wrong artifact path: ${step.artifact}`);
+    assert(step.artifact === (testCase.expectedArtifact || artifactRel(testCase)), `wrong artifact path: ${step.artifact}`);
     for (const artifact of testCase.expectedArtifacts || [step.artifact]) {
       assert(step.artifacts.includes(artifact), `missing artifact ${artifact}: ${JSON.stringify(step.artifacts)}`);
     }
@@ -177,8 +195,8 @@ function runCase(testCase) {
   }
 }
 
-function artifactRel(artifactPath) {
-  const p = normalizeArtifactPath(artifactPath);
+function artifactRel(testCase) {
+  const p = receiptPath(testCase);
   return p.replace(/^\.conductor\/artifacts\//, "").replace(/^\.conductor\/outputs\//, "");
 }
 
@@ -250,7 +268,7 @@ const nonTextCases = [
   kind: "non-text",
   support: [{ path: supportPath, body: supportBody }, ...extra],
   outputFile: `.conductor/artifacts/${supportPath}`,
-  expectedArtifacts: ["0.md", supportPath, ...extra.map((x) => x.path)],
+  expectedArtifacts: [receiptName({ title }), supportPath, ...extra.map((x) => x.path)],
   promptIncludes: ["Supporting files:"],
   promptExcludes: typeof supportBody === "string" ? [] : ["PNG"],
 }));
@@ -267,8 +285,8 @@ const nestedArtifactCases = [
   instruction,
   kind: "content",
   support: [{ path: supportPath, body: `# ${title}\n\nSupporting file.` }],
-  expectedArtifact: "0.md",
-  expectedArtifacts: ["0.md", supportPath],
+  expectedArtifact: receiptName({ title }),
+  expectedArtifacts: [receiptName({ title }), supportPath],
   artifactBody: `# ${title}\n\nExplicit artifact path works.\n\nSupporting file: .conductor/artifacts/${supportPath}`,
   promptIncludes: ["Explicit artifact path works."],
 }));
@@ -327,9 +345,9 @@ const rejectionCases = [
     title: "Traversal Ignored",
     instruction: "Produce safe artifact.",
     support: [{ path: "safe.png", body: binary }],
-    beforeCheck: [(tmp) => writeFile(tmp, ".conductor/artifacts/0.md", "# Safe\n")],
+    beforeCheck: [(tmp) => writeFile(tmp, ".conductor/artifacts/0-traversal-ignored.md", "# Safe\n")],
     outputFile: ".conductor/artifacts/../artifacts/safe.png",
-    expectedArtifacts: ["0.md", "safe.png"],
+    expectedArtifacts: ["0-traversal-ignored.md", "safe.png"],
   },
   {
     name: "recorded-status-artifact-rejected",
@@ -373,17 +391,17 @@ const rejectionCases = [
     name: "default-md-preferred",
     title: "Default Preferred",
     instruction: "Prefer default artifact.",
-    artifactPath: ".conductor/artifacts/0.md",
+    artifactPath: ".conductor/artifacts/0-default-preferred.md",
     support: [{ path: "other.md", body: "# other\n" }],
-    expectedArtifact: "0.md",
-    expectedArtifacts: ["0.md"],
+    expectedArtifact: "0-default-preferred.md",
+    expectedArtifacts: ["0-default-preferred.md"],
   },
   {
     name: "sanitized-default",
     title: "Sanitized Default",
     instruction: "Use sanitized default path.",
-    artifactPath: ".conductor/artifacts/0.md",
-    expectedArtifact: "0.md",
+    artifactPath: ".conductor/artifacts/0-sanitized-default.md",
+    expectedArtifact: "0-sanitized-default.md",
   },
 ];
 
@@ -425,7 +443,7 @@ function runFullE2E() {
     ];
     for (let i = 0; i < 3; i++) {
       assert(cli(["step", String(i), "running", "--headless"], tmp).code === 0, `step ${i} failed`);
-      writeFile(tmp, `.conductor/artifacts/${i}.md`, artifacts[i]);
+      writeFile(tmp, `.conductor/artifacts/${receiptName({ title: workflow.steps[i].title }, String(i))}`, artifacts[i]);
       if (i === 2) writeFile(tmp, ".conductor/artifacts/2.png", binary);
       const checkArgs = ["check", String(i)];
       if (i === 2) checkArgs.push("--output-file", ".conductor/artifacts/2.png");

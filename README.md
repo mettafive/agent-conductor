@@ -58,7 +58,7 @@ the agent did should fail.
 
 Completion also requires a durable markdown receipt under `.conductor/artifacts/`.
 `complete` refuses to move a card to Done unless the checker passed and the
-card has the required browsable artifact file: `.conductor/artifacts/<card>.md`.
+card has the required browsable artifact file: `.conductor/artifacts/<card-index>-<slugified-card-title>.md`.
 For images, screenshots, PDFs, uploads, or deployments, that artifact is still
 the human-readable markdown receipt. Images from the card should be embedded
 inline with markdown image syntax, while the underlying image files remain
@@ -69,7 +69,7 @@ content/code/data for creation cards, or command/return/changed-resource/
 verification evidence for action cards.
 
 ```bash
-npx conductor-board check 0 --output-file .conductor/artifacts/0.md
+npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "PASS ...\nSUMMARY: ..."
 npx conductor-board complete 0
 ```
@@ -126,7 +126,7 @@ npx conductor-board cards .conductor/cards.json
 npx conductor-board order --cards .conductor/cards.json --out .conductor/workflow.json
 npx conductor-board validate .conductor/workflow.json
 npx conductor-board status-init .conductor/workflow.json
-npx conductor-board check <card> --output-file .conductor/artifacts/<card>.md
+npx conductor-board check <card> --output-file .conductor/artifacts/<card-index>-<slugified-card-title>.md
 npx conductor-board gate-result <card> --passed --evidence "checked output"
 npx conductor-board complete <card>
 npx conductor-board feedback <card>

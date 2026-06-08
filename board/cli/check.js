@@ -3,7 +3,7 @@ import path from "node:path";
 import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
 import { appendAutoHeartbeat } from "./heartbeats.js";
 import { recordCheckerResult, resolveStep, statusEntry, discoverConductor } from "./complete.js";
-import { artifactForFile, artifactReadSources, isReadableArtifactPath } from "./artifacts.js";
+import { artifactForFile, artifactReadSources, isReadableArtifactPath, receiptArtifactName } from "./artifacts.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -52,7 +52,7 @@ function readMaybeFile(cwd, p) {
   };
 }
 
-function collectOutput({ args, cwd, statusPath, status, stepId, entry }) {
+function collectOutput({ args, cwd, statusPath, status, stepId, entry, step }) {
   const chunks = [];
   const artifactPaths = [];
   const inline = flag(args, ["--output"]);
@@ -91,7 +91,7 @@ function collectOutput({ args, cwd, statusPath, status, stepId, entry }) {
     }
   }
 
-  for (const read of artifactReadSources({ statusPath, stepId, entry })) {
+  for (const read of artifactReadSources({ statusPath, stepId, entry, step })) {
     artifactPaths.push(read.path);
     chunks.push(read);
   }
@@ -112,11 +112,11 @@ function collectOutput({ args, cwd, statusPath, status, stepId, entry }) {
   };
 }
 
-function checkerPrompt(instruction, output) {
+function checkerPrompt(instruction, output, receiptName) {
   return (
     `The agent was asked: ${instruction}\n\n` +
     `Here is what was produced:\n${output}\n\n` +
-    "The output must be the card's primary markdown receipt at .conductor/artifacts/<card-index>.md: the actual work product or a verifiable action record. Content/code/data cards should show the actual content, code, data, diff, or report in that markdown receipt. Action cards may pass with the markdown receipt only when it includes concrete proof such as command run, timestamp, inputs, return value, changed resource, affected rows/files/URLs, and verification query/curl/test result. If the receipt merely describes what was done without proof, FAIL immediately.\n" +
+    `The output must be the card's primary markdown receipt at .conductor/artifacts/${receiptName} (format: <card-index>-<slugified-card-title>.md): the actual work product or a verifiable action record. Content/code/data cards should show the actual content, code, data, diff, or report in that markdown receipt. Action cards may pass with the markdown receipt only when it includes concrete proof such as command run, timestamp, inputs, return value, changed resource, affected rows/files/URLs, and verification query/curl/test result. If the receipt merely describes what was done without proof, FAIL immediately.\n` +
     "Supporting files such as images, screenshots, PDFs, JSON, CSV, HTML, or logs are not standalone primary artifacts. Evaluate them only as files referenced from the markdown receipt. For image work, the receipt should embed every produced image inline with markdown image syntax.\n" +
     "Does it satisfy the instruction? List what's done and what's missing. PASS or FAIL.\n" +
     "Also write two dashboard lines:\n" +
@@ -141,7 +141,7 @@ export async function runCheck(args) {
         "  Prints the independent checker prompt for comparing the card output against\n" +
         "  its instruction. Evaluate the prompt in a clean context, then record the\n" +
         "  PASS/FAIL verdict and SUMMARY line with `conductor-board gate-result`.\n\n" +
-        "  Completion requires .conductor/artifacts/<step>.md as the primary\n" +
+        "  Completion requires .conductor/artifacts/<card-index>-<slugified-card-title>.md as the primary\n" +
         "  markdown receipt. Non-text work should reference supporting files from\n" +
         "  that receipt; image receipts should embed\n" +
         "  every produced image inline.",
@@ -206,6 +206,7 @@ export async function runCheck(args) {
     status,
     stepId,
     entry,
+    step: resolved.step,
   });
   if (artifactPaths.length) {
     entry.artifacts = [...new Set([...(Array.isArray(entry.artifacts) ? entry.artifacts : []), ...artifactPaths])];
@@ -234,7 +235,7 @@ export async function runCheck(args) {
   console.log(`checker prompt for ${stepId}`);
   if (sources.length) console.log(dim(`  output: ${sources.join(", ")}`));
   console.log("");
-  console.log(checkerPrompt(instruction, output));
+  console.log(checkerPrompt(instruction, output, receiptArtifactName(stepId, resolved.step)));
   console.log("");
   return true;
 }

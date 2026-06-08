@@ -63,7 +63,7 @@ query/curl/test result.
 
 Every completed card must also have a durable markdown receipt under
 `.conductor/artifacts/`. The required path is
-`.conductor/artifacts/<card>.md`: a human-readable receipt containing the work
+`.conductor/artifacts/<card-index>-<slugified-card-title>.md`: a human-readable receipt containing the work
 product or action proof. For images, screenshots, PDFs, JSON, CSV, HTML, and
 other inspectable files, the markdown receipt is still the primary artifact.
 Images produced by the card must be embedded inline in that receipt with
@@ -74,7 +74,7 @@ An external independent checker evaluates that prompt and records its verdict
 before completion:
 
 ```bash
-npx conductor-board check 0 --output-file .conductor/artifacts/0.md
+npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "4 sources captured with cost and owner-concern coverage"
 npx conductor-board gate-result 0 --failed --evidence "missing owner-concern coverage"
 ```

@@ -57,9 +57,24 @@ export function artifactForFile(statusPath, filePath) {
   };
 }
 
-function candidateNames(stepId) {
+export function slugifyArtifactTitle(title) {
+  const slug = String(title || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+  return slug || "card";
+}
+
+export function receiptArtifactName(stepId, step) {
   const safe = String(stepId).replace(/[^a-zA-Z0-9._-]+/g, "__");
-  return [`${safe}.md`];
+  return `${safe}-${slugifyArtifactTitle(step?.title)}.md`;
+}
+
+function candidateNames(stepId, step) {
+  return [receiptArtifactName(stepId, step)];
 }
 
 export function isReadableArtifactPath(filePath) {
@@ -88,11 +103,11 @@ function entryArtifactPaths(entry) {
     .filter(Boolean);
 }
 
-export function findArtifacts({ statusPath, stepId, entry }) {
+export function findArtifacts({ statusPath, stepId, entry, step }) {
   const roots = [artifactsDir(statusPath), legacyOutputsDir(statusPath)];
   const found = new Map();
 
-  for (const name of candidateNames(stepId)) {
+  for (const name of candidateNames(stepId, step)) {
     for (const root of roots) {
       const abs = path.join(root, name);
       if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
@@ -110,9 +125,8 @@ export function findArtifacts({ statusPath, stepId, entry }) {
   return [...found.values()].sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
 }
 
-export function findReceiptArtifact({ statusPath, stepId, entry }) {
-  const safe = String(stepId).replace(/[^a-zA-Z0-9._-]+/g, "__");
-  const name = `${safe}.md`;
+export function findReceiptArtifact({ statusPath, stepId, entry, step }) {
+  const name = receiptArtifactName(stepId, step);
   return artifactForFile(statusPath, name) || artifactForFile(statusPath, path.join("outputs", name));
 }
 
@@ -136,8 +150,8 @@ export function findArtifactsReferencedInReceipt(statusPath, receipt) {
   return [...found.values()].sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
 }
 
-export function artifactReadSources({ statusPath, stepId, entry }) {
-  return findArtifacts({ statusPath, stepId, entry })
+export function artifactReadSources({ statusPath, stepId, entry, step }) {
+  return findArtifacts({ statusPath, stepId, entry, step })
     .filter((artifact) => isReadableArtifactPath(artifact.path))
     .map((artifact) => ({
       label: path.join("artifacts", artifact.path),
@@ -146,10 +160,10 @@ export function artifactReadSources({ statusPath, stepId, entry }) {
     }));
 }
 
-export function artifactRequirementMessage(stepId) {
-  const safe = String(stepId).replace(/[^a-zA-Z0-9._-]+/g, "__");
+export function artifactRequirementMessage(stepId, step) {
+  const name = receiptArtifactName(stepId, step);
   return (
-    `no artifact found for card ${stepId} — write .conductor/artifacts/${safe}.md ` +
+    `no artifact found for card ${stepId} — write .conductor/artifacts/${name} ` +
     `with the work product or action record before completing`
   );
 }

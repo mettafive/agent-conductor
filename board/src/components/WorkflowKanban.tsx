@@ -136,6 +136,10 @@ function isDiagnosticArtifactFile(file: ArtifactFile): boolean {
   return /(^|-)check-prompt\.(txt|md)$/i.test(file.name) || /^attempt-\d+-(compose|check)-(prompt|raw)\.(txt|md)$/i.test(file.name);
 }
 
+function isMigrationArtifactFile(file: ArtifactFile): boolean {
+  return /^(create-cards|map-dependencies|validate-workflow|migration-plan|integration)\.md$/i.test(file.name);
+}
+
 function orderedArtifactFiles(files: ArtifactFile[]): ArtifactFile[] {
   return [...files].sort((a, b) =>
     a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }),
@@ -1228,6 +1232,14 @@ function ArtifactModal({
     () => orderedFiles.filter((file) => !visibleArtifactFiles.some((visible) => visible.path === file.path)),
     [orderedFiles, visibleArtifactFiles],
   );
+  const executionFiles = useMemo(
+    () => otherRunFiles.filter((file) => !isMigrationArtifactFile(file)),
+    [otherRunFiles],
+  );
+  const migrationFiles = useMemo(
+    () => otherRunFiles.filter((file) => isMigrationArtifactFile(file)),
+    [otherRunFiles],
+  );
 
   async function copyContent() {
     if (!content?.content) return;
@@ -1298,12 +1310,20 @@ function ArtifactModal({
                     No artifact is linked to this card.
                   </div>
                 )}
-                {otherRunFiles.length > 0 && (
+                {executionFiles.length > 0 && (
                   <>
                     <div className="pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-dim">
-                      All artifacts
+                      Execution
                     </div>
-                    {otherRunFiles.map((file) => renderFileButton(file))}
+                    {executionFiles.map((file) => renderFileButton(file))}
+                  </>
+                )}
+                {migrationFiles.length > 0 && (
+                  <>
+                    <div className="mt-3 border-t border-line pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-dim">
+                      Migration
+                    </div>
+                    {migrationFiles.map((file) => renderFileButton(file))}
                   </>
                 )}
               </div>

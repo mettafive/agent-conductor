@@ -56,7 +56,7 @@ export async function runComplete(args) {
       "usage: conductor-board complete <step-id>\n" +
         "       conductor-board complete <loop-id>::<iteration>::<sub-step>\n\n" +
         "  Consumes the independent checker verdict recorded by `check` or `gate-result`.\n" +
-        "  PASS plus .conductor/artifacts/<card>.md moves the card to done.\n" +
+        "  PASS plus .conductor/artifacts/<card-index>-<slugified-card-title>.md moves the card to done.\n" +
         "  Supporting files must be referenced from that markdown receipt.\n" +
         "  FAIL stores checker feedback, increments the\n" +
         "  attempt counter, and keeps the card running until max_attempts is exhausted.",
@@ -191,13 +191,13 @@ export async function runComplete(args) {
       } else {
         st = status.steps[stepId] = status.steps[stepId] || { attempt: 1 };
       }
-      const artifact = findReceiptArtifact({ statusPath, stepId, entry: st });
+      const artifact = findReceiptArtifact({ statusPath, stepId, entry: st, step });
       const artifacts = [
-        ...findArtifacts({ statusPath, stepId, entry: st }),
+        ...findArtifacts({ statusPath, stepId, entry: st, step }),
         ...findArtifactsReferencedInReceipt(statusPath, artifact),
       ];
       if (!artifact) {
-        console.error(red(`  ✕ ${artifactRequirementMessage(stepId)}`));
+        console.error(red(`  ✕ ${artifactRequirementMessage(stepId, step)}`));
         console.log("");
         return false;
       }

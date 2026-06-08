@@ -28,7 +28,7 @@ fold it into a card that can be checked.
 
 - **Card:** one verifiable unit of work on the board.
 - **Instruction:** what the agent must do; this is what the checker evaluates.
-- **Artifact:** the durable markdown receipt the card produced: `.conductor/artifacts/<card-index>.md`.
+- **Artifact:** the durable markdown receipt the card produced: `.conductor/artifacts/<card-index>-<slugified-card-title>.md`.
 - **Update:** agent narration shown on the board; never proof of completion.
 - **Checker:** independent evaluator comparing the instruction to the artifact.
 
@@ -67,13 +67,13 @@ npx conductor-board update 0 "Found AVMA and university guidance; comparing cost
 ```
 
 3. After producing the card artifact, save the primary markdown receipt as
-   `.conductor/artifacts/<card-index>.md`, then run `check` to print the
+   `.conductor/artifacts/<card-index>-<slugified-card-title>.md`, then run `check` to print the
    independent checker prompt. The checker sees the card instruction and artifact
    only. Evaluate that prompt in a clean context, then record the PASS/FAIL
    verdict:
 
 ```bash
-npx conductor-board check 0 --output-file .conductor/artifacts/0.md
+npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "PASS ..."
 npx conductor-board complete 0
 ```
@@ -87,7 +87,7 @@ environment, then run `check`, record the verdict, and complete again:
 
 ```bash
 npx conductor-board feedback 0
-npx conductor-board check 0 --output-file .conductor/artifacts/0.md
+npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "PASS ..."
 npx conductor-board complete 0
 ```
@@ -111,7 +111,7 @@ The artifact must be either the actual work product or a verifiable action
 record. If the artifact merely describes what was done without proof, the checker
 must fail immediately.
 
-Use `.conductor/artifacts/<card-index>.md` as the required primary artifact path.
+Use `.conductor/artifacts/<card-index>-<slugified-card-title>.md` as the required primary artifact path.
 The markdown receipt must contain one of:
 
 - **Work product:** the actual content, code, data, diff, report, source list,
@@ -119,7 +119,7 @@ The markdown receipt must contain one of:
 - **Action record:** command/script run, timestamp, inputs, return value,
   changed resource, affected rows/files/URLs, and verification query/curl/test
   result.
-- **Non-text work:** keep `.conductor/artifacts/<card-index>.md` as the primary
+- **Non-text work:** keep `.conductor/artifacts/<card-index>-<slugified-card-title>.md` as the primary
   artifact. Put every image from that card inline in the receipt with markdown
   image syntax, for example `![Alt text](7-treatment-image.webp)`. List
   screenshots, PDFs, uploads, CSV, JSON, HTML previews, or other files as

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { receiptArtifactName } from "./artifacts.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -92,7 +93,7 @@ export async function runTest(args) {
       r = run(["step", key, "running", "--headless"], tmp);
       if (r.code !== 0) return fail(`step ${key}`, r);
 
-      const outputFile = path.join(tmp, ".conductor", "artifacts", `${key}.md`);
+      const outputFile = path.join(tmp, ".conductor", "artifacts", receiptArtifactName(key, card));
       fs.writeFileSync(outputFile, `# ${card.title}\n\nStructural test output for: ${card.instruction}\n`);
 
       r = run(["check", key], tmp);

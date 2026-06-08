@@ -215,15 +215,15 @@ function traceForPrompt(entry) {
   return truncate(JSON.stringify(trace, null, 2), 12000);
 }
 
-function artifactForPrompt({ statusPath, stepId, entry }) {
-  const receipt = findReceiptArtifact({ statusPath, stepId, entry });
+function artifactForPrompt({ statusPath, stepId, entry, step }) {
+  const receipt = findReceiptArtifact({ statusPath, stepId, entry, step });
   const referenced = findArtifactsReferencedInReceipt(statusPath, receipt);
-  const readable = artifactReadSources({ statusPath, stepId, entry });
+  const readable = artifactReadSources({ statusPath, stepId, entry, step });
   const byPath = new Map();
   for (const source of readable) byPath.set(source.path, source);
   for (const artifact of referenced) {
     if (!byPath.has(artifact.path)) {
-      const sources = artifactReadSources({ statusPath, stepId, entry: { artifacts: [artifact.path] } });
+      const sources = artifactReadSources({ statusPath, stepId, entry: { artifacts: [artifact.path] }, step });
       for (const source of sources) byPath.set(source.path, source);
     }
   }
@@ -297,7 +297,7 @@ export async function postCardLearning({ statusPath, workflowPath, stepId } = {}
     const entry = statusEntryFor(status, resolved.loopPath, stepId);
     if (!entry || entry.status !== "done") throw new Error(`card ${stepId} is not done`);
     const duration = durationSeconds(entry);
-    const artifact = artifactForPrompt({ statusPath: resolvedStatusPath, stepId, entry });
+    const artifact = artifactForPrompt({ statusPath: resolvedStatusPath, stepId, entry, step: resolved.step });
     const prompt = postCardLearningPrompt({ step: resolved.step, entry, artifact, duration });
     const raw = await withTimeout(callModel(prompt, { role: "post-card-learning", attempt: 1 }), 45000);
     const json = extractJson(raw);

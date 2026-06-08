@@ -73,8 +73,22 @@ const writeFile = (tmp, rel, body) => {
   fs.writeFileSync(p, body);
   return p;
 };
+function slugTitle(title) {
+  return String(title || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-") || "card";
+}
+function receiptName(tmp, id) {
+  const workflow = JSON.parse(fs.readFileSync(path.join(tmp, ".conductor", "workflow.json"), "utf8"));
+  const step = (workflow.steps || [])[Number(id)] || (workflow.steps || []).find((s) => s && s.id === id);
+  return `${String(id).replace(/[^a-zA-Z0-9._-]+/g, "__")}-${slugTitle(step?.title)}.md`;
+}
 const writeArtifact = (tmp, id, body = "Artifact output.") =>
-  writeFile(tmp, path.join(".conductor", "artifacts", `${String(id).replace(/[^a-zA-Z0-9._-]+/g, "__")}.md`), body);
+  writeFile(tmp, path.join(".conductor", "artifacts", receiptName(tmp, id)), body);
 const writeOutput = (tmp, rel, body) =>
   writeFile(tmp, path.join(".conductor", "artifacts", rel), body);
 const withDecomposeFixtures = (tmp, files, fn) => {
@@ -894,7 +908,7 @@ test("complete: a passing checker result advances the step to done", () => {
   assert(r.code === 0, `complete should pass on checker result:\n${r.out}`);
   assert(/Checker passed/.test(r.out), `expected pass message:\n${r.out}`);
   assert(status(tmp).steps.ship.status === "done", "ship not marked done");
-  assert(status(tmp).steps.ship.artifacts.includes("ship.md"), "artifact path not recorded on completion");
+  assert(status(tmp).steps.ship.artifacts.includes("ship-ship.md"), "artifact path not recorded on completion");
 });
 
 test("complete: a passing checker result without an artifact is rejected", () => {
@@ -918,7 +932,7 @@ test("complete: an action artifact can satisfy a non-content card", () => {
   cli(["gate-result", "ship", "--passed", "--evidence", "PASS\nSUMMARY: Deployment artifact proves command, return value, changed resource, and verification."], tmp);
   const r = cli(["complete", "ship"], tmp);
   assert(r.code === 0, `artifact-backed action should complete:\n${r.out}`);
-  assert(status(tmp).steps.ship.artifact === "ship.md", "artifact path not recorded");
+  assert(status(tmp).steps.ship.artifact === "ship-ship.md", "artifact path not recorded");
 });
 
 test("complete: situational no-action artifact can pass", () => {
@@ -988,7 +1002,7 @@ test("complete: binary support requires markdown receipt", () => {
   cli(["gate-result", "ship", "--passed", "--evidence", "PASS\nSUMMARY: Image exists."], tmp);
   const r = cli(["complete", "ship"], tmp);
   assert(r.code === 0, `binary support should complete with receipt:\n${r.out}`);
-  assert(status(tmp).steps.ship.artifact === "ship.md", "markdown receipt path not recorded");
+  assert(status(tmp).steps.ship.artifact === "ship-ship.md", "markdown receipt path not recorded");
   assert(status(tmp).steps.ship.artifacts.includes("ship.png"), "supporting binary artifact not recorded");
 });
 
@@ -1006,7 +1020,7 @@ test("complete: markdown receipt plus related binary records both", () => {
   cli(["gate-result", "ship", "--passed", "--evidence", "PASS\nSUMMARY: Markdown receipt and image path are present."], tmp);
   const r = cli(["complete", "ship"], tmp);
   assert(r.code === 0, `markdown receipt plus binary should complete:\n${r.out}`);
-  assert(status(tmp).steps.ship.artifact === "ship.md", "artifact path not recorded");
+  assert(status(tmp).steps.ship.artifact === "ship-ship.md", "artifact path not recorded");
   assert(status(tmp).steps.ship.artifacts.includes("ship.png"), "supporting binary artifact not recorded");
 });
 

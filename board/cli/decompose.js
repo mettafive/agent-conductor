@@ -165,7 +165,7 @@ Do not use condition fields. Conditionality belongs inside instruction text.
 
 A good card is a concrete, independently verifiable unit of work.
 Every card instruction must require one primary markdown receipt at
-\`.conductor/artifacts/<card-index>.md\`:
+\`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`:
 - content/code/data/report/table/file work must be shown inside that markdown receipt
 - action cards must write an action record in that markdown receipt, including command, return value, changed resource, and verification result
 - supporting files such as images, JSON, CSV, screenshots, PDFs, uploads, or deploys must be referenced from that markdown receipt, not treated as standalone primary artifacts. Image-producing cards must require the receipt to embed every image from that card inline with markdown image syntax, while listing the supporting file paths and verification proof.
@@ -230,7 +230,7 @@ The composer is not trusted. Check only the skill and the cards.
 
 A good conductor card is a concrete, verifiable unit of work.
 The instruction must require one primary markdown receipt at
-\`.conductor/artifacts/<card-index>.md\`. The receipt is the single source of
+\`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`. The receipt is the single source of
 truth for what the card did: work product, action record, or non-text support
 reference list. Supporting files such as images, JSON, CSV, screenshots, PDFs, uploads,
 or deploys must be referenced from the markdown receipt, not treated as
@@ -246,7 +246,7 @@ FAIL if:
 - a card mixes before/after work that cannot happen at one safe start point; request a split instead
 - a card is impossible because it requires proof, results, or artifacts from a later action in the same card
 - a card instruction only says to think/analyze/consider without producing an artifact or verifiable decision
-- a card does not require the primary receipt to be \`.conductor/artifacts/<card-index>.md\`
+- a card does not require the primary receipt to be \`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`
 - a title is unclear shorthand, unexplained jargon, an acronym-heavy label, or too vague for a user watching the board
 - a title is longer than 40 characters unless shortening it would make it unclear
 - output format, deliverables, constraints, warnings, or examples from the skill were lost
