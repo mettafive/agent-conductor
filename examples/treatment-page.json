@@ -1,57 +1,47 @@
 {
   "conductor": "3.0.0",
   "name": "treatment-page",
-  "description": "A branching SEO page builder. Researches a veterinary treatment, then branches on whether pet insurance is relevant before writing and SEO-checking the page.\n",
+  "description": "A situational SEO page builder. Researches a veterinary treatment, evaluates whether insurance content is relevant, then writes and SEO-checks the page.\n",
   "inputs": [
     "treatment",
     "animal"
   ],
   "steps": [
     {
-      "id": "research",
       "instruction": "Research the {treatment} for {animal}: what it is, when it's needed,\ntypical cost ranges, and what pet owners worry about.\n",
       "output": "research",
       "title": "Research",
       "requires": []
     },
     {
-      "id": "keyword-research",
       "instruction": "Pull the search demand for '{treatment} {animal}' from DataForSEO: head term,\nlong-tail variants, and the questions people actually ask. This shapes the\ntitle, headings, and FAQ downstream.\n",
       "requires": [
-        "research"
+        0
       ],
       "output": "keywords",
       "title": "Keyword Research"
     },
     {
-      "id": "insurance-relevant",
-      "instruction": "Decide whether pet insurance meaningfully affects how an owner approaches\n{treatment}. True if it's expensive, elective-adjacent, or commonly claimed.\n",
-      "type": "condition",
-      "if_true": "compare-insurers",
-      "if_false": "write-page",
-      "title": "Insurance Relevant",
-      "requires": []
+      "instruction": "Evaluate whether pet insurance meaningfully affects how an owner approaches\n{treatment}. Write an artifact explaining the decision with evidence. If insurance is relevant, include what comparison work is needed. If it is not relevant, document why no insurance section is needed.\n",
+      "title": "Evaluate Insurance Relevance",
+      "requires": [0]
     },
     {
-      "id": "compare-insurers",
-      "instruction": "Compare how the major pet insurers cover {treatment} for {animal}:\nwhat's included, typical excess, and any waiting periods.\n",
+      "instruction": "Read the insurance relevance artifact. If insurance is relevant, compare how the major pet insurers cover {treatment} for {animal}: what's included, typical excess, and any waiting periods. If insurance is not relevant, write an artifact documenting that no insurer comparison is needed and cite the relevance decision.\n",
       "output": "insurance_table",
-      "then": "write-page",
       "title": "Compare Insurers",
-      "requires": []
+      "requires": [2]
     },
     {
-      "id": "write-page",
       "instruction": "Write the {treatment} page for {animal} owners using {research}.\nIf an {insurance_table} exists, weave it in as a dedicated section.\n",
       "output": "page",
       "title": "Write Page",
-      "requires": []
+      "requires": [0, 1, 3]
     },
     {
-      "id": "seo-check",
       "instruction": "Audit {page} for SEO: title tag, meta description, heading hierarchy,\ninternal links, and the target keyword '{treatment} {animal}'.\n",
       "requires": [
-        "write-page"
+        4
       ],
       "title": "Seo Check"
     }

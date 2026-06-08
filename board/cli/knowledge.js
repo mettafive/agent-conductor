@@ -11,14 +11,14 @@ export function discoverConductor(statusPath, explicit) {
     return fs.existsSync(p) ? p : null;
   }
   const dir = path.dirname(statusPath);
-  for (const c of ["conductor.json"]) {
-    const p = path.join(dir, c);
-    if (fs.existsSync(p)) return p;
+  for (const paired of [
+    path.join(dir, "workflow.json"),
+    path.join(path.dirname(path.dirname(dir)), "workflow.json"),
+  ]) {
+    if (fs.existsSync(paired)) return paired;
   }
-  for (const c of ["conductor.json"]) {
-    const p = path.resolve(process.cwd(), c);
-    if (fs.existsSync(p)) return p;
-  }
+  const local = path.resolve(process.cwd(), "workflow.json");
+  if (fs.existsSync(local)) return local;
   return null;
 }
 

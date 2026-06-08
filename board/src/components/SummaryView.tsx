@@ -8,7 +8,7 @@ import { AppearIcon } from "./Appear";
 /** Shown when a run is complete — INSIGHTS are the centerpiece. What it PRODUCED leads (the outcome),
  *  then "What the run learned" front-and-center: the actionable insights (new this run + open) are
  *  shown by default, never hidden behind a count; inherited/durable context folds behind a toggle.
- *  Every insight click-expands to its full depth. Directives follow; the per-step recap is demoted. */
+ *  Every insight click-expands to its full depth. The per-step recap is demoted. */
 export function SummaryView({ model }: { model: BoardModel }) {
   const failed = model.overallStatus === "failed";
   const wf = model.steps.filter((s) => s.phase === "workflow");
@@ -27,10 +27,10 @@ export function SummaryView({ model }: { model: BoardModel }) {
     const fb = s.heartbeat.find((h) => h.finalBeat);
     const note = fb?.handoff?.context ?? fb?.note ?? s.heartbeat.at(-1)?.note ?? null;
     const gates = s.criteria.length
-      ? `${s.criteria.filter((c) => c.passed === true).length}/${s.criteria.length} gates`
+      ? `${s.criteria.filter((c) => c.passed === true).length}/${s.criteria.length} checks`
       : null;
     const loop = s.isLoop && s.loop ? `${s.loop.completed}/${s.loop.total}` : null;
-    return { id: s.id, note, column: s.column, gates, loop };
+    return { id: s.id, title: s.title, note, column: s.column, gates, loop };
   });
 
   // What we learned — grouped by lifecycle stage, each insight expandable to its note + change.
@@ -40,7 +40,6 @@ export function SummaryView({ model }: { model: BoardModel }) {
   const standing = knowledge.filter((k) => k.status === "applied"); // durable changes already baked in
   const open = knowledge.filter((k) => k.status === "open"); // noticed, not yet acted on
   const actionable = emerging.length + open.length; // the insights that are the point of this screen
-  const directives = (model.developerNotes ?? []).filter((n) => n.directive);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
@@ -112,34 +111,7 @@ export function SummaryView({ model }: { model: BoardModel }) {
         </Section>
       )}
 
-      {/* Directives the flow manager set, and what became of them */}
-      {directives.length > 0 && (
-        <Section title="Directives you set">
-          <ul className="space-y-1.5">
-            {directives.map((d, i) => (
-              <li key={`d${i}`} className="flex gap-2 text-[12px] leading-snug text-mist-2">
-                <span
-                  className={`mt-px shrink-0 rounded px-1 font-mono text-[9px] ${
-                    d.status === "applied"
-                      ? "bg-mint/15 text-mint"
-                      : d.status === "deferred"
-                        ? "bg-line-2/60 text-dim"
-                        : "bg-line-2/60 text-mist"
-                  }`}
-                >
-                  {d.status}
-                </span>
-                <span className="flex-1">
-                  {d.text}
-                  {d.resolution && <span className="mt-0.5 block text-[10.5px] text-dim">↳ {d.resolution}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {/* What happened — context, not the payoff. Demoted below insights + directives and
+      {/* What happened — context, not the payoff. Demoted below insights and
           collapsed behind a count; one tight line per step when expanded. */}
       {happened.length > 0 && <Happened steps={happened} />}
     </div>
@@ -257,7 +229,7 @@ function Section({
   );
 }
 
-type Happen = { id: string; note: string | null; column: string; gates: string | null; loop: string | null };
+type Happen = { id: string; title: string; note: string | null; column: string; gates: string | null; loop: string | null };
 
 /** The per-step recap — context, not the payoff. Collapsed behind a count and demoted below the
  *  insights + directives; one tight line per step when expanded. */
@@ -281,12 +253,12 @@ function Happened({ steps }: { steps: Happen[] }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-[11px] text-chalk">{h.id}</span>
+                  <span className="font-mono text-[11px] text-chalk">{h.title}</span>
                   {h.loop && <span className="font-mono text-[10px] text-mist">{h.loop}</span>}
                   {h.gates && <span className="font-mono text-[10px] text-mist">{h.gates}</span>}
                 </div>
                 {h.note && (
-                  <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-mist-2">{renderNote(h.note)}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap break-words text-[12px] leading-snug text-mist-2">{renderNote(h.note)}</p>
                 )}
               </div>
             </li>

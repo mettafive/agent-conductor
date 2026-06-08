@@ -85,7 +85,7 @@ export function IterationCard({
     >
       <div className="flex items-center gap-2.5">
         <Led state={col} />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-chalk">{sub.id}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-chalk">{sub.title}</span>
         {sub.attempt > 1 && (
           <span title={`${sub.attempt} attempts`} className="shrink-0 text-[11px] text-dim">
             attempt {sub.attempt}
@@ -117,7 +117,7 @@ export function IterationCard({
               title="carries an insight"
             />
           )}
-          <span className="line-clamp-2">{renderNote(latest.note)}</span>
+          <span className="whitespace-pre-wrap break-words">{renderNote(latest.note)}</span>
         </div>
       )}
 

@@ -5,12 +5,12 @@ import { IterationCard } from "./IterationCard";
 import { Led } from "./Led";
 import { Icon } from "./Icon";
 
-const MAIN: Col[] = ["pending", "running", "gate", "done"];
+const MAIN: Col[] = ["pending", "running", "checking", "done"];
 
 const LABEL: Record<Col, string> = {
   pending: "Pending",
   running: "Running",
-  gate: "Checking",
+  checking: "Checking",
   done: "Done",
   failed: "Failed",
 };
@@ -71,7 +71,7 @@ export function IterationKanban({
             {pos}/{total}
           </span>
         )}
-        <span className="font-mono text-[11px] text-dim">{loopStep.id}</span>
+        <span className="font-mono text-[11px] text-dim">{loopStep.title}</span>
       </div>
 
       <LayoutGroup>

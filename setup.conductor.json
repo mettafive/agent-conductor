@@ -7,48 +7,56 @@
   ],
   "steps": [
     {
-      "id": "preflight",
       "instruction": "Verify the environment can run conductor-board.\nCheck that Node.js 18+ and npx are available.\n",
       "title": "Preflight",
       "requires": []
     },
     {
-      "id": "start-board",
-      "instruction": "Start the board server ONCE in the background and leave it running for the\nwhole run. It opens the browser automatically — do NOT pass --headless here,\nthat defeats the live view (--headless is only for CI / no-display runs).\n  npx conductor-board >/tmp/conductor-board.log 2>&1 &\nWait ~3 seconds for it to initialize. It auto-detects a free port if 3042\nis taken and records the chosen port in .conductor/server.json. Do NOT run\nthis command again later — one board per run. Re-running just reuses the\nlive server, but repeatedly launching is how you end up with stray tabs.\n",
+      "instruction": "Reserve the board for this run. Do not execute workflow cards yet.\nThe visible board will be initialized after the workflow is generated and\nvalidated, using conductor-board init-board so it can confirm the current\nworkflow is live before execution starts.\n",
       "requires": [
-        "preflight"
+        0
       ],
-      "title": "Start Board"
+      "title": "Reserve Board"
     },
     {
-      "id": "card-design",
-      "instruction": "Read the user's skill content and design ONLY the board cards:\n\n{skill_content}\n\nOutput one card for every verifiable unit of work. If a unit of work cannot be independently checked, fold it into a card that can be checked. Do not decide dependencies yet. Do not write requires, loops, parallel flags, or ordering.\n\nSave the result to .conductor/cards.json. Write a JSON array. Use EXACTLY these fields per object:\n\n  [\n    {\n      \"id\": \"research-treatment\",\n      \"title\": \"Research the treatment\",\n      \"instruction\": \"Gather at least 4 veterinary sources covering what, when, cost, and owner concerns.\"\n    }\n  ]\n\nEvery card must have only id, title, and instruction. The instruction is the implicit checker contract: the independent checker compares the card's output to that instruction. The file must not contain gate, dependency, requires, parallel, or ordering fields.",
+      "instruction": "Compile or reuse the accepted workflow skeleton for this skill:\n  conductor-board compile --skill SKILL.md\nIf no accepted compiled workflow exists, this command must create checked cards, map checked dependencies, spot-audit the graph, validate the workflow, and save the accepted skeleton for future runs. If an accepted skeleton exists for the same skill/compiler version, reuse it. Do not manually create .conductor/cards.json or .conductor/workflow.json unless compile fails.",
       "requires": [
-        "start-board"
+        1
       ],
-      "title": "Card Design"
+      "title": "Compile Workflow"
     },
     {
-      "id": "dependency-mapping",
-      "instruction": "Read .conductor/cards.json and determine the dependency graph. Add requires for each card: [] for cards that can start immediately, or a list of card ids that must be done first. Cards whose dependencies are all satisfied can run; cards with no mutual dependencies can run in parallel.\n\nAssemble the final .conductor/conductor.json from the cards. Preserve each card's id, title, and instruction exactly unless the dependency analysis proves a card must be folded into another verifiable card. The final conductor must have no cycles and every card from cards.json must be present.",
+      "instruction": "Confirm compile produced the reusable skeleton files:\n  test -f .conductor/cards.json && test -f .conductor/workflow.json && test -f .conductor/compile-meta.json\nRead .conductor/compile-meta.json and note whether this was a first compile or accepted cache reuse. Do not redo card design or dependency mapping if compile succeeded.",
       "requires": [
-        "card-design"
+        2
       ],
-      "title": "Dependency Mapping"
+      "title": "Confirm Compile"
     },
     {
-      "id": "review-board",
-      "instruction": "Before executing, judge the board as a veteran flow manager would. Can you see the whole story? Is every card independently checkable? Is the grouping one altitude? Do the titles read like promises? Are the instructions concrete enough for an independent checker to compare output against them? Fix every disappointment before running.",
+      "instruction": "Validate the generated workflow before anything executes:\n  conductor-board validate .conductor/workflow.json\nFix every validation error. Do not proceed until validation passes.",
       "requires": [
-        "dependency-mapping"
+        3
+      ],
+      "title": "Validate Workflow"
+    },
+    {
+      "instruction": "Initialize the visible board for the current workflow before any card execution:\n  conductor-board init-board .conductor/workflow.json\nThis command must run status-init, start or reuse the board server, open the\nbrowser, confirm /health is live, and confirm the board is serving the current\nworkflow name. Do not proceed unless init-board prints the board URL and success.",
+      "requires": [
+        4
+      ],
+      "title": "Initialize Visible Board"
+    },
+    {
+      "instruction": "Before executing, judge the visible board as a veteran flow manager would. Can you see the whole story? Is every card independently checkable? Is the grouping one altitude? Do the titles read like promises? Are the instructions concrete enough for an independent checker to compare output against them? Confirm every card can produce a durable artifact under .conductor/artifacts/: work product for creation cards, action record for action cards, and markdown receipt for non-text work. Image cards must embed every produced image inline in the receipt. complete refuses Done without one. Fix every disappointment before running.",
+      "requires": [
+        5
       ],
       "title": "Review Board"
     },
     {
-      "id": "execute-workflow",
-      "instruction": "Execute the generated conductor workflow.\nInitialize the board with: conductor-board status-init .conductor/conductor.json\nPhase 0 self-improvement is parked in v3 and off by default. If a conductor\nexplicitly sets auto_improve: true, the old improvement cards may be injected,\nbut normal runs should start the work cards directly.\nSet the top-level \"goal\" from the conductor's description, and refresh\n\"current_step_goal\" each time current_step changes.\nWalk each step in order, updating status.json after EVERY transition\n(pending -> running -> checking -> passed/failed -> done). The human is\nwatching the board to follow along — never do real work without updating the\nboard first. Doing work the board doesn't reflect (\"freeballing\") is not\nallowed: if you drift, stop, re-sync the board, restart the step cleanly, and\napologize. The board shows a red \"Freeballing?\" banner after ~3 minutes\nwithout a heartbeat. Retry on checker failure — never skip.\nNOTE: this step runs only after review-board, so the board is already one a\nflow manager would trust before any real work starts.\nAt least once per minute, append a heartbeat {at, note} to the current\nstep's heartbeat array (read prior entries first; orient against the instruction\nAND the goal; use [text](url) links for any PRs or pages you produce).\nBefore marking each step done, append a finalBeat — {at, note, finalBeat:\ntrue, handoff: {to, context, produced}} — summarizing the step and handing\noff to the next; read the previous step's finalBeat before you start one.\nFor loop steps, update \"completed\" and the \"iterations\" object as EACH\niteration finishes — don't wait until the loop ends.\nAt the START of the run, read .conductor/insights.md (if it exists) to carry\nforward what past runs learned — don't repeat insights already recorded there.\nAt run end, before setting status \"done\", write what you learned into the\nconductor's knowledge section — the conductor IS the knowledge base. Use:\n  conductor-board suggest \"title\" --scope <scope> [--step S --current X --proposed Y]\n--scope is REQUIRED (this-conductor | upstream | template | tooling | corpus).\nA repeat sighting escalates emerging -> proven (3x); proven this-conductor\ninsights auto-apply in the next run's Phase 0. Browse them on the board's\n✨ Insights page. Set the top-level status to \"done\" when the last step\ncompletes.\n",
+      "instruction": "Execute the generated conductor workflow.\nDo not begin card execution until init-board confirms the board is live and showing the current workflow.\nPhase 0 self-improvement is parked in v3 and off by default. If a conductor\nexplicitly sets auto_improve: true, the old improvement cards may be injected,\nbut normal runs should start the work cards directly.\nSet the top-level \"goal\" from the conductor's description, and refresh\n\"current_step_goal\" each time current_step changes.\nWalk each step in order, updating status.json after EVERY transition\n(pending -> running -> checking -> passed/failed -> done). The human is\nwatching the board to follow along — never do real work without updating the\nboard first. Doing work the board doesn't reflect (\"freeballing\") is not\nallowed: if you drift, stop, re-sync the board, restart the step cleanly, and\napologize. The board shows a red \"Freeballing?\" banner after ~3 minutes\nwithout an agent update. Retry on checker failure — never skip.\nNOTE: this step runs only after review-board, so the board is already one a\nflow manager would trust before any real work starts.\nWrite progress updates with conductor-board update <step> \"note\". The old\nheartbeat command remains a compatibility alias, but product language is\nupdate. Treat each update like a Codex preamble: concise, grouped, and useful\nfor bringing the user along while work is happening.\nDo not write one update for every tiny read, command, or edit. Group related\nactions. Keep updates to 1-2 sentences; for quick updates, aim for 8-12 words.\nBuild on prior context: say what you learned so far and what it implies for the\nnext action. Avoid trivial updates unless they are part of a larger grouped\naction. Never write status-log updates like \"drafting hero\", \"checking\",\n\"running tests\", or \"checker passed\" — the board already shows system status.\nGood update: \"README still describes explicit gates, so I am rewriting the\nquick start around instruction-based checking.\"\nGood update: \"Choosing verified cards over gates because v3 no longer has gate\nfields.\"\nBefore marking each step done, append a final update with --handoff --to\n<next-step> that summarizes what the next card needs to know. Store the actual\nwork product or action record in .conductor/artifacts/<step>.md; updates are\nnarration, not the work product. For non-text work, write a human-readable markdown receipt as the artifact and\nreference supporting files inside it. For image work, embed every image produced\nby that card inline in the receipt with markdown image syntax, for example\n![Alt text](image.webp). The artifact must include concrete proof: command/script, inputs, return value,\nchanged resource and verification result when applicable.\nFor loop steps, update \"completed\" and the \"iterations\" object as EACH\niteration finishes — don't wait until the loop ends.\nAt the START of the run, read .conductor/insights.md (if it exists) to carry\nforward what past runs learned — don't repeat insights already recorded there.\nAt run end, before setting status \"done\", write what you learned into the\nconductor's knowledge section — the conductor IS the knowledge base. Use:\n  conductor-board suggest \"title\" --scope <scope> [--step S --current X --proposed Y]\n--scope is REQUIRED (this-conductor | upstream | template | tooling | corpus).\nA repeat sighting escalates emerging -> proven (3x); proven this-conductor\ninsights auto-apply in the next run's Phase 0. Browse them on the board's\nInsights page. Set the top-level status to \"done\" when the last step\ncompletes.\n",
       "requires": [
-        "review-board"
+        6
       ],
       "title": "Execute Workflow"
     }

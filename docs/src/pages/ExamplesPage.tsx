@@ -16,7 +16,7 @@ export function ExamplesPage() {
       <SectionHead
         kicker="Examples"
         title="Patterns to steal from"
-        sub="From a linear pipeline to checked workflows with branches and loops."
+        sub="From a linear pipeline to checked workflows with situational instructions and loops."
       />
 
       <div className="mx-auto mt-12 max-w-5xl space-y-3">

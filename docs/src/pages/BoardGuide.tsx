@@ -15,16 +15,14 @@ const CONDUCTOR_JSON = `{
   "description": "Research, outline, write, review.",
   "steps": [
     {
-      "id": "research",
       "title": "Research",
       "instruction": "Gather five credible sources on {topic}.",
       "requires": []
     },
     {
-      "id": "write",
       "title": "Write",
       "instruction": "Write an 800-word report, citing every claim.",
-      "requires": ["research"]
+      "requires": [0]
     }
   ]
 }`;
@@ -33,10 +31,10 @@ const STATUS_JSON = `{
   "workflow": "basic-report",
   "status": "running",
   "goal": "Research, outline, write, review.",
-  "current_step": "write",
+  "current_step": "1",
   "steps": {
-    "research": { "status": "done",    "gate": "passed",  "attempt": 1 },
-    "write":    { "status": "running", "gate": "pending", "attempt": 2,
+    "0": { "status": "done",    "gate": "passed",  "attempt": 1 },
+    "1": { "status": "running", "gate": "pending", "attempt": 2,
       "heartbeat": [
         { "at": "…", "note": "Drafting section 2. Tracking citations as I go." }
       ]
@@ -64,19 +62,19 @@ npx conductor-board resolve <cardId> \\
 npx conductor-board resolve <cardId> \\
   --deferred "needs the user's input on which source to trust"`;
 
-const CADENCE_NOTE = `# heartbeat about every 30s while a step runs (default)
-npx conductor-board heartbeat write "Drafting section 2…"
+const CADENCE_NOTE = `# write a concise progress update while a card runs
+npx conductor-board update 2 "README still needs receipt wording, so I am rewriting the quick start around instruction-based checking."
 
 # the watcher can pick a cadence from 15s to 5 min in Settings;
-# the board flags a stall after ~3 missed beats.`;
+# the board flags silence after ~3 missed updates.`;
 
 const MULTI_TREE = `.conductor/
 ├── daily-price/
-│   ├── conductor.json
+│   ├── workflow.json
 │   ├── status.json
 │   └── history/
 └── treatment-page/
-    ├── conductor.json
+    ├── workflow.json
     └── status.json`;
 
 /* ---------- small layout helpers (match the landing-page design) ---------- */
@@ -126,7 +124,7 @@ const TOC = [
   ["no-skip", "Nothing gets skipped"],
   ["activity-cards", "Activity cards"],
   ["directives", "Directives & steering"],
-  ["monitor", "Heartbeat monitor"],
+  ["monitor", "Update stream"],
   ["multiple", "Multiple workflows"],
   ["history", "History & replay"],
   ["done-screen", "The done screen"],
@@ -255,7 +253,7 @@ export function BoardGuide() {
             <section className="space-y-4">
               <H2 id="overview" kicker="Overview">What the board is</H2>
               <P>
-                You hand an agent a <Code>conductor.json</Code> — a workflow broken
+                You hand an agent a <Code>workflow.json</Code> — a workflow broken
                 into <strong className="text-chalk">checked steps</strong>. As the
                 agent works, it writes its progress to{" "}
                 <Code>.conductor/status.json</Code>. The board watches that file
@@ -267,7 +265,7 @@ export function BoardGuide() {
                 The board is <strong className="text-chalk">observational</strong>.
                 It's a window into what the agent is doing, not a control panel you
                 drive. The agent moves the cards; you watch, expand a card to read
-                its heartbeats, browse past runs, and — when a run finishes — apply
+                its updates, browse past runs, and — when a run finishes — apply
                 the improvements it proposed for itself.
               </P>
             </section>
@@ -281,17 +279,16 @@ export function BoardGuide() {
                   <tbody>
                     {[
                       ["Board", "The local web app you open with npx conductor-board. Watches .conductor/ and updates live over Server-Sent Events."],
-                      ["Workflow", "One conductor.json + its status.json. The board can show several side by side."],
-                      ["Step", "A unit of work in the workflow — rendered as a card. Has a title, instruction, and requires list."],
+                      ["Workflow", "One workflow.json + its status.json. The board can show several side by side."],
+                      ["Card", "A unit of work in the workflow. Has a title, instruction, and requires list; its array index is its identity."],
                       ["Checker", "An independent reviewer that compares the card's output to its instruction before it moves to Done."],
                       ["Column", "A lane representing a step's state: Pending, Running, Checking, Done (and Failed)."],
-                      ["Heartbeat", "A timestamped note the agent appends as it works — by default about every 30s (15s–5min, configurable) — so you can see its thinking."],
-                      ["Activity card", "A group of heartbeats sharing one intent on one target. The agent declares each one; it gets a title, a live status, and a comment box."],
-                      ["finalBeat", "The closing heartbeat of a step — a summary plus a handoff that carries context to the next step."],
+                      ["Update", "A timestamped Codex-style progress note: concise context about what the agent learned, decided, changed, or is handing off."],
+                      ["Handoff", "The closing update of a card — what the next card needs to know."],
                       ["Directive", "A comment you leave on a card. It becomes a steering instruction the next run's Phase 0 must apply or defer — never gloss."],
-                      ["Phase 0", "The self-improvement pass before step 1: applies proven insights and resolves directives. Can't be skipped."],
+                      ["Phase 0", "The self-improvement pass is parked in v3 and runs only when auto_improve is explicitly true."],
                       ["Run", "One execution of a workflow, identified by run_id. Completed runs are archived to history."],
-                      ["Insight → Suggestion", "A heartbeat can flag an improvement; after the run, those become suggestions you apply back to the conductor."],
+                      ["Insight → Suggestion", "An update can flag an improvement; after the run, those become suggestions you apply back to the conductor."],
                     ].map(([term, def], i) => (
                       <tr key={term} className={i % 2 ? "bg-panel/20" : ""}>
                         <td className="whitespace-nowrap border-r border-line px-4 py-2.5 align-top font-mono text-[12px] text-iris">
@@ -309,9 +306,9 @@ export function BoardGuide() {
             <section className="space-y-4">
               <H2 id="columns" kicker="The lanes">Pending → Running → Checking → Done</H2>
               <P>
-                Every step flows left to right. A step only advances when its checker
+                Every card flows left to right. A card only advances when its checker
                 passes; if the checker fails, the agent{" "}
-                <strong className="text-chalk">retries the step — it never skips
+                <strong className="text-chalk">retries the card — it never skips
                 it</strong>, so cards move back into Running rather than jumping
                 ahead.
               </P>
@@ -330,13 +327,13 @@ export function BoardGuide() {
 
             {/* ANATOMY */}
             <section className="space-y-4">
-              <H2 id="card" kicker="The card">Anatomy of a step card</H2>
-              <P>Click any card to expand it. A card carries everything about its step:</P>
+              <H2 id="card" kicker="The card">Anatomy of a card</H2>
+              <P>Click any card to expand it. A card carries everything about its work unit:</P>
               <ul className="space-y-2 text-sm text-mist-2">
                 {[
-                  ["Identity", "the step id and its position in the workflow; a fork icon for condition steps, a loop icon for loops."],
+                  ["Identity", "the card's array index and title; a loop icon for loop cards."],
                       ["Checker", "the independent instruction check, with pass, fail, or pending state."],
-                  ["Heartbeats", "a vertical timeline of the agent's notes, newest first, with relative time while running and absolute time once done."],
+                  ["Updates", "a vertical timeline of the agent's concise progress notes, newest first, with relative time while running and absolute time once done."],
                   ["finalBeat", "the closing beat, marked ·→, showing the handoff to the next step."],
                   ["Loops", "for loop steps, a per-iteration breakdown with its own status dots and filter tabs."],
                   ["Retries", "an ×N badge when a step has been attempted more than once."],
@@ -362,11 +359,11 @@ export function BoardGuide() {
                   <p className="mt-2 text-sm leading-relaxed text-mist-2">What you do in the browser:</p>
                   <ul className="mt-2 space-y-1.5 text-sm text-mist-2">
                     {[
-                      "Watch steps move across the columns live.",
-                      "Expand a card to read its heartbeats and checker results.",
+                      "Watch cards move across the columns live.",
+                      "Expand a card to read its updates and checker results.",
                       "Review instructions before the first run.",
                       "Comment on a card to steer the next run.",
-                      "Open the heartbeat monitor to follow every beat in one stream.",
+                      "Open the update stream to follow every agent note in one place.",
                       "Switch between running workflows in the sidebar.",
                       "Browse history and freeze any past run to its final state.",
                       "Apply the suggestions a finished run proposes.",
@@ -385,12 +382,12 @@ export function BoardGuide() {
                   <ul className="mt-2 space-y-1.5 text-sm text-mist-2">
                     {[
                       "Write each instruction so an independent checker can evaluate it.",
-                      "Save the workflow to .conductor/conductor.json.",
-                      "Create .conductor/status.json with every step pending.",
-                      "Mark each step running → done, updating checker state.",
-                      "Heartbeat about every 30s, grouped into activity cards.",
+                      "Save the workflow to .conductor/workflow.json.",
+                      "Create .conductor/status.json with every card pending.",
+                      "Mark each card running → done, updating checker state.",
+                      "Write Codex-style updates when the agent learns, decides, changes, or hands off.",
                       "Resolve every open directive — apply or defer.",
-                      "Close each step with a finalBeat handoff.",
+                      "Close each card with a finalBeat handoff.",
                       "Retry on a failed checker result — never skip.",
                       "Before status: done, write 3–5 suggestions.",
                     ].map((t) => (
@@ -417,8 +414,8 @@ export function BoardGuide() {
               <ol className="space-y-4">
                 {[
                   ["Start the board", <>Run <Code>npx conductor-board</Code> in your project. It opens your browser at <Code>http://localhost:3042</Code> and starts watching <Code>.conductor/</Code>. (Prefer fewer keystrokes? <Code>npx 3042</Code> is an alias.)</>],
-                  ["Point your agent at the workflow", <>Tell your agent: <em>"Read CONDUCTOR.md, convert my skill into a conductor, save it, and run it."</em> It writes <Code>.conductor/conductor.json</Code> and maintains <Code>status.json</Code>.</>],
-                  ["Watch it run", <>Cards appear and move through the columns as the agent works. Expand any card to read its heartbeats; open the monitor to follow the whole stream.</>],
+                  ["Point your agent at the workflow", <>Tell your agent: <em>"Read CONDUCTOR.md, convert my skill into a conductor, save it, and run it."</em> It writes <Code>.conductor/workflow.json</Code> and maintains <Code>status.json</Code>.</>],
+                  ["Watch it run", <>Cards appear and move through the columns as the agent works. Expand any card to read its updates; open the stream to follow the whole run.</>],
                   ["Review & improve", <>When the run finishes, browse it in history — and apply any optimization suggestions back to the conductor for next time.</>],
                 ].map(([title, body], i) => (
                   <li key={i} className="flex gap-4">
@@ -433,7 +430,7 @@ export function BoardGuide() {
                 ))}
               </ol>
               <div className="grid gap-4 lg:grid-cols-2">
-                <CodeBlock code={CONDUCTOR_JSON} filename="conductor.json" lang="json" />
+                <CodeBlock code={CONDUCTOR_JSON} filename="workflow.json" lang="json" />
                 <CodeBlock code={STATUS_JSON} filename="status.json" lang="json" />
               </div>
             </section>
@@ -451,6 +448,7 @@ export function BoardGuide() {
                 {[
                   ["Substance, not surface", "Say what correct, faithful, and complete means for this card, not just what file shape should exist."],
                   ["Name the evidence", "If the card needs sources, prices, tests, pages, or screenshots, say so in the instruction."],
+                  ["Show the work product", "The output must be the content, code, data, diff, source list, or artifact itself. A report about what was done should fail."],
                   ["Define the scope", "A checker needs to know how many items, which audience, and what dimensions matter."],
                   ["Avoid self-reporting", "Do not ask the work agent to say it is done. Ask for output an independent checker can inspect."],
                   ["Fold vague work", "If a unit of work cannot be checked against a concrete instruction, fold it into a card that can."],
@@ -505,7 +503,7 @@ export function BoardGuide() {
               <div className="space-y-3">
                 {[
                   ["A loop can't close with work left undone", "Every iteration is frontloaded as pending the moment it's scoped, so the plan is visible before any card moves. A loop-coverage guard refuses to advance while any iteration is still incomplete — and lists the ones missed. A frontloaded item left pending is a skipped page, not a finished loop."],
-                  ["Phase 0 is parked by default", "The old self-improvement pass only runs when auto_improve: true is explicitly set."],
+                  ["Phase 0 is parked by default", "The self-improvement pass only runs when auto_improve: true is explicitly set."],
                   ["A failed checker result forces fix-and-retry", "A failed result sends the card back into Running. The agent fixes and re-attempts — it never skips ahead. Failed appears only as a side column when something truly stops."],
                 ].map(([k, v]) => (
                   <div key={k} className="rounded-xl border border-line bg-panel/30 p-4">
@@ -521,26 +519,19 @@ export function BoardGuide() {
 
             {/* ACTIVITY CARDS */}
             <section className="space-y-4">
-              <H2 id="activity-cards" kicker="A run reads as a story">Heartbeats group into activity cards</H2>
+              <H2 id="activity-cards" kicker="A run reads as a story">Updates make the run legible</H2>
               <P>
-                Raw heartbeats are a firehose. So the board groups them into{" "}
-                <strong className="text-chalk">activity cards</strong> — and the agent
-                declares where each one begins. A card is{" "}
-                <strong className="text-chalk">one intent on one target</strong>: a
-                single kind of action (researching, writing, verifying, fixing,
-                shipping) aimed at a single thing (a page, a file, a check). It opens
-                when the intent or the target changes, stays open while the
-                play-by-play serves it, and closes when either shifts or the step hands
-                off.
+                Updates are not a log of every command. They are short preambles
+                in the Codex style: what the agent has learned so far, what that
+                implies, and what it is about to do next. A good update helps a
+                human understand the run without reading the private reasoning.
               </P>
               <P>
-                The agent opens a card with <Code>--card</Code>, where the note is the
-                card's title — its one-line statement of intent. The board renders each
-                card with that title as the hero, the latest detail as its live status,
-                the rest collapsed, and a comment box. When a card closes a parallel
-                summarizer writes a one-line overview of what it accomplished, shown by
-                default with a toggle to the raw beats. The live activity card opens by
-                default so the board is never blank.
+                The agent writes updates with <Code>conductor-board update</Code>.
+                Avoid mechanical notes like "reading README" or "checker passed";
+                write the context the user would be glad to know, such as "README
+                still needs receipt wording, so I am rewriting the quick start
+                around instruction-based checking."
               </P>
             </section>
 
@@ -576,13 +567,13 @@ export function BoardGuide() {
 
             {/* MONITOR */}
             <section className="space-y-4">
-              <H2 id="monitor" kicker="Self-regulation">The heartbeat monitor</H2>
+              <H2 id="monitor" kicker="Self-regulation">The update stream</H2>
               <P>
                 A terminal-style panel pinned to the bottom of the board streams
-                every heartbeat, from every step, as it lands — the agent talking
+                every update, from every step, as it lands — the agent talking
                 to you in real time. It has three states: a{" "}
                 <strong className="text-chalk">minimized</strong> bar showing the
-                latest beat typing in character by character, an{" "}
+                latest update typing in character by character, an{" "}
                 <strong className="text-chalk">expanded</strong> terminal with
                 filter pills (by workflow, or insights-only), auto-scroll with a
                 jump-to-latest pill, and a <strong className="text-chalk">hidden</strong>{" "}
@@ -631,7 +622,7 @@ export function BoardGuide() {
                 The sidebar's <strong className="text-chalk">History</strong>{" "}
                 section groups past runs by workflow with a pass/fail badge and
                 duration. Click one and the board freezes to that run's final
-                state, heartbeats and all, so you can read exactly what happened.
+                state, updates and all, so you can read exactly what happened.
                 A <Code>?run=&lt;id&gt;</Code> link deep-links straight to it.
               </P>
             </section>

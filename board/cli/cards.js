@@ -5,11 +5,10 @@ const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-const ID_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const ALLOWED = new Set(["id", "title", "instruction"]);
+const ALLOWED = new Set(["title", "instruction"]);
 
 function lineFor(src, index) {
-  const needle = `"id"`;
+  const needle = `"title"`;
   const pos = src.indexOf(needle, index === 0 ? 0 : undefined);
   if (pos === -1) return "?";
   return src.slice(0, pos).split(/\r?\n/).length;
@@ -36,7 +35,7 @@ export function validateCardsJson(src) {
   const errors = [];
   const seen = new Map();
 
-  if (cards.length === 0) errors.push("cards.json has no card entries. Add objects with id, title, and instruction.");
+  if (cards.length === 0) errors.push("cards.json has no card entries. Add objects with title and instruction.");
 
   for (const [idx, card] of cards.entries()) {
     const line = card.line || idx + 1;
@@ -48,22 +47,14 @@ export function validateCardsJson(src) {
     for (const key of Object.keys(card)) {
       if (key === "line") continue;
       if (!ALLOWED.has(key)) {
-        errors.push(`entry ${idx + 1}: forbidden field "${key}" present. Card design must include only id, title, and instruction.`);
+        errors.push(`entry ${idx + 1}: forbidden field "${key}" present. Card design must include only title and instruction.`);
       }
     }
 
-    if (typeof card.id !== "string" || !card.id.trim()) errors.push(`entry ${idx + 1}: card is missing id`);
-    else if (!ID_RE.test(card.id)) errors.push(`entry ${idx + 1}: id "${card.id}" must be kebab-case`);
-
-    if (typeof card.title !== "string" || !card.title.trim()) errors.push(`entry ${idx + 1}: card "${card.id || "?"}" is missing title`);
+    if (typeof card.title !== "string" || !card.title.trim()) errors.push(`entry ${idx + 1}: card is missing title`);
+    else if (card.title.trim().length > 40) errors.push(`entry ${idx + 1}: title must be 40 characters or fewer`);
     if (typeof card.instruction !== "string" || !card.instruction.trim()) {
-      errors.push(`entry ${idx + 1}: card "${card.id || "?"}" is missing instruction`);
-    }
-
-    if (card.id) {
-      const prior = seen.get(card.id);
-      if (prior) errors.push(`entry ${idx + 1}: duplicate id "${card.id}" first used in entry ${prior}`);
-      else seen.set(card.id, idx + 1);
+      errors.push(`entry ${idx + 1}: card is missing instruction`);
     }
   }
 
@@ -109,7 +100,7 @@ export async function runCards(args) {
   }
 
   console.log(green(`✓ cards: ${cards.length} card${cards.length === 1 ? "" : "s"} valid`));
-  console.log(dim(`  ${path.relative(process.cwd(), cardsPath)} has id/title/instruction; ids are unique kebab-case`));
+  console.log(dim(`  ${path.relative(process.cwd(), cardsPath)} has title/instruction; array index is identity`));
   console.log("");
   return true;
 }

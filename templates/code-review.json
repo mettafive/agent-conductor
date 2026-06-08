@@ -7,39 +7,30 @@
   ],
   "steps": [
     {
-      "id": "read-pr",
       "instruction": "Read the full diff for PR #{pr_number}. Summarize what changed and why.\n",
       "output": "summary",
       "title": "Read Pr",
       "requires": []
     },
     {
-      "id": "assess-security",
-      "instruction": "Decide whether this PR touches auth, secrets, input handling, or anything\nnetwork-facing.\n",
-      "type": "condition",
-      "if_true": "security-review",
-      "if_false": "style-check",
+      "instruction": "Evaluate whether this PR touches auth, secrets, input handling, or anything\nnetwork-facing. Write an artifact with the evidence. If it does touch security-sensitive code, list the security checks required. If it does not, document why no dedicated security review is needed.\n",
       "title": "Assess Security",
-      "requires": []
+      "requires": [0]
     },
     {
-      "id": "security-review",
-      "instruction": "Audit the changed files against the OWASP top 10. Flag each issue with a\nfile:line and a concrete fix.\n",
-      "then": "style-check",
+      "instruction": "Read the security assessment artifact. If security-sensitive code is touched, audit the changed files against the OWASP top 10 and flag each issue with a file:line and a concrete fix. If not, write an artifact documenting that no security review was needed and cite the assessment evidence.\n",
       "title": "Security Review",
-      "requires": []
+      "requires": [1]
     },
     {
-      "id": "style-check",
       "instruction": "Check the diff against the project's conventions and formatting.\n",
       "title": "Style Check",
-      "requires": []
+      "requires": [0]
     },
     {
-      "id": "write-review",
       "instruction": "Write the review: a verdict (approve / request changes), grouped findings,\nand the single most important thing to fix first.\n",
       "requires": [
-        "style-check"
+        3
       ],
       "title": "Write Review"
     }

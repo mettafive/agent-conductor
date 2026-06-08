@@ -195,6 +195,15 @@
   animation: beat-flash-faint 0.75s ease-out;
 }
 
+/* a card eases in as it lands in a new column */
+@keyframes lb-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.liveboard-card {
+  animation: lb-in 0.28s ease-out;
+}
+
 /* teletype block cursor */
 @keyframes tw-blink {
   0%, 49% { opacity: 1; }

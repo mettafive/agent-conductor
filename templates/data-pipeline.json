@@ -8,34 +8,29 @@
   ],
   "steps": [
     {
-      "id": "extract",
       "instruction": "Pull the raw data from {source}. List the tables/collections found.\n",
       "output": "table_list",
       "title": "Extract",
       "requires": []
     },
     {
-      "id": "validate-raw",
       "instruction": "Check the raw data is shaped as expected before doing any work on it.\n",
       "requires": [
-        "extract"
+        0
       ],
       "title": "Validate Raw"
     },
     {
-      "id": "transform-tables",
       "type": "loop",
       "over": "table_list",
       "as": "table",
       "steps": [
         {
-          "id": "clean",
           "instruction": "Clean {table}: dedupe, fix types, normalize nulls.",
           "title": "Clean",
           "requires": []
         },
         {
-          "id": "transform",
           "instruction": "Apply the business transforms to {table}.",
           "title": "Transform",
           "requires": []
@@ -46,18 +41,16 @@
       "requires": []
     },
     {
-      "id": "load",
       "instruction": "Load the transformed tables into {destination}.\n",
       "requires": [
-        "transform-tables"
+        2
       ],
       "title": "Load"
     },
     {
-      "id": "verify",
       "instruction": "Confirm the load: counts match, no nulls in required columns, spot-checks pass.\n",
       "requires": [
-        "load"
+        3
       ],
       "title": "Verify"
     }

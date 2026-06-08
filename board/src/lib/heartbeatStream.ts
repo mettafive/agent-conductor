@@ -7,12 +7,15 @@ export interface StreamBeat {
   key: string;
   workflow: string;
   step: string;
+  title: string;
   at: string;
   note: string;
   insight?: Insight;
   iteration?: string;
   sub?: string;
   finalBeat: boolean;
+  system: boolean;
+  tone?: "feedback";
 }
 
 interface RawBeat {
@@ -21,6 +24,8 @@ interface RawBeat {
   iteration?: string;
   sub?: string;
   finalBeat?: boolean;
+  system?: boolean;
+  tone?: "feedback";
   insight?: { type?: string; seed?: string; step?: string; confidence?: string };
 }
 
@@ -32,6 +37,7 @@ interface RawStep {
 function toStreamBeat(
   name: string,
   stepId: string,
+  title: string,
   h: RawBeat,
   i: number,
   iteration?: string,
@@ -42,11 +48,14 @@ function toStreamBeat(
     key: `${name} ${stepId} ${iteration ?? ""} ${sub ?? ""} ${h.at} ${i}`,
     workflow: name,
     step: stepId,
+    title,
     at: h.at,
     note: h.note,
     iteration: h.iteration ?? iteration,
     sub: h.sub ?? sub,
     finalBeat: h.finalBeat === true,
+    system: h.system === true,
+    tone: h.tone === "feedback" ? "feedback" : undefined,
     insight:
       h.insight && typeof h.insight.type === "string"
         ? {
@@ -74,15 +83,24 @@ export function flattenBeats(
     if (b) out.push(b);
   };
   for (const name of order) {
-    const status = workflows[name]?.snap.status as
+    const entry = workflows[name];
+    const status = entry?.snap.status as
       | { steps?: Record<string, RawStep> }
       | null;
+    let workflowSteps: Array<{ title?: string }> = [];
+    try {
+      const doc = typeof entry?.snap.workflowJson === "string" ? JSON.parse(entry.snap.workflowJson) : entry?.snap.workflowJson;
+      workflowSteps = Array.isArray(doc?.steps) ? doc.steps : [];
+    } catch {
+      workflowSteps = [];
+    }
     const steps = status?.steps ?? {};
     for (const stepId of Object.keys(steps)) {
       const step = steps[stepId];
+      const title = workflowSteps[Number(stepId)]?.title || stepId;
       // top-level step beats
       if (Array.isArray(step?.heartbeat)) {
-        step.heartbeat.forEach((h, i) => push(toStreamBeat(name, stepId, h, i)));
+        step.heartbeat.forEach((h, i) => push(toStreamBeat(name, stepId, title, h, i)));
       }
       // loop sub-step beats — descend iterations[item][sub].heartbeat so the
       // monitor, the live heart and the stall timer see EVERY level of activity
@@ -93,7 +111,7 @@ export function flattenBeats(
           for (const subId of Object.keys(subs)) {
             const hb = subs[subId]?.heartbeat;
             if (!Array.isArray(hb)) continue;
-            hb.forEach((h, i) => push(toStreamBeat(name, stepId, h, i, item, subId)));
+            hb.forEach((h, i) => push(toStreamBeat(name, stepId, title, h, i, item, subId)));
           }
         }
       }
@@ -133,10 +151,30 @@ export function useHeartbeatStream(
   order: string[],
 ): HeartbeatStream {
   const beats = useMemo(() => flattenBeats(workflows, order), [workflows, order]);
+  const runSignature = useMemo(
+    () =>
+      order
+        .map((name) => {
+          const status = workflows[name]?.snap.status as { run_id?: string } | null;
+          return `${name}:${status?.run_id ?? "no-run"}`;
+        })
+        .join("|"),
+    [workflows, order],
+  );
   const seen = useRef<Set<string> | null>(null);
+  const lastRunSignature = useRef<string>("");
   const nonce = useRef(0);
   const [arrival, setArrival] = useState<Arrival | null>(null);
   const [log, setLog] = useState<StreamBeat[]>([]);
+
+  useEffect(() => {
+    if (lastRunSignature.current !== runSignature) {
+      lastRunSignature.current = runSignature;
+      seen.current = null;
+      setArrival(null);
+      setLog([]);
+    }
+  }, [runSignature]);
 
   useEffect(() => {
     if (seen.current === null) {
@@ -160,7 +198,7 @@ export function useHeartbeatStream(
     });
     nonce.current += 1;
     setArrival({ beat: fresh[fresh.length - 1], nonce: nonce.current });
-  }, [beats]);
+  }, [beats, runSignature]);
 
   return { beats, log, arrival };
 }

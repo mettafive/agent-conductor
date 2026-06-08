@@ -10,36 +10,35 @@ const QUICKSTART = `{
   "inputs": ["topic"],
   "steps": [
     {
-      "id": "research",
       "title": "Research",
       "instruction": "Research {topic}. Gather five credible sources.",
       "requires": []
     },
     {
-      "id": "write",
       "title": "Write",
       "instruction": "Write an 800-word report, citing every claim.",
-      "requires": ["research"]
+      "requires": [0]
     }
   ]
 }`;
 
 const STATUS_JSON = `{
-  "conductor": "1.0.0",
   "workflow": "basic-report",
   "status": "running",
   "run_name": "basic-report-run-4-2026-06-04T12-30",
   "auto_improve": true,
-  "current_step": "write",
+  "current_step": "1",
   "steps": {
-    "research": { "status": "done",    "gate": "passed",  "attempt": 1 },
-    "write":    { "status": "running", "gate": "pending", "attempt": 2 }
+    "0": { "status": "done",    "gate": "passed",  "attempt": 1 },
+    "1": { "status": "running", "gate": "pending", "attempt": 2 }
   }
 }`;
 
-const CHECK_SNIPPET = `npx conductor-board gate-result research \\
+const CHECK_SNIPPET = `npx conductor-board check 0 \\
+  --output-file .conductor/outputs/0.md
+npx conductor-board gate-result 0 \\
   --passed \\
-  --evidence "5 credible sources captured with URLs"`;
+  --evidence "PASS source-list.json contains 5 credible sources with URLs. SUMMARY: Source list is complete."`;
 
 export function SpecPage() {
   return (
@@ -52,7 +51,7 @@ export function SpecPage() {
 
       <div className="mt-12 grid items-start gap-5 lg:grid-cols-2">
         <Reveal>
-          <CodeBlock code={QUICKSTART} filename="conductor.json" lang="json" />
+          <CodeBlock code={QUICKSTART} filename="workflow.json" lang="json" />
         </Reveal>
         <div className="space-y-5">
           <Reveal>
@@ -62,7 +61,8 @@ export function SpecPage() {
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-mist-2">
                 Every card is independently verified against its instruction.
-                The checker records a verdict before completion.
+                Check prints the comparison prompt; the output must be the work product itself,
+                not a report about the work.
               </p>
               <div className="mt-4">
                 <CodeBlock code={CHECK_SNIPPET} lang="bash" />
@@ -91,8 +91,8 @@ export function SpecPage() {
 
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         {[
-          { t: "Conditions", d: "type: condition routes the flow with if_true / if_false." },
-          { t: "Rejoins", d: "then: brings a branch back to the main line." },
+          { t: "Situational work", d: "Write the situation into the instruction; every card still runs." },
+          { t: "Dependencies", d: "requires lists the card indexes that must be done first." },
           { t: "Outputs", d: "output: names data that downstream steps template in." },
         ].map((f) => (
           <Reveal key={f.t} className="h-full">
@@ -144,7 +144,7 @@ export function SpecPage() {
                   <span className="text-dim">#</span> "Here's my skill. Read CONDUCTOR.md,
                 </div>
                 <div className="text-mist">&nbsp;&nbsp;convert it to a conductor, and run it."</div>
-                <div className="mt-3 text-mint">→ .conductor/conductor.json + status.json</div>
+                <div className="mt-3 text-mint">→ .conductor/workflow.json + status.json</div>
                 <div className="text-mint">→ board lights up</div>
               </div>
             </div>

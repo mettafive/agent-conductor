@@ -1,21 +1,17 @@
 [
   {
-    "id": "triage-ticket",
     "title": "Triage ticket",
     "instruction": "Read the support ticket, identify customer, product area, reported behavior, requested outcome, and classify severity using impact, urgency, affected users, revenue risk, and workaround availability."
   },
   {
-    "id": "gather-support-context",
     "title": "Gather support context",
     "instruction": "Check mock customer history and MOCK_SUPPORT_API for plan, account status, recent tickets, known incidents, similar issues, incident matches, and troubleshooting guidance."
   },
   {
-    "id": "prepare-customer-reply",
     "title": "Prepare customer reply",
     "instruction": "Summarize the issue in 2-4 sentences without speculation, identify missing information, and draft a customer-facing reply with status, next step, and any safe workaround."
   },
   {
-    "id": "create-escalation-handoff",
     "title": "Create escalation handoff",
     "instruction": "Create the internal escalation note with reproduction details, evidence, severity, owner suggestion, recommended next team, logged next action, due time, and follow-up message."
   }

@@ -7,35 +7,30 @@
   ],
   "steps": [
     {
-      "id": "pick-clinics",
       "instruction": "List the active clinics in {region} that have a public website. For each,\ncapture {name, url, id}. This is the loop input.\n",
       "output": "clinics",
       "title": "Pick Clinics",
       "requires": []
     },
     {
-      "id": "scrape-and-price",
       "type": "loop",
       "over": "clinics",
       "as": "clinic",
       "requires": [
-        "pick-clinics"
+        0
       ],
       "steps": [
         {
-          "id": "find-prices",
           "instruction": "Find {clinic}'s price page — try the sitemap first, then the nav — and\nextract the treatment prices verbatim with currency.\n",
           "title": "Find Prices",
           "requires": []
         },
         {
-          "id": "validate-prices",
           "instruction": "Sanity-check {clinic}'s prices — no zeros, plausible ranges.",
           "title": "Validate Prices",
           "requires": []
         },
         {
-          "id": "write-snapshot",
           "instruction": "Append {clinic}'s prices to today's snapshot.",
           "title": "Write Snapshot",
           "requires": []
@@ -45,10 +40,9 @@
       "instruction": "Complete Scrape And Price."
     },
     {
-      "id": "summarize",
       "instruction": "Roll the per-clinic snapshots into the day's report, flagging anomalies.",
       "requires": [
-        "scrape-and-price"
+        1
       ],
       "title": "Summarize"
     }

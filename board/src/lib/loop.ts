@@ -4,7 +4,7 @@ import type { Column, IterationStep, LoopIteration } from "./types";
 export function iterationColumn(it: LoopIteration): Column {
   if (it.failed) return "failed";
   if (it.steps.length > 0 && it.steps.every((s) => s.status === "done")) return "done";
-  if (it.steps.some((s) => s.gate === "checking")) return "gate";
+  if (it.steps.some((s) => s.gate === "checking")) return "checking";
   if (it.steps.some((s) => s.status === "running")) return "running";
   return "pending";
 }
@@ -13,7 +13,7 @@ export function iterationColumn(it: LoopIteration): Column {
 export function subStepColumn(s: IterationStep): Column {
   if (s.status === "failed" || s.gate === "failed") return "failed";
   if (s.status === "done") return "done";
-  if (s.gate === "checking") return "gate";
+  if (s.gate === "checking") return "checking";
   if (s.status === "running") return "running";
   return "pending";
 }

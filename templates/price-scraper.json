@@ -8,26 +8,22 @@
   ],
   "steps": [
     {
-      "id": "select-targets",
       "instruction": "Resolve {targets} into a concrete list of sources to scrape for {category}.\n",
       "output": "target_list",
       "title": "Select Targets",
       "requires": []
     },
     {
-      "id": "scrape-each",
       "type": "loop",
       "over": "target_list",
       "as": "target",
       "steps": [
         {
-          "id": "scrape",
           "instruction": "Fetch current prices for {target}.",
           "title": "Scrape",
           "requires": []
         },
         {
-          "id": "validate-prices",
           "instruction": "Sanity-check {target}'s prices (currency, units, range).",
           "title": "Validate Prices",
           "requires": []
@@ -38,19 +34,17 @@
       "requires": []
     },
     {
-      "id": "flag-outliers",
       "instruction": "Compare prices across all targets. Flag anything implausible (far above or\nbelow the median) for human review instead of trusting it blindly.\n",
       "requires": [
-        "scrape-each"
+        1
       ],
       "output": "clean_prices",
       "title": "Flag Outliers"
     },
     {
-      "id": "update-db",
       "instruction": "Write the validated, non-outlier prices to the database.\n",
       "requires": [
-        "flag-outliers"
+        2
       ],
       "title": "Update Db"
     }

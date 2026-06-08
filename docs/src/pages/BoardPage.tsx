@@ -20,7 +20,7 @@ const HEARTBEAT_JSON = `"discover-prices": {
 
 const LEDS: { state: string; label: string; meaning: string }[] = [
   { state: "running", label: "green → white", meaning: "Running — the focus. Alive and fine." },
-  { state: "gate", label: "green → amber", meaning: "Gate check / a warning. Worth a glance." },
+  { state: "checking", label: "green → amber", meaning: "Checking / a warning. Worth a glance." },
   { state: "failed", label: "red → green", meaning: "Something went wrong in here." },
   { state: "done", label: "dim green", meaning: "Done and settled." },
   { state: "pending", label: "grey", meaning: "Pending — not started." },
@@ -65,7 +65,7 @@ export function BoardPage() {
         </div>
       </section>
 
-      {/* heartbeats */}
+      {/* updates */}
       <section className="py-12">
         <SectionHead
           kicker="Self-regulation"

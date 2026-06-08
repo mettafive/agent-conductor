@@ -1,4 +1,4 @@
-import { parseConductor } from "./parse";
+import { parseConductor, parseKnowledge } from "./parse";
 import type {
   BoardModel,
   BoardStep,
@@ -39,6 +39,9 @@ interface RawStepStatus {
     exit_code?: number;
     checker?: string;
     evidence?: string;
+    summary?: string;
+    made_summary?: string;
+    checked_summary?: string;
   }>;
   // loops
   type?: string;
@@ -54,10 +57,15 @@ interface RawStepStatus {
     sub?: string;
     insight?: { type?: string; seed?: string; step?: string; scope?: string; confidence?: string };
     finalBeat?: boolean;
+    system?: boolean;
+    tone?: "feedback";
     card?: boolean;
     handoff?: { to?: string; to_iteration?: string; context?: string; produced?: string };
   }>;
   learnings?: string[];
+  artifact?: string;
+  receipt?: string;
+  artifacts?: string[];
 }
 
 function buildHeartbeat(st: RawStepStatus) {
@@ -80,6 +88,8 @@ function buildHeartbeat(st: RawStepStatus) {
                 }
               : undefined,
           finalBeat: h.finalBeat === true,
+          system: h.system === true,
+          tone: h.tone === "feedback" ? ("feedback" as const) : undefined,
           card: h.card === true,
           handoff:
             h.handoff && typeof h.handoff === "object"
@@ -123,6 +133,7 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
       const def = subDefs.find((d) => d.id === id);
       return {
         id,
+        title: def?.title ?? id,
         status: ss.status ?? "pending",
         gate: ss.gate ?? "pending",
         attempt: ss.attempt ?? 1,
@@ -165,7 +176,7 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
 function columnFor(rawStatus: string, gate: string): Column {
   if (rawStatus === "failed" || gate === "failed") return "failed";
   if (rawStatus === "done") return "done";
-  if (gate === "checking") return "gate";
+  if (gate === "checking") return "checking";
   if (rawStatus === "running") return "running";
   return "pending";
 }
@@ -180,6 +191,9 @@ function buildCriteria(step: ConductorStep, detail: RawStepStatus["gate_detail"]
     passed: d ? !!d.passed : null,
     checker: "instruction",
     evidence: d?.evidence,
+    summary: d?.summary,
+    made_summary: d?.made_summary,
+    checked_summary: d?.checked_summary,
   }];
 }
 
@@ -191,7 +205,7 @@ function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): Conduc
     index,
     instruction: "",
     firstLine: "",
-    isCondition: !!statusSteps[id]?.branch_taken,
+    isCondition: false,
     requires: [],
     isLoop: statusSteps[id]?.type === "loop",
   }));
@@ -258,6 +272,24 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
   });
 }
 
+function norm(s: string | undefined): string {
+  return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function statusForStep(step: ConductorStep, statusSteps: Record<string, RawStepStatus>): RawStepStatus {
+  if (statusSteps[step.id]) return statusSteps[step.id] ?? {};
+  const titleKey = norm(step.title);
+  const instructionKey = norm(step.instruction).slice(0, 52);
+  for (const [key, value] of Object.entries(statusSteps)) {
+    if (isImproveId(key)) continue;
+    if (norm(key) === titleKey) return value ?? {};
+    if (instructionKey && norm(key).startsWith(instructionKey)) return value ?? {};
+    const detail = value.gate_detail?.[0];
+    if (detail?.criterion && norm(detail.criterion) === norm(step.instruction)) return value ?? {};
+  }
+  return {};
+}
+
 // Snapshots are fresh objects only when the server pushes an update, so caching
 // the derived model by snapshot identity is correct — and it stops the JSON from
 // being re-parsed on every render / clock tick (the board re-renders each second).
@@ -274,7 +306,8 @@ export function buildModel(snap: Snapshot): BoardModel {
 function buildModelImpl(snap: Snapshot): BoardModel {
   const status = snap.status ?? {};
   const statusSteps = (status.steps as Record<string, RawStepStatus>) ?? {};
-  const parsed = parseConductor(snap.conductorJson);
+  const parsed = parseConductor(snap.workflowJson);
+  const fileKnowledge = parseKnowledge(readKnowledgeItems(snap.knowledgeJson));
   const hasConductor = !!parsed && parsed.steps.length > 0;
 
   const structure: ConductorStep[] = hasConductor
@@ -290,7 +323,7 @@ function buildModelImpl(snap: Snapshot): BoardModel {
   const improveSteps = autoImprove ? buildImproveSteps(statusSteps) : [];
 
   const workflowSteps: BoardStep[] = structure.map((s) => {
-    const st = statusSteps[s.id] ?? {};
+    const st = statusForStep(s, statusSteps);
     const rawStatus = st.status ?? "pending";
     const gateState = st.gate ?? "pending";
     const wfStep: BoardStep = {
@@ -314,6 +347,11 @@ function buildModelImpl(snap: Snapshot): BoardModel {
         ? st.learnings.filter((x): x is string => typeof x === "string")
         : [],
       cardOverviews: (st.cardOverviews && typeof st.cardOverviews === "object" ? st.cardOverviews : {}) as Record<string, string>,
+      artifact: typeof st.artifact === "string" ? st.artifact : typeof st.receipt === "string" ? st.receipt : undefined,
+      receipt: typeof st.receipt === "string" ? st.receipt : typeof st.artifact === "string" ? st.artifact : undefined,
+      artifacts: Array.isArray(st.artifacts)
+        ? st.artifacts.filter((x): x is string => typeof x === "string")
+        : [],
     };
     return wfStep;
   });
@@ -367,10 +405,12 @@ function buildModelImpl(snap: Snapshot): BoardModel {
   const overall = rawStatus === "running" && allWorkflowDone ? "done" : rawStatus;
   const settled = overall === "done" || overall === "failed";
 
+  const knowledge = dedupeKnowledge([...(parsed?.knowledge ?? []), ...fileKnowledge]);
+
   return {
     workflow: (status.workflow as string) ?? parsed?.name ?? "workflow",
     description: parsed?.description ?? (status.description as string | undefined),
-    knowledge: parsed?.knowledge ?? [],
+    knowledge,
     goal: (status.goal as string | undefined) ?? parsed?.description,
     currentStepGoal: status.current_step_goal as string | undefined,
     lastBeatAt,
@@ -381,6 +421,7 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     runName: status.run_name as string | undefined,
     nextUp: (status.next_up as { name?: string; remaining?: number } | undefined) ?? undefined,
     autoImprove,
+    maxAttempts: parsed?.maxAttempts ?? 5,
     startedAt: status.started_at as string | undefined,
     // A finished run rarely records a top-level completed_at, which left the done-screen timer
     // ticking to `now` forever. Freeze it: when the run is done/failed, fall back to the last
@@ -397,4 +438,23 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     demo: (status as { _demo?: boolean })._demo === true,
     error: status._error as string | undefined,
   };
+}
+
+function readKnowledgeItems(src?: string | null): unknown[] {
+  if (!src) return [];
+  try {
+    const doc = JSON.parse(src) as { items?: unknown };
+    return Array.isArray(doc?.items) ? doc.items : [];
+  } catch {
+    return [];
+  }
+}
+
+function dedupeKnowledge(items: BoardModel["knowledge"]): BoardModel["knowledge"] {
+  const out = new Map<string, BoardModel["knowledge"][number]>();
+  for (const item of items) {
+    const key = item.id || `${item.title}::${item.detail || item.note || ""}`;
+    out.set(key, item);
+  }
+  return [...out.values()];
 }

@@ -10,7 +10,6 @@ import { TypewriterText } from "./TypewriterText";
 export type MonitorMode = "min" | "expanded" | "hidden";
 
 const MODE_KEY = "cb-monitor";
-const WF_COLORS = ["text-chalk", "text-mist-2", "text-mist", "text-mist-2", "text-mist"];
 
 function clock(iso: string): string {
   const d = new Date(iso);
@@ -40,6 +39,13 @@ export function loadMonitorMode(): MonitorMode {
 }
 
 type Conn = "connecting" | "live" | "lost";
+
+function beatTextClass(b?: Pick<StreamBeat, "tone" | "note">): string {
+  if (!b) return "text-mist";
+  if (b.tone === "feedback") return "text-amber";
+  if (/^\s*(✓|passed|pass|checker passed|creating .* passed|workflow accepted)/i.test(plainNote(b.note))) return "text-mint";
+  return "text-mist";
+}
 
 /** A tiny rose dot, shown only when the SSE link drops (so the heart can't lie). */
 function ConnDot({ conn }: { conn?: Conn }) {
@@ -164,6 +170,8 @@ interface Props {
   done?: boolean;
   /** the knowledge store — lets an insight beat open its full captured detail in a modal */
   knowledge?: KnowledgeEntry[];
+  doneCount?: number;
+  totalCount?: number;
 }
 
 export function HeartbeatMonitor({
@@ -178,8 +186,6 @@ export function HeartbeatMonitor({
   done,
   knowledge,
 }: Props) {
-  const wfColor = (name: string) => WF_COLORS[Math.max(0, order.indexOf(name)) % WF_COLORS.length];
-  const multi = order.length > 1;
   const streamKey = arrival?.beat.key;
   const latest = beats[beats.length - 1];
 
@@ -210,7 +216,7 @@ export function HeartbeatMonitor({
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.22, ease: "easeOut" }}
         onClick={() => onMode("min")}
-        title="Show heartbeat monitor"
+          title="Show updates"
         className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-ink-2/90 px-3 py-2 shadow-lg backdrop-blur transition-colors hover:border-line-2"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={15} stallSeconds={stallSeconds} done={done} />
@@ -220,25 +226,23 @@ export function HeartbeatMonitor({
   }
 
   if (mode === "min") {
-    // The 36px bottom bar: the heart, the latest beat streaming in, and a way to
-    // expand. The heart is the one colour; status comes through the stall/conn dots.
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
-        className="flex h-9 shrink-0 items-center gap-2.5 border-t border-line bg-panel px-4"
+        className="flex min-h-9 shrink-0 items-center gap-2.5 border-t border-line bg-panel px-4 py-2"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={14} stallSeconds={stallSeconds} done={done} />
         <ConnDot conn={conn} />
         <button
           onClick={() => onMode("expanded")}
-          title="Expand heartbeat monitor (Ctrl+`)"
-          aria-label="Expand heartbeat monitor"
+          title="Expand updates (Ctrl+`)"
+          aria-label="Expand updates"
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
           {latest ? (
-            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-mist">
+            <span className={`min-w-0 flex-1 whitespace-normal break-words font-mono text-[12px] leading-snug ${beatTextClass(latest)}`}>
               {latest.key === streamKey ? (
                 <TypewriterText text={plainNote(latest.note)} />
               ) : (
@@ -247,7 +251,7 @@ export function HeartbeatMonitor({
             </span>
           ) : (
             <span className="flex-1 font-mono text-[12px] text-dim">
-              waiting for the first heartbeat…
+              waiting for agent update…
             </span>
           )}
           <span className="shrink-0 font-mono text-[10px] text-dim">▲</span>
@@ -262,8 +266,6 @@ export function HeartbeatMonitor({
       order={order}
       streamKey={streamKey}
       onMode={onMode}
-      wfColor={wfColor}
-      multi={multi}
       lastBeatIso={lastBeatIso}
       conn={conn}
       stallSeconds={stallSeconds}
@@ -278,8 +280,6 @@ function ExpandedMonitor({
   order,
   streamKey,
   onMode,
-  wfColor,
-  multi,
   lastBeatIso,
   conn,
   stallSeconds,
@@ -290,8 +290,6 @@ function ExpandedMonitor({
   order: string[];
   streamKey?: string;
   onMode: (m: MonitorMode) => void;
-  wfColor: (n: string) => string;
-  multi: boolean;
   lastBeatIso?: string;
   conn?: Conn;
   stallSeconds?: number;
@@ -308,15 +306,13 @@ function ExpandedMonitor({
   const [showJump, setShowJump] = useState(false);
   const [cursorOn, setCursorOn] = useState(false);
 
-  // Stick the bottom in view while pinned. The jank came from many SYNCHRONOUS scrollTop writes per
-  // frame — a new beat's length-effect AND the ResizeObserver AND each typewriter growth all snapped
-  // scrollTop independently, so the stream lurched (worst on multi-line rows that grow over several
-  // frames). Coalesce them into ONE write per animation frame: the browser then advances the scroll
-  // smoothly row-by-row as content grows, so the stream glides instead of jumping. No-op when the
-  // user has scrolled up (not pinned).
+  const shown = beats.filter((b) =>
+    filter === "all" ? true : b.workflow === filter,
+  );
+
   const stickToBottom = useCallback(() => {
     if (!pinned.current) return;
-    if (stickRaf.current != null) return; // already scheduled this frame
+    if (stickRaf.current != null) return;
     stickRaf.current = requestAnimationFrame(() => {
       stickRaf.current = null;
       const el = scrollRef.current;
@@ -324,8 +320,6 @@ function ExpandedMonitor({
     });
   }, []);
 
-  // Glide (or snap) to the latest and re-pin. `smooth` for explicit jumps — the button, the
-  // drift-home timer, opening — so the eye can follow the scroll across a big gap.
   const scrollToBottom = useCallback((smooth: boolean) => {
     const el = scrollRef.current;
     if (!el) return;
@@ -338,11 +332,6 @@ function ExpandedMonitor({
     }
   }, []);
 
-  const shown = beats.filter((b) =>
-    filter === "all" ? true : b.workflow === filter,
-  );
-
-  // A new beat (or a filter change) lands → stick the bottom in view via the coalesced rAF.
   useLayoutEffect(() => {
     if (pinned.current) {
       stickToBottom();
@@ -357,8 +346,6 @@ function ExpandedMonitor({
     return () => clearTimeout(t);
   }, [streamKey]);
 
-  // Opening the terminal (this component mounts on open) lands you at the latest. Clean up the
-  // drift-home timer + any pending stick-rAF on close/unmount.
   useEffect(() => {
     scrollToBottom(false);
     return () => {
@@ -376,18 +363,12 @@ function ExpandedMonitor({
       pinned.current = atBottom;
       setShowJump(!atBottom);
     }
-    // Drift self-heals: 60s scrolled-up-and-idle → glide back to the latest, so you never come
-    // back to a stale position and have to re-orient. Any scroll resets the 60s clock.
     if (driftTimer.current) clearTimeout(driftTimer.current);
     driftTimer.current = atBottom ? null : setTimeout(() => scrollToBottom(true), 60_000);
   };
 
-  const jumpToLatest = () => scrollToBottom(true); // smooth glide so the eye can follow the scroll
+  const jumpToLatest = () => scrollToBottom(true);
 
-  // Keep the bottom row fully in view as it grows — a multi-line beat (or text still streaming in)
-  // would otherwise get clipped at the container edge. The observer routes through the SAME coalesced
-  // stick routine as new beats, so a row growing over several frames advances the scroll one smooth
-  // step per frame instead of snapping each tick.
   const roRef = useRef<ResizeObserver | null>(null);
   const contentRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -440,7 +421,7 @@ function ExpandedMonitor({
         <AnimatedHeart lastBeatIso={lastBeatIso} size={13} stallSeconds={stallSeconds} done={done} />
         <ConnDot conn={conn} />
         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mist-2">
-          Heartbeats
+          Updates
         </span>
         <span className="text-[10px] text-dim">{beats.length}</span>
         <span className="ml-auto flex items-center gap-1.5 text-dim">
@@ -491,23 +472,19 @@ function ExpandedMonitor({
       >
         {shown.length === 0 ? (
           <div className="grid h-full place-items-center text-[11px] text-dim">
-            no heartbeats{filter === "all" ? " yet" : ` for “${filter}”`}
+            no updates{filter === "all" ? " yet" : ` for “${filter}”`}
           </div>
         ) : (
           <div ref={contentRef}>
           {shown.map((b) => (
             <div
               key={b.key}
-              className={`flex items-start gap-2 rounded py-px ${b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""}`}
+              className={`flex items-start gap-2 rounded py-px ${
+                b.tone === "feedback" || b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""
+              }`}
             >
               <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
-              {multi && (
-                <span className={`shrink-0 select-none ${wfColor(b.workflow)}`}>{b.workflow}</span>
-              )}
-              <span className="w-32 shrink-0 select-none truncate text-mist" title={b.step}>
-                {b.step}
-              </span>
-              <span className="min-w-0 flex-1 text-chalk">
+              <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${beatTextClass(b)}`}>
                 {b.key === streamKey ? (
                   <TypewriterText text={plainNote(b.note)} />
                 ) : (
@@ -542,7 +519,6 @@ function ExpandedMonitor({
           </div>
         )}
       </div>
-
       <AnimatePresence>
         {showJump && (
           <motion.button

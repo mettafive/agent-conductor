@@ -28,10 +28,9 @@ function buildJson({ name, description, steps }) {
   };
   for (let i = 1; i <= steps; i++) {
     doc.steps.push({
-      id: `step-${i}`,
       title: `Step ${i}`,
       instruction: "TODO: what this phase does (include its real weight / risk).",
-      requires: i > 1 ? [`step-${i - 1}`] : [],
+      requires: i > 1 ? [i - 2] : [],
     });
   }
   return JSON.stringify(doc, null, 2) + "\n";
@@ -40,7 +39,7 @@ function buildJson({ name, description, steps }) {
 export async function runInit(args) {
   const force = flag(args, ["--force", "-f"]) === true;
   const dir = path.resolve(process.cwd(), String(flag(args, ["--dir"]) ?? ".conductor"));
-  const target = path.join(dir, "conductor.json");
+  const target = path.join(dir, "workflow.json");
 
   let name = flag(args, ["--name", "-n"]);
   let description = flag(args, ["--description", "-d"]);

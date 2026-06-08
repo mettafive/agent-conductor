@@ -8,7 +8,7 @@ import { HEARTBEAT_OPTIONS, stallSecondsFor } from "../lib/settings";
 const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ["⌘", ","], label: "Open / close settings" },
   { keys: ["Esc"], label: "Back to live · close this panel" },
-  { keys: ["Ctrl", "`"], label: "Expand / minimize the heartbeat monitor" },
+  { keys: ["Ctrl", "`"], label: "Expand / minimize updates" },
 ];
 
 function Kbd({ children }: { children: string }) {
@@ -156,8 +156,8 @@ export function Settings({
               {/* Sound — two independent controls */}
               <div className="px-5 pb-1 pt-3 text-[11px] uppercase tracking-wide text-dim">Sound</div>
               <SwitchRow
-                label="Heartbeat ticks"
-                hint="A faint tick on every heartbeat the agent writes."
+                label="Update ticks"
+                hint="A faint tick on every progress update the agent writes."
                 on={ticksOn}
                 onToggle={onToggleTicks}
               />
@@ -172,9 +172,9 @@ export function Settings({
               <div className="px-5 pb-1 pt-4 text-[11px] uppercase tracking-wide text-dim">Cadence</div>
               <div className="flex items-center gap-3 px-5 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-chalk">Heartbeat interval</div>
+                  <div className="text-[13px] text-chalk">Update interval</div>
                   <div className="mt-0.5 text-[12px] leading-snug text-dim">
-                    How often the agent checks in. Stall is flagged after ~3 missed beats
+                    How often the agent checks in. Stall is flagged after ~3 missed updates
                     (now {stallSecondsFor(heartbeatInterval)}s).
                   </div>
                 </div>

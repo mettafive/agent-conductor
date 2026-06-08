@@ -21,8 +21,8 @@ export function Home() {
       <section className="flex flex-col items-center py-10 text-center lg:py-14">
         {/* three pillars instead of a tagline eyebrow */}
         <div className="flex flex-wrap items-center justify-center gap-2.5">
-          <Pillar icon={<Icon name="check" size={14} />} label="Gated steps" />
-          <Pillar icon={<Heart size={14} />} label="Heartbeats" />
+          <Pillar icon={<Icon name="check" size={14} />} label="Verified cards" />
+          <Pillar icon={<Heart size={14} />} label="Live updates" />
           <Pillar icon={<Icon name="loop" size={14} />} label="Self-improving" />
         </div>
 
@@ -30,8 +30,8 @@ export function Home() {
           Conduct your agents.
         </h1>
         <p className="mt-4 max-w-xl text-pretty text-lg leading-relaxed text-mist-2">
-          Real gates any agent must pass — and a live board you read like a story
-          and steer as it works.
+          Every card is checked against its own instruction — and a live board
+          you read like a story and steer as it works.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -101,7 +101,7 @@ export function Home() {
           {
             icon: "clock" as const,
             title: "A run you steer",
-            body: "Heartbeats group into activity cards you read like a story. Leave a comment on a card and it becomes a directive the next run must apply — or defer with a reason. Never silently glossed.",
+            body: "Codex-style updates read like a story: what the agent learned, decided, changed, or handed off. Comments become directives the next run must apply — or defer with a reason.",
           },
         ].map((f) => (
           <Reveal key={f.title} className="h-full">

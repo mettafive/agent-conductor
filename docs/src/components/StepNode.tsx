@@ -4,35 +4,7 @@ import type { StepNodeData } from "../lib/parseConductor";
 type StepNode = Node<StepNodeData>;
 
 export function StepNode({ data }: NodeProps<StepNode>) {
-  const check = data.gates[0];
-
-  if (data.isCondition) {
-    return (
-      <div className="w-[210px] -rotate-0">
-        <Handle type="target" position={Position.Top} />
-        <div className="relative rounded-xl border border-amber/40 bg-amber/[0.07] px-3.5 py-3 shadow-[0_0_0_1px_rgba(251,191,36,0.06)]">
-          <div className="flex items-center gap-2">
-            <svg width="13" height="13" viewBox="0 0 24 24" className="text-amber">
-              <path
-                fill="currentColor"
-                d="M12 2 2 12l10 10 10-10L12 2Zm0 3.8L18.2 12 12 18.2 5.8 12 12 5.8Z"
-              />
-            </svg>
-            <span className="font-mono text-[13px] font-medium text-chalk">
-              {data.stepId}
-            </span>
-          </div>
-          <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-mist">
-            {data.instruction || "condition"}
-          </p>
-          <span className="mt-2 inline-block rounded-md border border-amber/30 bg-amber/10 px-1.5 py-0.5 font-mono text-[10px] text-amber">
-            condition
-          </span>
-        </div>
-        <Handle type="source" position={Position.Bottom} />
-      </div>
-    );
-  }
+  const check = data.checks[0];
 
   return (
     <div className="w-[230px]">

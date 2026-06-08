@@ -13,9 +13,9 @@ import { TypewriterText } from "./TypewriterText";
  * three-step version, and a five-step version when the board has room.
  */
 
-type Col = "pending" | "running" | "gate" | "done";
-const COLS: Col[] = ["pending", "running", "gate", "done"];
-const COL_LABEL: Record<Col, string> = { pending: "Pending", running: "Running", gate: "Checking", done: "Done" };
+type Col = "pending" | "running" | "checking" | "done";
+const COLS: Col[] = ["pending", "running", "checking", "done"];
+const COL_LABEL: Record<Col, string> = { pending: "Pending", running: "Running", checking: "Checking", done: "Done" };
 
 interface Step {
   id: string;
@@ -49,7 +49,7 @@ function fresh(steps: Step[], note = "New page queued. Starting the build."): St
 /** Advance one step of the machine. Returns the next state + how long to dwell. */
 function advance(s: State, steps: Step[]): { next: State; delay: number } {
   const cols = s.cols.slice();
-  let i = cols.findIndex((c) => c === "running" || c === "gate");
+  let i = cols.findIndex((c) => c === "running" || c === "checking");
   if (i === -1) i = cols.findIndex((c) => c === "pending");
 
   if (i === -1) return { next: fresh(steps), delay: 1300 }; // all done → reset
@@ -61,12 +61,12 @@ function advance(s: State, steps: Step[]): { next: State; delay: number } {
   }
   if (cols[i] === "running") {
     if (step.check) {
-      cols[i] = "gate";
+      cols[i] = "checking";
       return { next: { cols, note: CHECK_NOTE(step.id) }, delay: 1300 };
     }
     cols[i] = "done";
   } else {
-    cols[i] = "done"; // gate → done
+    cols[i] = "done"; // checking → done
   }
   const last = i === steps.length - 1;
   const nextNote = last ? RESET_NOTE : steps[i + 1].note;

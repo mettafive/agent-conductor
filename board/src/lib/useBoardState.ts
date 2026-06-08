@@ -5,7 +5,7 @@ type Conn = "connecting" | "live" | "lost";
 
 const EMPTY: Snapshot = {
   status: null,
-  conductorJson: null,
+  workflowJson: null,
   statusPath: ".conductor/status.json",
   conductorPath: null,
 };

@@ -7,32 +7,27 @@
   ],
   "steps": [
     {
-      "id": "collect-files",
       "instruction": "List every file changed in PR #{pr_number}.\n",
       "output": "changed_files",
       "title": "Collect Files",
       "requires": []
     },
     {
-      "id": "review-each-file",
       "type": "loop",
       "over": "changed_files",
       "as": "file",
       "steps": [
         {
-          "id": "read",
           "instruction": "Read {file} and summarize what changed and why.\n",
           "title": "Read",
           "requires": []
         },
         {
-          "id": "critique",
           "instruction": "Review {file} for bugs, unsafe patterns, and style drift.\n",
           "title": "Critique",
           "requires": []
         },
         {
-          "id": "verdict",
           "instruction": "Give {file} a verdict: approve, or request changes with reasons.\n",
           "title": "Verdict",
           "requires": []
@@ -43,10 +38,9 @@
       "requires": []
     },
     {
-      "id": "summarize",
       "instruction": "Roll the per-file verdicts up into one review for PR #{pr_number}.\n",
       "requires": [
-        "review-each-file"
+        1
       ],
       "title": "Summarize"
     }

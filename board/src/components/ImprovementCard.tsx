@@ -4,7 +4,7 @@ import { Led } from "./Led";
 
 const COL_LABEL: Record<string, string> = {
   running: "Applying",
-  gate: "Checking",
+  checking: "Checking",
   done: "Done",
   failed: "Failed",
   pending: "Pending",
@@ -12,7 +12,7 @@ const COL_LABEL: Record<string, string> = {
 
 /** Default gate checklist shown for an auto-apply improvement card. */
 function defaultGates(): string[] {
-  return ["conductor.json modified", "validation passes", "change is ≤ 1 sentence"];
+  return ["workflow.json modified", "validation passes", "change is ≤ 1 sentence"];
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 
-export interface GateCriterion {
+export interface CheckCriterion {
   text: string;
   name?: string;
   checker?: "instruction";
@@ -9,12 +9,11 @@ export interface GateCriterion {
 export interface StepNodeData {
   stepId: string;
   index: number;
-  type: "step" | "condition" | "loop";
+  type: "step" | "loop";
   instruction: string;
-  gates: GateCriterion[];
+  checks: CheckCriterion[];
   requires: string[];
   output?: string;
-  isCondition: boolean;
   over?: string;
   parallel?: boolean;
   [key: string]: unknown;
@@ -30,39 +29,35 @@ export interface ParsedConductor {
 }
 
 interface RawStep {
-  id: string;
+  id?: string;
   title?: string;
   instruction?: string;
   type?: string;
-  if_true?: string;
-  if_false?: string;
-  then?: string;
-  requires?: string[];
+  requires?: number[];
   output?: string;
   over?: string;
   parallel?: boolean;
 }
 
-function instructionCheck(s: RawStep): GateCriterion[] {
+function instructionCheck(s: RawStep): CheckCriterion[] {
   const text = (s.instruction ?? "").trim();
   if (!text) return [];
   return [
     {
       text,
-      name: s.title ?? s.id,
+      name: s.title,
       checker: "instruction",
     },
   ];
 }
 
 const X_CENTER = 0;
-const X_GAP = 300;
 const Y_GAP = 168;
 
 /**
- * Turn a conductor JSON string into a laid-out flow graph.
- * Layout: steps stack vertically in declared order. Condition branches fan
- * their targets into left / right lanes so if_true / if_false read clearly.
+ * Turn a workflow JSON string into a laid-out flow graph.
+ * Layout: steps stack vertically in declared order. Requires edges show
+ * dependencies; loops are highlighted as repeated checked sub-sequences.
  */
 export function parseConductor(src: string): ParsedConductor {
   let doc: { name?: string; description?: string; inputs?: string[]; steps?: RawStep[] };
@@ -91,36 +86,25 @@ export function parseConductor(src: string): ParsedConductor {
     };
   }
 
-  const idToIndex = new Map<string, number>();
-  steps.forEach((s, i) => s?.id && idToIndex.set(s.id, i));
-
-  // lane assignment: a branch target referenced by if_false gets pushed right,
-  // if_true stays left-of-center; everything else centers.
-  const lane = new Map<string, number>();
-  steps.forEach((s) => {
-    if (s?.type === "condition") {
-      if (s.if_true) lane.set(s.if_true, -1);
-      if (s.if_false) lane.set(s.if_false, 1);
-    }
-  });
+  const stepKey = (_s: RawStep, i: number) => String(i);
+  const targetKey = (target: number | undefined) =>
+    typeof target === "number" && target >= 0 && target < steps.length ? String(target) : null;
 
   const nodes: Node<StepNodeData>[] = steps.map((s, i) => {
-    const isCondition = s.type === "condition";
-    const kind = s.type === "loop" ? "loop" : isCondition ? "condition" : "step";
-    const laneX = (lane.get(s.id) ?? 0) * X_GAP;
+    const kind = s.type === "loop" ? "loop" : "step";
+    const key = stepKey(s, i);
     return {
-      id: s.id,
-      position: { x: X_CENTER + laneX, y: i * Y_GAP },
+      id: key,
+      position: { x: X_CENTER, y: i * Y_GAP },
       type: "step",
       data: {
-        stepId: s.id,
+        stepId: key,
         index: i,
         type: kind,
         instruction: (s.instruction ?? "").trim(),
-        gates: instructionCheck(s),
-        requires: Array.isArray(s.requires) ? s.requires : [],
+        checks: instructionCheck(s),
+        requires: Array.isArray(s.requires) ? s.requires.map(String) : [],
         output: s.output,
-        isCondition,
         over: s.over,
         parallel: s.parallel === true,
       },
@@ -131,68 +115,28 @@ export function parseConductor(src: string): ParsedConductor {
   const pushEdge = (e: Edge) => edges.push(e);
 
   steps.forEach((s, i) => {
-    if (!s?.id) return;
+    const key = stepKey(s, i);
 
-    if (s.type === "condition") {
-      if (s.if_true && idToIndex.has(s.if_true)) {
-        pushEdge({
-          id: `${s.id}->${s.if_true}`,
-          source: s.id,
-          target: s.if_true,
-          label: "true",
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: "var(--color-mint)", strokeWidth: 1.5 },
-          labelStyle: { fill: "var(--color-mint)" },
-        });
-      }
-      if (s.if_false && idToIndex.has(s.if_false)) {
-        pushEdge({
-          id: `${s.id}->${s.if_false}`,
-          source: s.id,
-          target: s.if_false,
-          label: "false",
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: "var(--color-rose)", strokeWidth: 1.5 },
-          labelStyle: { fill: "var(--color-rose)" },
-        });
-      }
-      return; // conditions route only via if_true/if_false
-    }
-
-    // explicit rejoin
-    if (s.then && idToIndex.has(s.then)) {
+    const next = steps[i + 1];
+    if (next) {
+      const nextKey = stepKey(next, i + 1);
       pushEdge({
-        id: `${s.id}->then->${s.then}`,
-        source: s.id,
-        target: s.then,
-        label: "then",
+        id: `${key}->seq->${nextKey}`,
+        source: key,
+        target: nextKey,
         type: "smoothstep",
-        style: { stroke: "var(--color-iris)", strokeWidth: 1.5 },
-        labelStyle: { fill: "var(--color-iris)" },
+        style: { stroke: "var(--color-line-2)", strokeWidth: 1.5 },
       });
-    } else {
-      // fall through to the next sequential step, unless next is unreachable
-      const next = steps[i + 1];
-      if (next?.id) {
-        pushEdge({
-          id: `${s.id}->seq->${next.id}`,
-          source: s.id,
-          target: next.id,
-          type: "smoothstep",
-          style: { stroke: "var(--color-line-2)", strokeWidth: 1.5 },
-        });
-      }
     }
 
     // dependency edges (dashed)
     (s.requires ?? []).forEach((dep) => {
-      if (idToIndex.has(dep) && dep !== steps[i - 1]?.id) {
+      const depKey = targetKey(dep);
+      if (depKey && depKey !== String(i - 1)) {
         pushEdge({
-          id: `${dep}~req~${s.id}`,
-          source: dep,
-          target: s.id,
+          id: `${depKey}~req~${key}`,
+          source: depKey,
+          target: key,
           type: "smoothstep",
           style: {
             stroke: "var(--color-line-2)",

@@ -1,5 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
+import http from "node:http";
+import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
+import { appendAutoHeartbeat } from "./heartbeats.js";
+import {
+  appendKnowledge,
+  archiveRun,
+  conductorRootFromStatus,
+  timestampRunId,
+} from "./learning.js";
 import { discoverConductor, loadConductor, mergeKnowledge, saveConductor, SCOPES } from "./knowledge.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -44,6 +53,84 @@ function load(sp) {
   } catch {
     return null;
   }
+}
+
+function headlessAllowed(args) {
+  return args.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
+}
+
+function getHealth(url, timeout = 800) {
+  return new Promise((resolve) => {
+    const req = http.get(`${url.replace(/\/$/, "")}/health`, { timeout }, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        try {
+          const body = JSON.parse(data);
+          resolve(res.statusCode === 200 && body?.status === "ok" ? body : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+
+async function visibleBoardGuard(sp, workflowName) {
+  const serverJsonPath = path.join(path.dirname(sp), "server.json");
+  let info;
+  try {
+    info = JSON.parse(fs.readFileSync(serverJsonPath, "utf8"));
+  } catch {
+    return {
+      ok: false,
+      message:
+        `visible board is not initialized for this workflow — run ` +
+        `conductor-board init-board .conductor/workflow.json before execution, ` +
+        `or pass --headless / CONDUCTOR_HEADLESS=1 only for unattended runs.`,
+    };
+  }
+  if (!info?.pid || !pidAlive(info.pid)) {
+    return {
+      ok: false,
+      message:
+        `visible board is not running — run conductor-board init-board ` +
+        `.conductor/workflow.json before execution, or pass --headless only for unattended runs.`,
+    };
+  }
+  const url = info.url || `http://localhost:${info.port}`;
+  const health = await getHealth(url);
+  if (!health) {
+    return {
+      ok: false,
+      message:
+        `board process is not healthy at ${url} — run conductor-board init-board ` +
+        `.conductor/workflow.json before execution, or pass --headless only for unattended runs.`,
+    };
+  }
+  if (workflowName && !Object.prototype.hasOwnProperty.call(health.workflows || {}, workflowName)) {
+    return {
+      ok: false,
+      message:
+        `board at ${url} is not serving workflow "${workflowName}" — run ` +
+        `conductor-board init-board .conductor/workflow.json before execution.`,
+    };
+  }
+  return { ok: true };
 }
 
 // ── SEQUENTIAL-ORDER guard ───────────────────────────────────────────────────
@@ -130,6 +217,19 @@ function loopSubIds(sp, loopId) {
     return null;
   }
 }
+
+function cardTitle(sp, id) {
+  try {
+    const cp = discoverConductor(sp);
+    if (!cp) return id;
+    const doc = loadConductor(cp);
+    const step = (doc.steps || [])[Number(id)] || (doc.steps || []).find((s) => s && s.id === id);
+    return step?.title || id;
+  } catch {
+    return id;
+  }
+}
+
 function save(sp, s) {
   fs.mkdirSync(path.dirname(sp), { recursive: true });
   fs.writeFileSync(sp, JSON.stringify(s, null, 2));
@@ -150,6 +250,21 @@ export async function runStep(args) {
   if (!id || !status) return fail("usage: conductor-board step <id> <running|done|failed>");
   const s = load(sp);
   if (!s) return fail(`no status.json at ${path.relative(process.cwd(), sp)} — run status-init first`);
+  if (status === "running" && !headlessAllowed(args)) {
+    const guard = await visibleBoardGuard(sp, s.workflow);
+    if (!guard.ok) return fail(guard.message);
+  }
+  if (status === "running" || status === "done") {
+    try {
+      const cp = discoverConductor(sp);
+      if (cp) {
+        const blockers = dependencyBlockers(loadConductor(cp), s, id);
+        if (blockers.length) return fail(dependencyBlockerMessage(id, blockers));
+      }
+    } catch {
+      // Let the normal command path handle unreadable conductor/status files.
+    }
+  }
   const step = (s.steps[id] = s.steps[id] || { attempt: 1 });
   step.status = status;
   if (status === "running") {
@@ -158,6 +273,7 @@ export async function runStep(args) {
     s.current_step = id;
     const g = flag(args, ["--goal"]);
     if (typeof g === "string") s.current_step_goal = g;
+    appendAutoHeartbeat(s, null, id, `Started: ${cardTitle(sp, id)}`);
   } else if (status === "done") {
     step.completed_at = now();
     if (!step.gate || step.gate === "pending" || step.gate === "checking") step.gate = "passed";
@@ -181,8 +297,9 @@ export async function runGate(args) {
   return ok(`${id} gate → ${gate}`);
 }
 
-// conductor-board heartbeat <id> "note" [--iteration X --sub Y --insight-type T
-//   --insight-seed S --insight-scope SC --final --to STEP]
+// conductor-board update <id> "note" [--iteration X --sub Y --insight-type T
+//   --insight-seed S --insight-scope SC --final --handoff --to STEP]
+// Back-compat: conductor-board heartbeat uses the same handler.
 //
 // For a loop sub-step (--iteration AND --sub), the beat is written to the
 // sub-step cell AND bubbled up to the loop parent's heartbeat array (tagged with
@@ -191,7 +308,7 @@ export async function runGate(args) {
 export async function runHeartbeat(args) {
   const sp = statusPathOf(args);
   const [id, note] = positionals(args);
-  if (!id || !note) return fail('usage: conductor-board heartbeat <id> "note" [flags]');
+  if (!id || !note) return fail('usage: conductor-board update <id> "note" [flags]');
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
   const step = (s.steps[id] = s.steps[id] || { attempt: 1 });
@@ -214,10 +331,11 @@ export async function runHeartbeat(args) {
   // --card opens a new activity card (a coherent unit of work: one intent, one target).
   // This beat's note is the card's title; following beats (no --card) are its detail.
   if (args.includes("--card")) entry.card = true;
-  if (args.includes("--final")) {
+  if (args.includes("--final") || args.includes("--handoff")) {
     entry.finalBeat = true;
     const to = flag(args, ["--to"]);
-    if (typeof to === "string") entry.handoff = { to };
+    entry.handoff = { context: note };
+    if (typeof to === "string") entry.handoff.to = to;
   }
 
   if (typeof it === "string" && typeof sub === "string") {
@@ -503,17 +621,27 @@ export async function runSuggest(args) {
   } catch (e) {
     return fail(`could not parse conductor: ${e.message}`);
   }
+  const step = str(["--step"], undefined);
+  const entry = appendKnowledge(conductorRootFromStatus(sp), {
+    source: "agent",
+    source_run: load(sp)?.run_id,
+    source_card: step,
+    title,
+    detail: str(["--note"], undefined) || str(["--proposed"], undefined) || str(["--current"], undefined) || title,
+    status: "open",
+  });
+  // Backcompat: keep old workflow.json knowledge readable for existing UI/spec paths.
   const merged = mergeKnowledge(doc, {
     title,
     scope,
-    step: str(["--step"], undefined),
+    step,
     type: str(["--type"], undefined),
     current: str(["--current"], undefined),
     proposed: str(["--proposed"], undefined),
     note: str(["--note"], undefined),
   });
   const res = saveConductor(conductorPath, doc);
-  if (!res.ok) return fail(`knowledge not written — ${res.error}`);
+  if (!res.ok) return fail(`legacy workflow knowledge not written — ${res.error}`);
   // Surface the learning live: drop an insight-tagged heartbeat on the current (or --step) step so
   // it shows in the stream + the Insights tab. The knowledge store and the beat stream are separate
   // rails — without this the Insights tab stays empty even though we captured learnings.
@@ -525,7 +653,7 @@ export async function runSuggest(args) {
       if (!Array.isArray(st.heartbeat)) st.heartbeat = [];
       st.heartbeat.push({
         at: new Date().toISOString(),
-        note: `learned: ${title}`,
+        note: `Insight: ${title}`,
         insight: { type: str(["--type"], undefined) || "learning", seed: title, scope },
       });
       fs.writeFileSync(sp, JSON.stringify(status, null, 2));
@@ -534,7 +662,7 @@ export async function runSuggest(args) {
     /* status not writable — the knowledge is still saved */
   }
   return ok(
-    `knowledge [${scope}] "${title.length > 46 ? title.slice(0, 46) + "…" : title}" — ${merged.status} (observed ${merged.observed}×)`,
+    `knowledge ${entry.id} [${scope}] "${title.length > 46 ? title.slice(0, 46) + "…" : title}" — ${merged.status} (observed ${merged.observed}×)`,
   );
 }
 
@@ -584,7 +712,7 @@ export async function runKnowledge(args) {
     if (!countOk) why.push(`need ≥ ${n} entries (have ${filtered.length})`);
     if (!scopesOk) why.push(`need ≥ ${m} scopes (have ${distinctScopes})`);
     return fail(
-      `knowledge gate: ${why.join(", ")} — capture what you learned, including cross-cutting:\n` +
+      `knowledge check: ${why.join(", ")} — capture what you learned, including cross-cutting:\n` +
         '    conductor-board suggest "…" --scope upstream|template|tooling|corpus',
     );
   }
@@ -595,10 +723,10 @@ export async function runKnowledge(args) {
   return true;
 }
 
-// conductor-board status-init <conductor.json> [--run-id ID]
+// conductor-board status-init <workflow.json> [--run-id ID]
 export async function runStatusInit(args) {
   const [conductorPath] = positionals(args);
-  if (!conductorPath) return fail("usage: conductor-board status-init <conductor.json>");
+  if (!conductorPath) return fail("usage: conductor-board status-init <workflow.json>");
   let doc;
   try {
     doc = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), conductorPath), "utf8"));
@@ -608,7 +736,7 @@ export async function runStatusInit(args) {
   const sp = statusPathOf(args);
   const runId =
     (typeof flag(args, ["--run-id"]) === "string" && flag(args, ["--run-id"])) ||
-    now().replace(/\.\d+Z$/, "").replace(/:/g, "-");
+    timestampRunId();
   const wfName = doc.name || "workflow";
 
   // §6.2 — every run gets a human name: {workflow}-run-{N}-{timestamp}. N is the
@@ -699,12 +827,14 @@ export async function runStatusInit(args) {
     }
   }
 
-  for (const st of doc.steps || []) {
-    if (!st || !st.id) continue;
-    steps[st.id] =
+  for (const [i, st] of (doc.steps || []).entries()) {
+    if (!st) continue;
+    const key = String(i);
+    steps[key] =
       st.type === "loop"
         ? { status: "pending", type: "loop", total: 0, completed: 0, iterations: {} }
         : { status: "pending", gate: "pending", attempt: 1 };
+    if (st.id !== undefined) steps[String(st.id)] = steps[key];
   }
   const status = {
     workflow: wfName,
@@ -717,8 +847,13 @@ export async function runStatusInit(args) {
     started_at: now(),
     steps,
   };
+  const root = conductorRootFromStatus(sp);
+  const runDir = path.join(root, "runs", runId);
+  status.run_dir = path.relative(root, runDir).split(path.sep).join("/");
+  fs.mkdirSync(path.join(runDir, "artifacts"), { recursive: true });
   save(sp, status);
-  const workflowCount = (doc.steps || []).filter((s) => s && s.id).length;
+  save(path.join(runDir, "status.json"), status);
+  const workflowCount = (doc.steps || []).filter((s) => s).length;
   return ok(
     `status.json initialized (${workflowCount} steps` +
       (improvements ? `, ${improvements} Phase 0 improvement${improvements === 1 ? "" : "s"}` : "") +

@@ -58,14 +58,13 @@ function StepTree({
 
   if (!model.steps.length) return null;
 
-  // §7: improvement runs silently — only structural changes (needing approval)
-  // appear in the tree.
+  // Phase-0 improvement runs silently unless a structural proposal is present.
   const improve = model.steps.filter((s) => s.phase === "improve" && s.improve?.structural === true);
   const workflow = model.steps.filter((s) => s.phase !== "improve");
 
   const renderStep = (s: BoardStep) => {
     const on = activeStep === s.id || (!!activeStep && activeStep.startsWith(`${s.id}::`));
-    const label = s.phase === "improve" ? s.improve?.title ?? s.id.replace("_improve::", "") : s.id;
+    const label = s.phase === "improve" ? s.improve?.title ?? s.title : s.title;
     const collapsible = s.isLoop && !!s.loop && s.loop.iterations.length > 0;
     const open = collapsible && !collapsed.has(s.id);
     return (
@@ -150,7 +149,7 @@ function StepTree({
     <div className="space-y-0.5">
       {improve.length > 0 && (
         <>
-          <SectionRule text="Awaiting approval" />
+          <SectionRule text="Proposed changes" />
           {improve.map(renderStep)}
           <div className="h-1.5" />
         </>

@@ -33,17 +33,17 @@ function IterationTile({
         {it.steps.map((s, i) => (
           <span
             key={i}
-            title={`${s.id} — ${subStepColumn(s)}`}
+            title={`${s.title} — ${subStepColumn(s)}`}
             className="inline-flex items-center gap-1.5 rounded border border-line px-1.5 py-0.5 text-[10px] text-mist"
           >
             <Led state={subStepColumn(s)} />
-            {s.id}
+            {s.title}
           </span>
         ))}
       </div>
 
       {beats && (
-        <p className="line-clamp-1 text-[11px] leading-snug text-mist">{renderNote(beats)}</p>
+        <p className="whitespace-pre-wrap break-words text-[11px] leading-snug text-mist">{renderNote(beats)}</p>
       )}
 
       <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-mist opacity-0 transition-opacity group-hover:opacity-100">
@@ -71,7 +71,7 @@ export function LoopOverview({
         <span className="grid h-7 w-7 place-items-center rounded-md bg-panel-2 text-mist">
           <Icon name="loop" size={15} />
         </span>
-        <h2 className="text-lg font-medium text-chalk">{loopStep.id}</h2>
+        <h2 className="text-lg font-medium text-chalk">{loopStep.title}</h2>
         <span className="text-[12px] text-mist">
           {loop?.completed ?? 0}/{loop?.total ?? iterations.length} iterations
         </span>

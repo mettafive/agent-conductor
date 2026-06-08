@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { startServer } from "../server/server.js";
@@ -8,6 +10,12 @@ import { startServer } from "../server/server.js";
 const argv = process.argv.slice(2);
 const command = argv[0] && !argv[0].startsWith("-") ? argv[0] : null;
 const rest = argv.slice(1);
+
+if (argv.includes("--version") || argv.includes("-v")) {
+  const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  console.log(pkg.version);
+  process.exit(0);
+}
 
 function flag(names, fallback) {
   for (const name of names) {
@@ -28,27 +36,42 @@ const HELP = `
 
   Commands
     (default)                Serve the live board (watches .conductor/)
-    init                     Scaffold a new .conductor/conductor.json
+    init                     Scaffold a new .conductor/workflow.json
     validate [path]          Check a conductor against the spec
-    cards [path]             Validate card-design output: id/title/instruction,
-                             unique kebab-case ids, no dependencies.
+    cards [path]             Validate card-design output: title/instruction,
+                             no ids, gates, or dependencies.
                              [--skill <path>]
+    decompose --skill <path> Compose SKILL.md into .conductor/cards.json,
+                             then independently check and repair the result
+    compile --skill <path>   Reuse an accepted compiled workflow, or run
+                             decompose + order + audit + validate and cache it
+    integrate --dir <path>   Apply open knowledge.json items to cards.json
+                             before a repeat run
+    order                    Add requires arrays to .conductor/cards.json,
+                             then independently check and repair the graph
+    order-audit              Spot-sample the dependency graph with concrete
+                             root/dependency/parallelism questions
     coverage                 Verify every card in .conductor/cards.json
-                             has a card in the conductor (fails on a folded phase).
-                             [--cards <json>] [--conductor <json>]
+                             has a card at the same index in workflow.json.
+                             [--cards <json>] [--workflow <json>]
     setup                    Write setup.conductor.json (the bootstrap conductor)
-    check <step-id>          Run the independent instruction checker and record
-                             its PASS/FAIL verdict
+    init-board [workflow]    status-init, start/reuse board, open browser,
+                             verify /health and current workflow
+    check <step-id>          Print the instruction/output checker prompt
     ps                       List every conductor-board running on this machine
     stop [--all]             Stop this project's board (or every board)
+    test --skill <path>      Run a clean structural E2E test in /tmp
     clean [--keep N]         Trim history to the last N runs; add
-          [--prune-heartbeats] to archive old beats (keeps finalBeats + insights)
+          [--prune-heartbeats] to archive old update beats (keeps finalBeats + insights)
 
   Status-writer (for agents — keep status.json live as you work)
-    status-init <file>       Generate .conductor/status.json from a conductor
+    status-init <file>       Generate .conductor/status.json from a workflow
     step <id> <state>        running | done | failed  (state)
     gate <id> <state>        checking | passed | failed
-    heartbeat <id> "note"    Append a heartbeat (--iteration, --insight-type,
+    update <id> "note"       Append a progress update. Alias: heartbeat.
+                             Use Codex-style concise context: what changed,
+                             what you learned, decided, or are handing off.
+    heartbeat <id> "note"    Back-compat alias for update (--iteration, --insight-type,
                              --insight-seed, --final, --to <step>)
     suggest "title" --scope SC    Append a learning to the conductor's knowledge:
     knowledge [--min N]      List knowledge / gate on captured-learnings count
@@ -56,28 +79,30 @@ const HELP = `
     loop <loop> <item> <sub> <state>   Update a loop sub-step
     gate-result <step>[::iter::sub] --passed|--failed [--evidence "..."]
                              Record an independent checker verdict for a card
-    complete <step>[::iter::sub]   Consume checker verdict, then advance on pass
+    complete <step>[::iter::sub]   Consume checker verdict and require an output receipt
     feedback <step>[::iter::sub]   Read latest checker failure and attempts left
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
-    --conductor, -c <file>   Path to conductor.json (default: auto-discovered)
+    --workflow, -c <file>    Path to workflow.json (default: auto-discovered)
     --port <n>               Port to serve on        (default: 3042)
-    --headless               Don't open a browser (CI / cloud / no display).
-                             Same as CONDUCTOR_HEADLESS=1. Default: opens.
+    --headless               Opt in to unattended execution without opening a
+                             browser (CI, cron, cloud, no display, or explicit
+                             user request). Same as CONDUCTOR_HEADLESS=1.
+                             Default: visible board opens before work starts.
 
   init options
     --name, -n <name>        Workflow name (skips the prompts)
     --description, -d <text> One-line description
     --steps, -s <n>          Number of placeholder steps
-    --force, -f              Overwrite an existing conductor.json
+    --force, -f              Overwrite an existing workflow.json
 
   --help, -h                 Show this help
 
   Examples
     $ npx conductor-board
     $ npx conductor-board init --name clinic-update --steps 4
-    $ npx conductor-board validate .conductor/conductor.json
+    $ npx conductor-board validate .conductor/workflow.json
 `;
 
 // ---- subcommands ----
@@ -101,6 +126,31 @@ if (command === "cards") {
   process.exit((await runCards(rest)) ? 0 : 1);
 }
 
+if (command === "decompose") {
+  const { runDecompose } = await import("../cli/decompose.js");
+  process.exit((await runDecompose(rest)) ? 0 : 1);
+}
+
+if (command === "compile") {
+  const { runCompile } = await import("../cli/compile.js");
+  process.exit((await runCompile(rest)) ? 0 : 1);
+}
+
+if (command === "integrate") {
+  const { runIntegration } = await import("../cli/integration.js");
+  process.exit((await runIntegration(rest)) ? 0 : 1);
+}
+
+if (command === "order") {
+  const { runOrder } = await import("../cli/order.js");
+  process.exit((await runOrder(rest)) ? 0 : 1);
+}
+
+if (command === "order-audit") {
+  const { runOrderAudit } = await import("../cli/order.js");
+  process.exit((await runOrderAudit(rest)) ? 0 : 1);
+}
+
 if (command === "coverage") {
   const { runCoverage } = await import("../cli/coverage.js");
   process.exit((await runCoverage(rest)) ? 0 : 1);
@@ -109,6 +159,11 @@ if (command === "coverage") {
 if (command === "setup") {
   const { runSetup } = await import("../cli/setup.js");
   process.exit((await runSetup(rest)) ? 0 : 1);
+}
+
+if (command === "init-board") {
+  const { runInitBoard } = await import("../cli/init-board.js");
+  process.exit((await runInitBoard(rest)) ? 0 : 1);
 }
 
 if (command === "check") {
@@ -131,12 +186,18 @@ if (command === "clean") {
   process.exit((await runClean(rest)) ? 0 : 1);
 }
 
+if (command === "test") {
+  const { runTest } = await import("../cli/test.js");
+  process.exit((await runTest(rest)) ? 0 : 1);
+}
+
 // status-writer commands (for agents — keep the board live as you work)
-if (["step", "gate", "heartbeat", "overview", "comment", "directives", "resolve", "loop", "loop-scope", "status-init", "suggest", "knowledge"].includes(command)) {
+if (["step", "gate", "update", "heartbeat", "overview", "comment", "directives", "resolve", "loop", "loop-scope", "status-init", "suggest", "knowledge"].includes(command)) {
   const w = await import("../cli/writer.js");
   const fn = {
     step: w.runStep,
     gate: w.runGate,
+    update: w.runHeartbeat,
     heartbeat: w.runHeartbeat,
     overview: w.runOverview,
     comment: w.runComment,
@@ -166,6 +227,11 @@ if (command === "gate-result") {
   process.exit((await runGateResult(rest)) ? 0 : 1);
 }
 
+if (command === "learn-card") {
+  const { runLearnCard } = await import("../cli/learning.js");
+  process.exit((await runLearnCard(rest)) ? 0 : 1);
+}
+
 if (command && command !== "board") {
   console.error(`Unknown command "${command}". Run with --help to see usage.`);
   process.exit(1);
@@ -173,12 +239,12 @@ if (command && command !== "board") {
 
 // ---- default: serve the board ----
 const statusPath = String(flag(["--path", "-p"], ".conductor/status.json"));
-const conductorArg = flag(["--conductor", "-c"], null);
+const conductorArg = flag(["--workflow", "--conductor", "-c"], null);
 const conductorPath = conductorArg ? path.resolve(process.cwd(), String(conductorArg)) : null;
 const wantedPort = Number(flag(["--port"], 3042)) || 3042;
-// The board always opens the browser — it's meant to be seen. --headless (or
-// CONDUCTOR_HEADLESS=1) suppresses it for CI / cloud / no-display environments.
-// The name signals "I have no display", not "I don't want to look".
+// The board opens the browser by default because visibility is the product.
+// --headless (or CONDUCTOR_HEADLESS=1) is for unattended environments: CI,
+// cron, cloud/no-display, or an explicit user request.
 const headless = argv.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
 
 function openBrowser(url) {
@@ -196,17 +262,59 @@ function openBrowser(url) {
   }
 }
 
-// Try the requested port, walk forward a few if it's taken.
-async function listenWithFallback(port, attempts = 10) {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await startServer({ statusPath, conductorPath, port: port + i });
-    } catch (e) {
-      if (e && e.code === "EADDRINUSE") continue;
-      throw e;
-    }
+function repoKey(cwd = process.cwd()) {
+  return crypto.createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 24);
+}
+
+function registryPath(cwd = process.cwd()) {
+  return path.join(os.homedir(), ".conductor", "servers", `${repoKey(cwd)}.json`);
+}
+
+function readJsonMaybe(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
   }
-  throw new Error(`No free port in range ${port}-${port + attempts - 1}`);
+}
+
+function writeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(value, null, 2));
+}
+
+function boardBrowserUrl(url, workflow) {
+  const u = new URL(url);
+  u.pathname = "/";
+  if (workflow) u.searchParams.set("wf", workflow);
+  return u.toString();
+}
+
+function browserAlreadyOpened(registry) {
+  const info = readJsonMaybe(registry);
+  return typeof info?.browser_opened_at === "string";
+}
+
+function syncRegistry(registry, info, extras = {}) {
+  writeJson(registry, {
+    ...(readJsonMaybe(registry) || {}),
+    ...info,
+    ...extras,
+    repo: path.resolve(process.cwd()),
+    registry_key: repoKey(),
+    updated_at: new Date().toISOString(),
+  });
+}
+
+async function listenOnRequestedPort(port) {
+  try {
+    return await startServer({ statusPath, conductorPath, port });
+  } catch (e) {
+    if (e && e.code === "EADDRINUSE") {
+      throw new Error(`port ${port} is already in use; stop or reuse the existing board instead of starting another port`);
+    }
+    throw e;
+  }
 }
 
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -358,15 +466,25 @@ if (existing) {
   process.exit(0);
 }
 
-const { conductorPath: resolvedConductor, absStatus, server, serverJsonPath } =
-  await listenWithFallback(wantedPort);
+const { conductorPath: resolvedConductor, absStatus, server, serverJsonPath, workflows } =
+  await listenOnRequestedPort(wantedPort);
 const port = server.address().port;
-const url = `http://localhost:${port}`;
+const url = `http://localhost:${port}/`;
+const registry = registryPath();
+const firstWorkflow = (workflows && workflows[0]) || null;
+const browserUrl = boardBrowserUrl(url, firstWorkflow);
 const rel = (p) => (p ? path.relative(process.cwd(), p) || p : null);
+
+syncRegistry(registry, readJsonMaybe(serverJsonPath) || { port, url, pid: process.pid }, {
+  url,
+  conductor_root: path.dirname(absStatus),
+  status_path: absStatus,
+  workflow_path: resolvedConductor,
+});
 
 console.log("");
 console.log(`  ${iris("🎼 conductor-board")}`);
-console.log(`  ${bold("Board live at")} ${mint(url)} ${dim("— watching " + rel(absStatus))}`);
+console.log(`  ${bold("Board live at")} ${mint(browserUrl)} ${dim("— watching " + rel(absStatus))}`);
 if (resolvedConductor) {
   console.log(`  ${dim("conductor:  " + rel(resolvedConductor))}`);
 } else {
@@ -375,7 +493,17 @@ if (resolvedConductor) {
 console.log(`  ${dim("press ctrl+c to stop")}`);
 console.log("");
 
-if (!headless) openBrowser(url);
+if (!headless && !browserAlreadyOpened(registry)) {
+  openBrowser(browserUrl);
+  syncRegistry(registry, readJsonMaybe(serverJsonPath) || { port, url, pid: process.pid }, {
+    url,
+    conductor_root: path.dirname(absStatus),
+    status_path: absStatus,
+    workflow_path: resolvedConductor,
+    browser_opened_url: browserUrl,
+    browser_opened_at: new Date().toISOString(),
+  });
+}
 
 // Subdirectory convention (§4.7): warn if a flat .conductor/status.json is in
 // use. One workflow per .conductor/<name>/ keeps history and insights separate.

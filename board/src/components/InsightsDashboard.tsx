@@ -76,7 +76,7 @@ function Section({ title, hint, items }: { title: string; hint?: string; items: 
  * The persistent insights page (§5.5 / §10). Reads the conductor's knowledge
  * section — the conductor IS the knowledge base. Browse any time: proven
  * patterns auto-apply in the Phase 0 improvement pass, so this is informational,
- * not an approval step.
+ * not an execution step.
  */
 export function InsightsDashboard({
   workflow,

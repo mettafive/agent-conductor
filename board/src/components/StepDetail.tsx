@@ -8,7 +8,7 @@ import { Led } from "./Led";
 
 const COL_LABEL: Record<string, string> = {
   running: "Running",
-  gate: "Checking",
+  checking: "Checking",
   done: "Done",
   failed: "Failed",
   pending: "Pending",
@@ -38,7 +38,7 @@ export function StepDetail({
         {/* header — what + status */}
         <div className="flex items-center gap-2.5">
           <Led state={step.column} />
-          <span className="flex-1 text-[15px] font-medium text-chalk">{step.id}</span>
+          <span className="flex-1 text-[15px] font-medium text-chalk">{step.title}</span>
           <span className="text-[12px] text-dim">{COL_LABEL[step.column] ?? step.column}</span>
           {dur && <span className="text-[12px] tabular-nums text-dim">{dur}</span>}
           {step.attempt > 1 && <span className="text-[11px] text-dim">attempt {step.attempt}</span>}

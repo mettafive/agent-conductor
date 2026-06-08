@@ -6,7 +6,7 @@
 // post-run optimization suggestions — so any example showcases the live board.
 // Not part of the shipped package — purely for demos and manual testing.
 //
-//   node scripts/simulate.js [conductor.json] [--dir .conductor] [--loop] [--fail seo-check]
+//   node scripts/simulate.js [workflow.json] [--dir .conductor] [--loop] [--fail seo-check]
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,14 +28,18 @@ const DEFAULT_ITEMS = ["src/auth.ts", "src/api/users.ts", "db/schema.sql", "ui/L
 const loopItems = () =>
   itemsArg ? String(itemsArg).split(",").map((s) => s.trim()).filter(Boolean) : DEFAULT_ITEMS;
 
-const conductorPath = conductorArg ?? path.join(dir, "conductor.json");
+const conductorPath = conductorArg ?? path.join(dir, "workflow.json");
 if (!fs.existsSync(conductorPath)) {
   console.error(`conductor not found: ${conductorPath}`);
   process.exit(1);
 }
 
 const doc = JSON.parse(fs.readFileSync(conductorPath, "utf8"));
-const steps = (doc.steps || []).filter((s) => s && s.id);
+const steps = (doc.steps || []).filter(Boolean).map((s, i) => ({
+  ...s,
+  id: String(s.id ?? i),
+  title: s.title || `Card ${i + 1}`,
+}));
 fs.mkdirSync(dir, { recursive: true });
 const statusPath = path.join(dir, "status.json");
 
@@ -50,6 +54,7 @@ function write(state) {
 const oneLine = (s) =>
   String(s || "").trim().split("\n").map((x) => x.trim()).find(Boolean) || "";
 const goalOf = (step) => oneLine(step.instruction) || step.id;
+const labelOf = (step) => String(step.title || step.id).replace(/\s+/g, " ").trim();
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 function beat(entry, note, extra = {}) {
@@ -64,9 +69,10 @@ function nextStepId(step, idx) {
 }
 
 function maybeInsight(step) {
+  const label = labelOf(step);
   return {
     type: "instruction",
-    seed: `${step.id}: stating the exact output path in the instruction would remove a guess.`,
+    seed: `${label}: stating the exact output path in the instruction would remove a guess.`,
     step: step.id,
     confidence: Math.random() < 0.5 ? "high" : "medium",
   };
@@ -74,14 +80,15 @@ function maybeInsight(step) {
 
 // 1–2 working heartbeats while a step runs; sometimes one carries an insight.
 async function workBeats(step, entry, state, idx) {
-  beat(entry, `Working ${step.id} against its instruction: "${goalOf(step)}".`);
+  const label = labelOf(step);
+  beat(entry, `Working on ${label} — comparing the draft work against the card instruction.`);
   write({ ...state });
   await sleep(750);
 
   const withInsight = idx === 1 || /review|seo|security|audit|write/.test(step.id);
   const note = pick([
     "Making progress; collecting output the checker can inspect.",
-    `${step.id} taking shape; checking it against the goal.`,
+    `${label} is taking shape; checking it against the goal.`,
     `Cross-checking the work so far against "${goalOf(step)}".`,
   ]);
   beat(entry, note, withInsight && Math.random() < 0.7 ? { insight: maybeInsight(step) } : {});
@@ -91,17 +98,19 @@ async function workBeats(step, entry, state, idx) {
 
 function addLearnings(step, entry) {
   if (!/review|seo|security|audit|outline|research/.test(step.id)) return;
+  const label = labelOf(step);
   entry.learnings = pick([
-    [`${step.id}: making the instruction concrete kept the work on-target.`],
-    [`${step.id}: naming the expected evidence made the checker result clearer.`],
+    [`${label}: making the instruction concrete kept the work on-target.`],
+    [`${label}: naming the expected evidence made the checker result clearer.`],
   ]);
 }
 
 function finalBeat(step, entry, state, idx) {
   const to = nextStepId(step, idx);
-  const handoff = { to, context: `${step.id} satisfied its instruction check; ${to} can build on it.` };
+  const next = steps.find((s) => s.id === String(to));
+  const handoff = { to, context: `${labelOf(step)} satisfied its instruction check; ${next ? labelOf(next) : "wrap-up"} can build on it.` };
   if (step.output) handoff.produced = step.output;
-  beat(entry, `${step.id} complete — checker passed. Handing off to ${to}.`, {
+  beat(entry, `Handing off: ${labelOf(step)} passed. Next: ${next ? labelOf(next) : "wrap-up"}.`, {
     finalBeat: true,
     handoff,
   });
@@ -149,14 +158,24 @@ function buildSuggestions(walked) {
 }
 
 function checkerDetail(step, passed) {
+  const label = labelOf(step);
+  const made = `${label} produced inspectable work matching the card instruction.`;
+  const checked = passed
+    ? `Checker compared the output against "${goalOf(step)}" and found the required evidence.`
+    : `Checker compared the output against "${goalOf(step)}" and found missing evidence.`;
   return [{
     criterion: goalOf(step),
     name: step.title || step.id,
     checker: "instruction",
     passed,
     evidence: passed
-      ? `Simulated checker verified output against: ${goalOf(step)}`
-      : `Simulated checker found output did not satisfy: ${goalOf(step)}`,
+      ? `PASS simulated checker verified output against: ${goalOf(step)}\nMADE: ${made}\nCHECKED: ${checked}\nSUMMARY: ${label} passed because the output satisfied the instruction.`
+      : `FAIL simulated checker found output did not satisfy: ${goalOf(step)}\nMADE: ${made}\nCHECKED: ${checked}\nSUMMARY: ${label} failed because required evidence was missing.`,
+    made_summary: made,
+    checked_summary: checked,
+    summary: passed
+      ? `${label} passed because the output satisfied the instruction.`
+      : `${label} failed because required evidence was missing.`,
   }];
 }
 
@@ -257,7 +276,7 @@ async function run() {
     /* no history */
   }
   const state = {
-    conductor: "2.0.0",
+    conductor: "3.0.0",
     workflow: wfName,
     run_id: runId,
     run_name: `${nameSlug}-run-${priorRuns + 1}-${runId.replace(/-\d{2}$/, "")}`,
@@ -302,7 +321,7 @@ async function run() {
     entry.status = "running";
     entry.started_at = nowIso();
     state.current_step_goal = goalOf(step);
-    beat(entry, `Starting ${step.id}. Orienting against the goal and instruction.`);
+    beat(entry, `Working on ${labelOf(step)} — orienting against the goal and instruction.`);
     write({ ...state });
     await sleep(800);
 
@@ -314,7 +333,7 @@ async function run() {
       entry.gate_detail = checkerDetail(step, true);
       entry.completed_at = nowIso();
       entry.branch_taken = branch;
-      beat(entry, `Branch chosen. Handing off to ${branch}.`, {
+      beat(entry, `Handing off: branch chosen. Next: ${branch}.`, {
         finalBeat: true,
         handoff: { to: branch, context: `condition ${step.id} routed here` },
       });
@@ -339,7 +358,7 @@ async function run() {
       entry.gate = "failed";
       entry.gate_detail = checkerDetail(step, false);
       entry.completed_at = nowIso();
-      beat(entry, `${step.id} could not satisfy its instruction check. Stopping.`);
+      beat(entry, `${labelOf(step)} could not satisfy its instruction check. Stopping.`);
       state.status = "failed";
       state.completed_at = nowIso();
       state.current_step = step.id;

@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
+import { appendAutoHeartbeat } from "./heartbeats.js";
 import { recordCheckerResult, resolveStep, statusEntry, discoverConductor } from "./complete.js";
+import { artifactForFile, artifactReadSources, isReadableArtifactPath } from "./artifacts.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
-const amber = (s) => `\x1b[38;5;214m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
 function flag(args, names) {
@@ -46,19 +47,25 @@ function readMaybeFile(cwd, p) {
   if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return null;
   return {
     label: path.relative(cwd, file),
-    text: fs.readFileSync(file, "utf8"),
+    abs: file,
+    text: isReadableArtifactPath(file) ? fs.readFileSync(file, "utf8") : null,
   };
 }
 
 function collectOutput({ args, cwd, statusPath, status, stepId, entry }) {
   const chunks = [];
+  const artifactPaths = [];
   const inline = flag(args, ["--output"]);
   if (typeof inline === "string" && inline.trim()) chunks.push({ label: "--output", text: inline });
 
   const outputFile = flag(args, ["--output-file", "--file", "-f"]);
   if (typeof outputFile === "string") {
     const read = readMaybeFile(cwd, outputFile);
-    if (read) chunks.push(read);
+    if (read) {
+      const artifact = artifactForFile(statusPath, read.abs);
+      if (artifact) artifactPaths.push(artifact.path);
+      if (read.text !== null) chunks.push({ ...read, path: artifact?.path });
+    }
   }
 
   for (const key of ["output", "output_value", "result", "evidence"]) {
@@ -77,18 +84,16 @@ function collectOutput({ args, cwd, statusPath, status, stepId, entry }) {
     const p = typeof item === "string" ? item : item.path || item.file;
     if (!p) continue;
     const read = readMaybeFile(cwd, p);
-    if (read) chunks.push(read);
+    if (read) {
+      const artifact = artifactForFile(statusPath, read.abs);
+      if (artifact) artifactPaths.push(artifact.path);
+      if (read.text !== null) chunks.push({ ...read, path: artifact?.path });
+    }
   }
 
-  const statusDir = path.dirname(statusPath);
-  for (const rel of [
-    path.join("outputs", `${stepId}.md`),
-    path.join("outputs", `${stepId}.txt`),
-    `${stepId}-output.md`,
-    `${stepId}.output.md`,
-  ]) {
-    const read = readMaybeFile(statusDir, rel) || readMaybeFile(cwd, path.join(".conductor", rel));
-    if (read) chunks.push(read);
+  for (const read of artifactReadSources({ statusPath, stepId, entry })) {
+    artifactPaths.push(read.path);
+    chunks.push(read);
   }
 
   const handoffs = (Array.isArray(entry?.heartbeat) ? entry.heartbeat : [])
@@ -100,65 +105,46 @@ function collectOutput({ args, cwd, statusPath, status, stepId, entry }) {
     .map((c) => `--- ${c.label} ---\n${String(c.text).trim()}`)
     .join("\n\n")
     .trim();
-  return { text, sources: chunks.map((c) => c.label) };
+  return {
+    text,
+    sources: chunks.map((c) => c.label),
+    artifactPaths: [...new Set([...artifactPaths, ...chunks.map((c) => c.path).filter(Boolean)])],
+  };
 }
 
-function parseVerdict(text) {
-  const trimmed = String(text || "").trim();
-  const first = trimmed.split(/\s+/)[0]?.toUpperCase();
-  if (first === "PASS") return { passed: true, evidence: trimmed };
-  if (first === "FAIL") return { passed: false, evidence: trimmed };
-  if (/^\s*PASS\b/i.test(trimmed)) return { passed: true, evidence: trimmed };
-  return { passed: false, evidence: `FAIL checker response did not start with PASS: ${trimmed}` };
-}
-
-async function runOpenAiChecker(instruction, output) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  const model = process.env.CONDUCTOR_CHECKER_MODEL || "gpt-4o-mini";
-  const prompt =
-    `The agent was asked to do:\n${instruction}\n\n` +
-    `Here is what it produced:\n${output}\n\n` +
-    "Does the output satisfy the instruction? List specifically what's done and what's missing or wrong. " +
-    "Respond with PASS or FAIL followed by your reasoning.";
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "You are an independent checker for an AI-agent workflow. Judge only the instruction and output provided." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0,
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI checker failed (${res.status}): ${await res.text()}`);
-  const json = await res.json();
-  return parseVerdict(json?.choices?.[0]?.message?.content || "");
+function checkerPrompt(instruction, output) {
+  return (
+    `The agent was asked: ${instruction}\n\n` +
+    `Here is what was produced:\n${output}\n\n` +
+    "The output must be the card's primary markdown receipt at .conductor/artifacts/<card-index>.md: the actual work product or a verifiable action record. Content/code/data cards should show the actual content, code, data, diff, or report in that markdown receipt. Action cards may pass with the markdown receipt only when it includes concrete proof such as command run, timestamp, inputs, return value, changed resource, affected rows/files/URLs, and verification query/curl/test result. If the receipt merely describes what was done without proof, FAIL immediately.\n" +
+    "Supporting files such as images, screenshots, PDFs, JSON, CSV, HTML, or logs are not standalone primary artifacts. Evaluate them only as files referenced from the markdown receipt. For image work, the receipt should embed every produced image inline with markdown image syntax.\n" +
+    "Does it satisfy the instruction? List what's done and what's missing. PASS or FAIL.\n" +
+    "Also write two dashboard lines:\n" +
+    "MADE: one line summarizing what the agent produced.\n" +
+    "CHECKED: one line summarizing how you verified it passed or why it failed.\n" +
+    "Then write a one-line summary starting with SUMMARY: that a non-technical person could scan in a dashboard."
+  );
 }
 
 /**
  * conductor-board check <step-id>
  *
- * Runs the universal independent checker: instruction + produced output in,
- * PASS/FAIL evidence out. Records the verdict directly into status.json for
- * `complete` to consume.
+ * Prints the universal independent checker prompt: instruction + produced
+ * output in, PASS/FAIL verdict out. The caller evaluates the prompt in a clean
+ * context and records the verdict with `gate-result`.
  */
 export async function runCheck(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "usage: conductor-board check <step-id>[::iter::sub] [--output \"...\"] [--output-file file]\n" +
-        "       conductor-board check <step-id> --path .conductor/status.json --conductor .conductor/conductor.json\n\n" +
-        "  Independently verifies the card output against its instruction and records\n" +
-        "  the PASS/FAIL verdict for `conductor-board complete`.\n\n" +
-        "  Output sources: --output, --output-file, status output/artifact fields,\n" +
-        "  .conductor/outputs/<step>.md, and heartbeat handoff produced text.\n" +
-        "  Uses OPENAI_API_KEY when present; otherwise records a heuristic verdict.",
+        "usage: conductor-board check <step-id>[::iter::sub] [--output \"...\"] [--output-file file]\n" +
+        "       conductor-board check <card-index> --path .conductor/status.json --workflow .conductor/workflow.json\n\n" +
+        "  Prints the independent checker prompt for comparing the card output against\n" +
+        "  its instruction. Evaluate the prompt in a clean context, then record the\n" +
+        "  PASS/FAIL verdict and SUMMARY line with `conductor-board gate-result`.\n\n" +
+        "  Completion requires .conductor/artifacts/<step>.md as the primary\n" +
+        "  markdown receipt. Non-text work should reference supporting files from\n" +
+        "  that receipt; image receipts should embed\n" +
+        "  every produced image inline.",
     );
     return true;
   }
@@ -171,7 +157,7 @@ export async function runCheck(args) {
     return false;
   }
 
-  const conductorPath = discoverConductor(statusPath, flag(args, ["--conductor", "-c"]));
+  const conductorPath = discoverConductor(statusPath, flag(args, ["--workflow", "--conductor", "-c"]));
   if (!conductorPath) {
     console.error(red("✗ no conductor file found next to status.json or in cwd"));
     return false;
@@ -203,11 +189,17 @@ export async function runCheck(args) {
     console.error(red(`✗ ${stepId} is failed. No more checker runs are allowed for this card.`));
     return false;
   }
+  const blockers = dependencyBlockers(doc, status, stepId);
+  if (blockers.length) {
+    console.error(red(`✗ ${dependencyBlockerMessage(stepId, blockers)}`));
+    return false;
+  }
 
   entry.gate = "checking";
+  appendAutoHeartbeat(status, resolved.loopPath, stepId, `Checking: ${resolved.step.title || stepId}`);
   fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
-  const { text: output, sources } = collectOutput({
+  const { text: output, sources, artifactPaths } = collectOutput({
     args,
     cwd: process.cwd(),
     statusPath,
@@ -215,46 +207,34 @@ export async function runCheck(args) {
     stepId,
     entry,
   });
+  if (artifactPaths.length) {
+    entry.artifacts = [...new Set([...(Array.isArray(entry.artifacts) ? entry.artifacts : []), ...artifactPaths])];
+    fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+  }
 
   const instruction = String(resolved.step.instruction || "").trim();
-  let verdict;
-  try {
-    verdict = await runOpenAiChecker(instruction, output);
-  } catch (e) {
-    verdict = {
-      passed: false,
-      evidence: `FAIL checker invocation failed: ${e.message}`,
-    };
-  }
+  if (!output) {
+    const evidence = "FAIL no output was produced.\nSUMMARY: No output was produced.";
+    status = readJson(statusPath);
+    recordCheckerResult(status, resolved, stepId, false, evidence, {
+      checker: "instruction",
+      output_sources: sources,
+      artifact_paths: artifactPaths,
+    });
+    fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
-  if (!verdict) {
-    if (!output) {
-      verdict = {
-        passed: false,
-        evidence: "FAIL no output was recorded for this card. Add output or artifact references, then run the checker again.",
-      };
-    } else {
-      verdict = {
-        passed: true,
-        evidence:
-          "PASS provisional heuristic: output was recorded, but no LLM checker is configured. " +
-          "Set OPENAI_API_KEY for independent semantic checking.",
-      };
-    }
+    console.log("");
+    console.log(red(`✕ checker FAIL ${stepId}`));
+    console.log(dim(`  evidence: ${evidence}`));
+    console.log("");
+    return false;
   }
-
-  status = readJson(statusPath);
-  recordCheckerResult(status, resolved, stepId, verdict.passed, verdict.evidence, {
-    checker: process.env.OPENAI_API_KEY ? "instruction" : "heuristic",
-    output_sources: sources,
-  });
-  fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
   console.log("");
-  console.log(`${verdict.passed ? green("✓ checker PASS") : red("✕ checker FAIL")} ${stepId}`);
-  if (!process.env.OPENAI_API_KEY) console.log(amber("  no LLM checker configured; used heuristic fallback"));
+  console.log(`checker prompt for ${stepId}`);
   if (sources.length) console.log(dim(`  output: ${sources.join(", ")}`));
-  console.log(dim(`  evidence: ${verdict.evidence}`));
   console.log("");
-  return verdict.passed;
+  console.log(checkerPrompt(instruction, output));
+  console.log("");
+  return true;
 }

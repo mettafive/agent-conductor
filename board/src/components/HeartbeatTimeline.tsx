@@ -3,8 +3,6 @@ import type { HeartbeatEntry, LoopState, DeveloperNote } from "../lib/types";
 import { relativeTime, renderNote } from "../lib/heartbeat";
 import { groupBeats, detailBeats, postComment, type BeatGroup } from "../lib/groups";
 
-const SCOPES = ["this-conductor", "upstream", "template", "tooling", "corpus"] as const;
-
 function absTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -27,7 +25,7 @@ interface Props {
   loop?: LoopState;
   /** parallel-agent overviews per card id — when present, the card defaults to its overview */
   cardOverviews?: Record<string, string>;
-  /** developer notes/directives on this step's cards (flow-manager loop) */
+  /** developer comments on this step's cards */
   notes?: DeveloperNote[];
   /** workflow name + step id — needed to persist a comment to the server */
   workflow?: string;
@@ -150,7 +148,7 @@ function GroupBlock({
   number: number;
   /** parallel-agent summary for this card — replaces the stream once the card closes */
   overview?: string;
-  /** the developer's notes/directives pinned to this card (a thread) */
+  /** the developer's comments pinned to this card (a thread) */
   cardNotes?: DeveloperNote[];
   workflow?: string;
   step?: string;
@@ -258,8 +256,8 @@ function GroupBlock({
   );
 }
 
-/** The thread of developer notes on one card: each note shows its directive status + an edit/remove
- *  affordance; you can add more throughout the run. Edits/removals append to the server-side audit. */
+/** The thread of developer notes on one card. Every comment becomes a knowledge candidate
+ *  when the run is archived; edits/removals append to the server-side audit. */
 function NoteThread({
   notes,
   workflow,
@@ -276,15 +274,11 @@ function NoteThread({
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [directive, setDirective] = useState(false);
-  const [scope, setScope] = useState("this-conductor");
 
   const reset = () => {
     setAdding(false);
     setEditingId(null);
     setDraft("");
-    setDirective(false);
-    setScope("this-conductor");
   };
   const startAdd = () => {
     reset();
@@ -294,16 +288,14 @@ function NoteThread({
     setAdding(false);
     setEditingId(n.id);
     setDraft(n.text);
-    setDirective(n.directive);
-    setScope(n.scope ?? "this-conductor");
   };
   const save = () => {
     if (!draft.trim()) return reset();
     postComment(
       workflow,
       editingId
-        ? { id: editingId, step, card, text: draft, directive, scope }
-        : { step, card, cardTitle, text: draft, directive, scope },
+        ? { id: editingId, step, card, text: draft, directive: false }
+        : { step, card, cardTitle, text: draft, directive: false },
     );
     reset();
   };
@@ -317,10 +309,6 @@ function NoteThread({
             key={n.id}
             draft={draft}
             setDraft={setDraft}
-            directive={directive}
-            setDirective={setDirective}
-            scope={scope}
-            setScope={setScope}
             onSave={save}
             onCancel={reset}
           />
@@ -333,10 +321,6 @@ function NoteThread({
         <NoteEditor
           draft={draft}
           setDraft={setDraft}
-          directive={directive}
-          setDirective={setDirective}
-          scope={scope}
-          setScope={setScope}
           onSave={save}
           onCancel={reset}
         />
@@ -345,14 +329,14 @@ function NoteThread({
           onClick={startAdd}
           className="flex w-full items-center gap-1.5 rounded border border-dashed border-line-2 px-2 py-1 text-left font-mono text-[9.5px] text-dim transition-colors hover:border-mist/40 hover:text-mist"
         >
-          <span className="text-mist">✎</span> add a note or directive…
+          <span className="text-mist">✎</span> add a comment…
         </button>
       )}
     </div>
   );
 }
 
-/** A single saved note — its text, directive status, and an edit/remove affordance. */
+/** A single saved note — its text and an edit/remove affordance. */
 function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () => void; onRemove: () => void }) {
   const edits = (note.history ?? []).filter((h) => h.action === "edited");
   const lastEdit = edits.at(-1);
@@ -367,19 +351,7 @@ function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () =
         </span>
       </div>
       <div className="mt-1 flex items-center gap-1.5 border-t border-line pt-1 font-mono text-[9px]">
-        {note.directive ? (
-          note.status === "applied" ? (
-            <span className="shrink-0 text-mint">✓ applied</span>
-          ) : note.status === "deferred" ? (
-            <span className="shrink-0 text-dim">– deferred</span>
-          ) : (
-            <span className="shrink-0 text-mist" title="the next run must apply this or explain why not">
-              ● directive · {note.scope ?? "this-conductor"}
-            </span>
-          )
-        ) : (
-          <span className="shrink-0 text-dim">note</span>
-        )}
+        <span className="shrink-0 text-dim">comment</span>
         {note.resolution && <span className="min-w-0 flex-1 truncate text-dim" title={note.resolution}>{note.resolution}</span>}
         {edits.length > 0 && (
           <span
@@ -394,23 +366,15 @@ function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () =
   );
 }
 
-/** The add/edit form: text + a "steer the next run" toggle (promotes to a directive) + scope. */
+/** The add/edit form. Comments are archived as knowledge candidates automatically. */
 function NoteEditor({
   draft,
   setDraft,
-  directive,
-  setDirective,
-  scope,
-  setScope,
   onSave,
   onCancel,
 }: {
   draft: string;
   setDraft: (s: string) => void;
-  directive: boolean;
-  setDirective: (b: boolean) => void;
-  scope: string;
-  setScope: (s: string) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -427,6 +391,7 @@ function NoteEditor({
           e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest" })
         }
         onKeyDown={(e) => {
+          e.stopPropagation();
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             onSave(); // Enter saves; Shift+Enter inserts a newline
@@ -440,27 +405,7 @@ function NoteEditor({
         className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1.5 text-[11px] leading-snug text-mist-2 outline-none focus:border-mist/40"
       />
       <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
-        <label
-          className="flex items-center gap-1 text-mist"
-          title="A plain note is just for you. A directive is an instruction the next run must address — apply it or explain why not — so your note actually changes the flow."
-        >
-          <input type="checkbox" checked={directive} onChange={(e) => setDirective(e.target.checked)} className="accent-mint" />
-          make the agent act on this next run
-        </label>
-        {directive && (
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            title="where the change should land"
-            className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[9px] text-mist outline-none"
-          >
-            {SCOPES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        )}
+        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-dim">knowledge candidate</span>
         <span className="flex-1" />
         <button onClick={onSave} className="rounded bg-line-2 px-2 py-0.5 text-chalk transition-colors hover:bg-line-2/70">
           Save

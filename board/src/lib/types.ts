@@ -1,4 +1,4 @@
-export type Column = "pending" | "running" | "gate" | "done" | "failed";
+export type Column = "pending" | "running" | "checking" | "done" | "failed";
 
 export interface GateCriterion {
   text: string;
@@ -7,6 +7,9 @@ export interface GateCriterion {
   passed?: boolean | null;
   checker?: "instruction";
   evidence?: string;
+  summary?: string;
+  made_summary?: string;
+  checked_summary?: string;
 }
 
 export interface ConductorStep {
@@ -16,11 +19,8 @@ export interface ConductorStep {
   instruction: string;
   firstLine: string;
   isCondition: boolean;
-  ifTrue?: string;
-  ifFalse?: string;
-  then?: string;
   output?: string;
-  requires: string[];
+  requires: number[];
   // loops (§4.3)
   isLoop: boolean;
   over?: string;
@@ -31,6 +31,7 @@ export interface ConductorStep {
 
 export interface IterationStep {
   id: string;
+  title: string;
   status: string;
   gate: string;
   attempt: number;
@@ -67,11 +68,18 @@ export type KnowledgeStatus = "emerging" | "proven" | "applied" | "open";
  * improvement pass (§10).
  */
 export interface KnowledgeEntry {
+  id?: string;
   title: string;
   status: KnowledgeStatus;
-  scope: Scope;
-  observed: number;
+  scope?: Scope;
+  observed?: number;
   step?: string;
+  source?: string;
+  source_run?: string;
+  source_card?: string | number;
+  source_card_title?: string;
+  tag?: string;
+  detail?: string;
   /** instruction | gate | new_step | remove_step | reorder */
   type?: string;
   current?: string;
@@ -104,6 +112,8 @@ export interface HeartbeatEntry {
   insight?: Insight;
   /** The last beat of a step — summarizes + carries context to the next step. */
   finalBeat?: boolean;
+  system?: boolean;
+  tone?: "feedback";
   /** Opens a new activity card (one coherent unit of work: one intent, one target).
    *  This beat's note is the card title; following beats (no card) are its detail. */
   card?: boolean;
@@ -193,6 +203,12 @@ export interface BoardStep extends ConductorStep {
   learnings: string[];
   /** parallel-agent overviews of activity cards, keyed by card id (the opener beat's `at`) */
   cardOverviews?: Record<string, string>;
+  /** primary card artifact under .conductor/artifacts, or legacy .conductor/outputs */
+  artifact?: string;
+  /** legacy alias for artifact */
+  receipt?: string;
+  /** durable artifact files under .conductor/artifacts, plus legacy outputs */
+  artifacts?: string[];
 }
 
 /** One entry in a note's audit trail — an edit or removal never destroys the record, it logs here. */
@@ -254,6 +270,7 @@ export interface BoardModel {
   nextUp?: { name?: string; remaining?: number };
   /** Whether the Phase 0 self-improvement pass is enabled for this conductor (§6.1). Default true. */
   autoImprove: boolean;
+  maxAttempts: number;
   startedAt?: string;
   endedAt?: string;
   overallStatus: string; // running | done | failed | idle
@@ -289,7 +306,8 @@ export interface RunRecord extends HistoryRun {
 
 export interface Snapshot {
   status: Record<string, unknown> | null;
-  conductorJson: string | null;
+  workflowJson: string | null;
+  knowledgeJson?: string | null;
   statusPath: string;
   conductorPath: string | null;
 }

@@ -7,29 +7,25 @@
   ],
   "steps": [
     {
-      "id": "claim-pages",
       "instruction": "Claim the next {batch} pages in order and scaffold a proposal for each.\nOutput the list as page_list.\n",
       "output": "page_list",
       "title": "Claim Pages",
       "requires": []
     },
     {
-      "id": "polish",
       "type": "loop",
       "over": "page_list",
       "as": "page",
       "requires": [
-        "claim-pages"
+        0
       ],
       "steps": [
         {
-          "id": "polish-page",
           "instruction": "Polish {page} to the bar and write the result into its proposal.",
           "title": "Polish Page",
           "requires": []
         },
         {
-          "id": "check-links",
           "instruction": "Verify every link on {page} resolves (HTTP 200) and is animal-correct.",
           "title": "Check Links",
           "requires": []
@@ -39,10 +35,9 @@
       "instruction": "Complete Polish."
     },
     {
-      "id": "ship",
       "instruction": "Ship the polished pages live and request indexing.",
       "requires": [
-        "polish"
+        1
       ],
       "title": "Ship"
     }

@@ -5,7 +5,7 @@
  */
 const CLS: Record<string, string> = {
   running: "led led-running", // green↔white — neutral focus
-  gate: "led led-gate", // green↔amber — warning / checking
+  checking: "led led-checking", // green↔amber — warning / checking
   done: "led led-done",
   failed: "led led-failed", // red↔green — something went wrong here
   stalled: "led led-stalled",

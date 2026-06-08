@@ -9,7 +9,7 @@ export const SUMMARY_SEL = "@summary";
 /** The single unit the main area follows: a step, or a loop's active sub-step. */
 export interface ActiveUnit {
   step: BoardStep;
-  /** "step-id" or "item · sub-id" */
+  /** Card title, or "item · sub-card title" for loop sub-steps. */
   title: string;
   beats: HeartbeatEntry[];
   criteria: GateCriterion[];
@@ -30,14 +30,14 @@ export function resolveActiveUnit(step: BoardStep): ActiveUnit {
     if (iter && item) {
       const sub =
         iter.steps.find((s) => subStepColumn(s) === "running") ??
-        iter.steps.find((s) => subStepColumn(s) === "gate") ??
+        iter.steps.find((s) => subStepColumn(s) === "checking") ??
         iter.steps.find((s) => subStepColumn(s) === "pending") ??
         iter.steps[iter.steps.length - 1];
       const exact = step.heartbeat.filter((h) => h.iteration === item && (!sub || h.sub === sub.id));
       const forItem = step.heartbeat.filter((h) => h.iteration === item);
       return {
         step,
-        title: sub ? `${item} · ${sub.id}` : item,
+        title: sub ? `${item} · ${sub.title}` : item,
         beats: exact.length ? exact : forItem,
         criteria: sub?.criteria ?? [],
         startedAt: sub?.started_at,
@@ -48,7 +48,7 @@ export function resolveActiveUnit(step: BoardStep): ActiveUnit {
   }
   return {
     step,
-    title: step.id,
+    title: step.title,
     beats: step.heartbeat,
     criteria: step.criteria,
     startedAt: step.started_at,

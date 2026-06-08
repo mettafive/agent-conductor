@@ -1,21 +1,17 @@
 [
   {
-    "id": "define-campaign-variants",
     "title": "Define campaign variants",
     "instruction": "Read the campaign brief, identify goal, audience, offer, deadline, call to action, and confirm required variants by language, segment, lifecycle stage, or region."
   },
   {
-    "id": "draft-localized-emails",
     "title": "Draft localized emails",
     "instruction": "Draft the primary English email with subject, preview text, body, and CTA; adjust tone; remove vague or overpromising language; and translate or localize into the requested languages while preserving intent."
   },
   {
-    "id": "validate-compliance-assets",
     "title": "Validate compliance assets",
     "instruction": "Check unsubscribe note, claims, privacy-sensitive wording, required disclaimers, generate 3 subject line options and 2 preview text options per language, and build a plain-text version for each variant."
   },
   {
-    "id": "queue-campaign-summary",
     "title": "Queue campaign summary",
     "instruction": "Mock-send or queue the campaign through MOCK_EMAIL_API and return the campaign summary, email variants, subject lines, preview text, plain-text versions, compliance notes, mock send result, send settings, risks, and approval needs."
   }

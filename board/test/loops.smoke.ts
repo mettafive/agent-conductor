@@ -43,6 +43,7 @@ interface Shape {
   json: string;
   loopId: string;
   subIds: string[];
+  subTitles: string[];
   items: string[];
   parallel: boolean | "auto" | undefined;
   loopIsOnlyStep: boolean;
@@ -77,7 +78,6 @@ interface ShapeFull extends Shape {
 
 function loopStep(s: ShapeFull, parallel: Shape["parallel"]) {
   return {
-    id: s.loopId,
     title: s.loopId,
     instruction: `Run ${s.loopId} over ${s.over}.`,
     type: "loop",
@@ -85,10 +85,9 @@ function loopStep(s: ShapeFull, parallel: Shape["parallel"]) {
     as: s.as,
     ...(parallel !== undefined ? { parallel } : {}),
     requires: [],
-    steps: s.subIds.map((subId, i) => ({
-      id: subId,
-      title: subId,
-      instruction: `${subId} for {${s.as}} (sub ${i + 1}).`,
+    steps: s.subTitles.map((subTitle, i) => ({
+      title: subTitle,
+      instruction: `${subTitle} for {${s.as}} (sub ${i + 1}).`,
       requires: [],
     })),
   };
@@ -109,32 +108,18 @@ function makeShapes(): ShapeFull[] {
     const position = i % 3;
     const loopIsOnlyStep = position === 0;
 
-    const subIds = dom.subs.slice(0, subCount).map((s, k) => `${s}${subCount > dom.subs.length ? k : ""}`);
+    const subTitles = dom.subs.slice(0, subCount).map((s, k) => `${s}${subCount > dom.subs.length ? k : ""}`);
     // guarantee enough sub ids even if subCount > available
-    while (subIds.length < subCount) subIds.push(`sub${subIds.length + 1}`);
+    while (subTitles.length < subCount) subTitles.push(`sub${subTitles.length + 1}`);
+    const subIds = subTitles.map((_, k) => String(k));
 
     const items = dom.items.slice(0, itemCount);
     // diversify over/as identifiers per shape so we don't always reuse the domain default
     const over = i % 2 === 0 ? dom.over : `${dom.over}_${i}`;
     const as = i % 2 === 0 ? dom.as : `${dom.as}_${i}`;
-    const loopId = `loop-${slug(dom.wf)}-${i}`;
-
-    const s: ShapeFull = {
-      name: `${dom.wf} #${i} (${subCount} sub × ${itemCount} iter, parallel=${String(parallel)}, pos=${["only", "after-setup", "deep"][position]})`,
-      json: "",
-      loopId,
-      subIds,
-      items,
-      parallel,
-      loopIsOnlyStep,
-      over,
-      as,
-    };
-
     const steps: any[] = [];
     if (position === 1 || position === 2) {
       steps.push({
-        id: "setup",
         title: "Setup",
         instruction: `Prepare the run and resolve the ${over} list.`,
         requires: [],
@@ -143,21 +128,35 @@ function makeShapes(): ShapeFull[] {
     }
     if (position === 2) {
       steps.push({
-        id: "warm-context",
         title: "Warm context",
         instruction: "Read prior insights before iterating.",
-        requires: ["setup"],
+        requires: [0],
       });
     }
+
+    const loopIndex = steps.length;
+    const loopId = String(loopIndex);
+
+    const s: ShapeFull = {
+      name: `${dom.wf} #${i} (${subCount} sub × ${itemCount} iter, parallel=${String(parallel)}, pos=${["only", "after-setup", "deep"][position]})`,
+      json: "",
+      loopId,
+      subIds,
+      subTitles,
+      items,
+      parallel,
+      loopIsOnlyStep,
+      over,
+      as,
+    };
 
     steps.push(loopStep(s, parallel));
 
     if (position === 2) {
       steps.push({
-        id: "finalize",
         title: "Finalize",
         instruction: "Open a PR summarizing the loop's results.",
-        requires: [s.loopId],
+        requires: [loopIndex],
       });
     }
 
@@ -198,7 +197,7 @@ function cli(args: string[], cwd: string): { ok: boolean; out: string } {
 function snapshotFrom(statusPath: string, conductorPath: string): Snapshot {
   return {
     status: JSON.parse(fs.readFileSync(statusPath, "utf8")),
-    conductorJson: fs.readFileSync(conductorPath, "utf8"),
+    workflowJson: fs.readFileSync(conductorPath, "utf8"),
     statusPath,
     conductorPath,
   };
@@ -215,7 +214,7 @@ function runShape(shape: ShapeFull): Outcome {
   try {
     const conductorDir = path.join(tmp, ".conductor");
     fs.mkdirSync(conductorDir, { recursive: true });
-    const jsonPath = path.join(conductorDir, "conductor.json");
+    const jsonPath = path.join(conductorDir, "workflow.json");
     const statusPath = path.join(conductorDir, "status.json");
     fs.writeFileSync(jsonPath, shape.json);
 

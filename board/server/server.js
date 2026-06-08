@@ -2,16 +2,18 @@
 //
 // Responsibilities:
 //   1. Serve the built React app (dist/) over plain HTTP.
-//   2. Expose GET /api/state — a snapshot of { conductorJson, status }.
+//   2. Expose GET /api/state — a snapshot of { workflowJson, status }.
 //   3. Stream GET /events (Server-Sent Events) — pushes a fresh snapshot every
 //      time .conductor/status.json (or the conductor file) changes on disk.
 //
-// The server ships the raw conductor JSON to the browser, which parses it client-side.
+// The server ships the raw workflow JSON to the browser, which parses it client-side.
 
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { integrateRoot } from "../cli/integration.js";
+import { ensureKnowledge, readJsonMaybe, timestampRunId } from "../cli/learning.js";
 import { validateConductor } from "../cli/validate.js";
 
 const readBody = (req) =>
@@ -24,7 +26,7 @@ const readBody = (req) =>
 /** Apply optimization suggestions to a parsed conductor doc (in place). */
 function applyMutations(doc, suggestions) {
   doc.steps = Array.isArray(doc.steps) ? doc.steps : [];
-  const byId = new Map(doc.steps.map((s) => [s.id, s]));
+  const byId = new Map(doc.steps.map((s, i) => [String(i), s]));
   for (const sug of suggestions) {
     const step = sug.step ? byId.get(sug.step) : null;
     switch (sug.type) {
@@ -56,7 +58,7 @@ function applyMutations(doc, suggestions) {
         });
         break;
       case "remove_step":
-        if (sug.step) doc.steps = doc.steps.filter((s) => s.id !== sug.step);
+        if (sug.step) doc.steps = doc.steps.filter((_, i) => String(i) !== String(sug.step));
         break;
       // `reorder` is not auto-applied in v1
     }
@@ -81,21 +83,144 @@ const MIME = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".avif": "image/avif",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".pdf": "application/pdf",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
   ".json": "application/json; charset=utf-8",
   ".woff2": "font/woff2",
   ".ico": "image/x-icon",
 };
+
+const ARTIFACT_MAX_BYTES = 1024 * 1024;
+const PREVIEW_EXTENSIONS = new Set([".md", ".txt", ".json", ".log", ".html", ".csv", ".tsv"]);
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"]);
+
+function artifactPreviewKind(ext) {
+  if (PREVIEW_EXTENSIONS.has(ext)) return ext === ".html" ? "html" : "text";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (ext === ".pdf") return "pdf";
+  return "download";
+}
+
+function isDiagnosticArtifact(relPath) {
+  const name = path.basename(String(relPath || ""));
+  return /(^|-)check-prompt\.(txt|md)$/i.test(name) || /^attempt-\d+-(compose|check)-(prompt|raw)\.(txt|md)$/i.test(name);
+}
+
+function artifactRootFor(wf) {
+  const current = path.join(wf.dir, "artifacts");
+  if (fs.existsSync(current)) return current;
+  const legacy = path.join(wf.dir, "outputs");
+  return fs.existsSync(legacy) ? legacy : current;
+}
+
+function initRuntimeStatus(workflow, statusPath) {
+  const now = new Date().toISOString();
+  const runId = now.replace(/\.\d+Z$/, "").replace(/:/g, "-");
+  const nameSlug = String(workflow.name || "workflow").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const historyDir = path.join(path.dirname(statusPath), "history");
+  let priorRuns = 0;
+  try {
+    priorRuns = fs.readdirSync(historyDir).filter((f) => f.endsWith(".json")).length;
+  } catch {
+    /* no history yet */
+  }
+  const tsShort = runId.replace(/-\d{2}$/, "");
+  const steps = {};
+  for (const [index] of (workflow.steps || []).entries()) {
+    steps[String(index)] = { status: "pending", gate: "pending", attempt: 1 };
+  }
+  return {
+    workflow: workflow.name || "workflow",
+    run_id: runId,
+    run_name: `${nameSlug}-run-${priorRuns + 1}-${tsShort}`,
+    auto_improve: workflow.auto_improve === true,
+    status: "running",
+    goal: workflow.description || workflow.name || "workflow",
+    current_step: null,
+    started_at: now,
+    steps,
+  };
+}
+
+function openKnowledgeItems(wf) {
+  const knowledge = ensureKnowledge(wf.dir);
+  return knowledge.items.filter((item) => item && item.status === "open");
+}
+
+function latestIntegrationSummary(wf) {
+  const runs = path.join(wf.dir, "runs");
+  if (!fs.existsSync(runs)) return null;
+  const dirs = fs.readdirSync(runs, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .reverse();
+  for (const dir of dirs) {
+    const summary = readJsonMaybe(path.join(runs, dir, "integration-summary.json"));
+    if (summary) return summary;
+  }
+  return null;
+}
+
+function safeArtifactPath(wf, relPath) {
+  const root = artifactRootFor(wf);
+  const clean = String(relPath || "").replace(/^[/\\]+/, "");
+  const abs = path.resolve(root, clean);
+  const relative = path.relative(root, abs);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return { root, abs, rel: relative.split(path.sep).join("/") };
+}
+
+function listArtifacts(wf) {
+  const root = artifactRootFor(wf);
+  if (!fs.existsSync(root)) return [];
+  const files = [];
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      const abs = path.join(dir, name);
+      const st = fs.statSync(abs);
+      if (st.isDirectory()) {
+        walk(abs);
+        continue;
+      }
+      if (!st.isFile()) continue;
+      const rel = path.relative(root, abs).split(path.sep).join("/");
+      if (isDiagnosticArtifact(rel)) continue;
+      files.push({
+        path: rel,
+        name: path.basename(rel),
+        size: st.size,
+        mtime: st.mtime.toISOString(),
+        mime: MIME[path.extname(rel).toLowerCase()] || "application/octet-stream",
+        preview_kind: artifactPreviewKind(path.extname(rel).toLowerCase()),
+      });
+    }
+  };
+  walk(root);
+  return files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+}
 
 /** Find the conductor definition file that pairs with a status.json. */
 function discoverConductor(statusPath, explicit) {
   if (explicit) return fs.existsSync(explicit) ? explicit : null;
   const dir = path.dirname(statusPath);
   const candidates = [
-    path.join(dir, "conductor.json"),
+    path.join(dir, "workflow.json"),
+    path.join(path.dirname(path.dirname(dir)), "workflow.json"),
   ];
   for (const c of candidates) if (fs.existsSync(c)) return c;
   // fall back to a conductor file in the working directory
-  for (const c of ["conductor.json"]) {
+  for (const c of ["workflow.json"]) {
     const p = path.resolve(process.cwd(), c);
     if (fs.existsSync(p)) return p;
   }
@@ -104,7 +229,9 @@ function discoverConductor(statusPath, explicit) {
 
 function readSnapshot(statusPath, conductorPath) {
   let status = null;
-  let conductorJson = null;
+  let workflowJson = null;
+  let knowledgeJson = null;
+  const workflowDir = path.dirname(statusPath);
   try {
     if (fs.existsSync(statusPath)) {
       status = JSON.parse(fs.readFileSync(statusPath, "utf8"));
@@ -114,14 +241,23 @@ function readSnapshot(statusPath, conductorPath) {
   }
   try {
     if (conductorPath && fs.existsSync(conductorPath)) {
-      conductorJson = fs.readFileSync(conductorPath, "utf8");
+      workflowJson = fs.readFileSync(conductorPath, "utf8");
     }
   } catch {
     /* conductor optional — board degrades gracefully */
   }
+  try {
+    const knowledgePath = path.join(workflowDir, "knowledge.json");
+    if (fs.existsSync(knowledgePath)) {
+      knowledgeJson = fs.readFileSync(knowledgePath, "utf8");
+    }
+  } catch {
+    /* knowledge optional */
+  }
   return {
     status,
-    conductorJson,
+    workflowJson,
+    knowledgeJson,
     statusPath,
     conductorPath: conductorPath ?? null,
   };
@@ -219,7 +355,7 @@ function archiveIfDone(historyDir, snapshot, archived) {
     archived_at: new Date().toISOString(),
     done,
     total,
-    snapshot: { status, conductorJson: snapshot.conductorJson ?? null },
+    snapshot: { status, workflowJson: snapshot.workflowJson ?? null },
   };
 
   try {
@@ -563,8 +699,8 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
       if (!entry.isDirectory() || entry.name === "history") continue;
       const dir = path.join(conductorDir, entry.name);
       const sp = path.join(dir, "status.json");
-      const cp = fs.existsSync(path.join(dir, "conductor.json"))
-        ? path.join(dir, "conductor.json")
+      const cp = fs.existsSync(path.join(dir, "workflow.json"))
+        ? path.join(dir, "workflow.json")
         : discoverConductor(sp, null);
       if (fs.existsSync(sp) || (cp && fs.existsSync(cp))) {
         add(workflowName(sp, cp, dir), dir, sp, cp);
@@ -710,6 +846,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
         uptime_seconds: Math.round(process.uptime()),
         memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
         watching: path.relative(process.cwd(), conductorDir) || conductorDir,
+        conductor_root: conductorDir,
         workflows,
         sse_connections: clients.size,
       });
@@ -735,7 +872,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
             total: wfSteps.length,
             started_at: snap.status?.started_at ?? null,
             runs: listHistory(wf.historyDir).length,
-            hasConductor: !!snap.conductorJson,
+            hasConductor: !!snap.workflowJson,
           };
         }),
       );
@@ -823,6 +960,91 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       const wf = findWf(decodeURIComponent(m[1]));
       return wf ? json(res, 200, snapshotFor(wf)) : json(res, 404, { error: "not found" });
     }
+    if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/artifacts$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      return json(res, 200, {
+        workflow: wf.name,
+        root: path.relative(process.cwd(), artifactRootFor(wf)) || artifactRootFor(wf),
+        files: listArtifacts(wf),
+      });
+    }
+    if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/artifact$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      const parsed = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+      const resolved = safeArtifactPath(wf, parsed.searchParams.get("path"));
+      if (!resolved || !fs.existsSync(resolved.abs)) return json(res, 404, { error: "artifact not found" });
+      const st = fs.statSync(resolved.abs);
+      if (!st.isFile()) return json(res, 404, { error: "artifact not found" });
+      const ext = path.extname(resolved.rel).toLowerCase();
+      const previewKind = artifactPreviewKind(ext);
+      const rawUrl = `/api/workflow/${encodeURIComponent(wf.name)}/artifact-raw?path=${encodeURIComponent(resolved.rel)}`;
+      if (st.size > ARTIFACT_MAX_BYTES) {
+        return json(res, 200, {
+          path: resolved.rel,
+          name: path.basename(resolved.rel),
+          size: st.size,
+          mtime: st.mtime.toISOString(),
+          mime: MIME[ext] || "application/octet-stream",
+          previewable: previewKind === "image" || previewKind === "pdf",
+          preview_kind: previewKind,
+          too_large: true,
+          max_preview_size: ARTIFACT_MAX_BYTES,
+          content: "",
+          download_url: rawUrl,
+        });
+      }
+      if (previewKind !== "text" && previewKind !== "html") {
+        return json(res, 200, {
+          path: resolved.rel,
+          name: path.basename(resolved.rel),
+          size: st.size,
+          mtime: st.mtime.toISOString(),
+          mime: MIME[ext] || "application/octet-stream",
+          previewable: previewKind === "image" || previewKind === "pdf",
+          preview_kind: previewKind,
+          content: "",
+          download_url: rawUrl,
+        });
+      }
+      let text = fs.readFileSync(resolved.abs, "utf8");
+      if (ext === ".json") {
+        try {
+          text = JSON.stringify(JSON.parse(text), null, 2);
+        } catch {
+          /* show invalid JSON as written */
+        }
+      }
+      return json(res, 200, {
+        path: resolved.rel,
+        name: path.basename(resolved.rel),
+        size: st.size,
+        mtime: st.mtime.toISOString(),
+        mime: MIME[ext] || "text/plain; charset=utf-8",
+        previewable: true,
+        preview_kind: previewKind,
+        content: text,
+        download_url: rawUrl,
+      });
+    }
+    if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/artifact-raw$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      const parsed = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+      const resolved = safeArtifactPath(wf, parsed.searchParams.get("path"));
+      if (!resolved || !fs.existsSync(resolved.abs)) return json(res, 404, { error: "artifact not found" });
+      const st = fs.statSync(resolved.abs);
+      if (!st.isFile()) return json(res, 404, { error: "artifact not found" });
+      const ext = path.extname(resolved.rel).toLowerCase();
+      res.writeHead(200, {
+        "Content-Type": MIME[ext] || "application/octet-stream",
+        "Content-Length": st.size,
+        "Content-Disposition": `inline; filename="${path.basename(resolved.rel).replace(/"/g, "")}"`,
+      });
+      fs.createReadStream(resolved.abs).pipe(res);
+      return;
+    }
     if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/insights$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       return wf ? json(res, 200, loadInsights(wf)) : json(res, 404, { error: "not found" });
@@ -866,6 +1088,112 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       }
       return json(res, 200, { ok: true });
     }
+
+    if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/compile-summary$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      const runtimeWorkflowPath = path.join(wf.dir, "workflow.json");
+      let runtimeWorkflow = null;
+      let status = null;
+      let decomposition = null;
+      let order = null;
+      try {
+        if (fs.existsSync(runtimeWorkflowPath)) runtimeWorkflow = JSON.parse(fs.readFileSync(runtimeWorkflowPath, "utf8"));
+      } catch {
+        /* summary can still render without it */
+      }
+      try {
+        status = JSON.parse(fs.readFileSync(wf.statusPath, "utf8"));
+      } catch {
+        /* optional */
+      }
+      try {
+        const p = path.join(wf.dir, "decomposition-check.json");
+        if (fs.existsSync(p)) decomposition = JSON.parse(fs.readFileSync(p, "utf8"));
+      } catch {
+        /* optional */
+      }
+      try {
+        const p = path.join(wf.dir, "order-check.json");
+        if (fs.existsSync(p)) order = JSON.parse(fs.readFileSync(p, "utf8"));
+      } catch {
+        /* optional */
+      }
+      const cardCount = Array.isArray(runtimeWorkflow?.steps) ? runtimeWorkflow.steps.length : 0;
+      const edgeCount = Array.isArray(runtimeWorkflow?.steps)
+        ? runtimeWorkflow.steps.reduce((sum, step) => sum + (Array.isArray(step.requires) ? step.requires.length : 0), 0)
+        : 0;
+      return json(res, 200, {
+        ok: true,
+        ready: !!runtimeWorkflow,
+        workflow_name: runtimeWorkflow?.name || null,
+        card_count: cardCount,
+        edge_count: edgeCount,
+        card_attempts: decomposition?.attempts?.length ?? null,
+        dependency_attempts: order?.attempts?.length ?? null,
+        artifacts: {
+          create_cards: status?.steps?.["0"]?.artifact || null,
+          map_dependencies: status?.steps?.["1"]?.artifact || null,
+          validate_workflow: status?.steps?.["2"]?.artifact || null,
+        },
+      });
+    }
+
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/start-run$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      readBody(req).then(async (bodyStr) => {
+        let body = {};
+        try {
+          body = bodyStr ? JSON.parse(bodyStr) : {};
+        } catch {
+          return json(res, 400, { error: "invalid request body" });
+        }
+        const runtimeWorkflowPath = path.join(wf.dir, "workflow.json");
+        if (!fs.existsSync(runtimeWorkflowPath)) return json(res, 400, { error: "compiled workflow.json not found" });
+        const runId = body.run_id || timestampRunId();
+        const confirmed = body.confirmed === true;
+        if (!confirmed) {
+          const openItems = openKnowledgeItems(wf);
+          if (openItems.length > 0) {
+            const meta = readJsonMaybe(path.join(wf.dir, "migration-meta.json"));
+            const ok = await integrateRoot({ root: wf.dir, skillPath: meta?.skill_path, runId });
+            if (!ok) return json(res, 500, { error: "integration failed" });
+            const summary = readJsonMaybe(path.join(wf.dir, "runs", runId, "integration-summary.json"));
+            broadcast();
+            return json(res, 200, { ok: true, integration_required: true, run_id: runId, summary });
+          }
+        }
+
+        let runtimeWorkflow;
+        try {
+          runtimeWorkflow = JSON.parse(fs.readFileSync(runtimeWorkflowPath, "utf8"));
+        } catch (e) {
+          return json(res, 500, { error: `could not read compiled workflow: ${e.message}` });
+        }
+        try {
+          if (wf.conductorPath) fs.copyFileSync(runtimeWorkflowPath, wf.conductorPath);
+          const status = initRuntimeStatus(runtimeWorkflow, wf.statusPath);
+          status.run_id = runId;
+          status.run_dir = `runs/${runId}`;
+          const integration = latestIntegrationSummary(wf);
+          if (integration && integration.run_id === runId) {
+            status.integration_summary = integration;
+            status.integration_tier = integration.added > 0 ? 2 : integration.applied > 0 ? 1 : 0;
+            status.integration_changes = (integration.changes || []).map((change) => change.change).filter(Boolean);
+          }
+          fs.mkdirSync(path.join(wf.dir, "runs", runId, "artifacts"), { recursive: true });
+          fs.writeFileSync(wf.statusPath, JSON.stringify(status, null, 2));
+          fs.writeFileSync(path.join(wf.dir, "runs", runId, "status.json"), JSON.stringify(status, null, 2));
+        } catch (e) {
+          return json(res, 500, { error: `could not start run: ${e.message}` });
+        }
+        broadcast();
+        return json(res, 200, { ok: true, workflow: runtimeWorkflow.name || "workflow", run_id: runId });
+      });
+      return;
+    }
+
     // developer notes / directives on activity cards — the flow-manager feedback loop.
     // Body actions: create {card, cardTitle, step, text, directive, scope}; edit {id, text, directive,
     // scope}; remove {id, action:"remove"}. Edits/removals are logged to the note's audit history,
@@ -947,7 +1275,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     // ---- backwards-compatible single-workflow API (primary = first found) ----
     const primary = wfs()[0];
     if (url === "/api/state") {
-      return json(res, 200, primary ? snapshotFor(primary) : { status: null, conductorJson: null });
+      return json(res, 200, primary ? snapshotFor(primary) : { status: null, workflowJson: null });
     }
     if (url === "/history") {
       return json(res, 200, primary ? listHistory(primary.historyDir) : []);
@@ -1004,7 +1332,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
           JSON.stringify(
             {
               port: actualPort,
-              url: `http://localhost:${actualPort}`,
+              url: `http://localhost:${actualPort}/`,
               pid: process.pid,
               started_at: new Date().toISOString(),
               workflows: discovered.map((w) => w.name),

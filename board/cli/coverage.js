@@ -6,21 +6,10 @@ const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-const norm = (s) => String(s).trim().toLowerCase();
-
-/** Every step + loop sub-step id in a conductor doc, normalized. */
-export function conductorCardIds(doc, acc = new Set()) {
-  for (const s of doc?.steps ?? []) {
-    if (s && s.id) acc.add(norm(s.id));
-    if (s && s.type === "loop" && Array.isArray(s.steps)) {
-      conductorCardIds({ steps: s.steps }, acc);
-    }
-  }
-  return acc;
-}
-
-export function computeCoverage(cards, stepIds) {
-  const missing = cards.filter((card) => card.id && !stepIds.has(norm(card.id)));
+export function computeCoverage(cards, steps) {
+  const missing = cards
+    .map((card, index) => ({ card, index }))
+    .filter(({ index }) => !steps[index]);
   return { total: cards.length, missing };
 }
 
@@ -33,22 +22,15 @@ export async function runCoverage(args) {
     return null;
   };
   const cardsPath = path.resolve(process.cwd(), flag(["--cards"]) || ".conductor/cards.json");
-  const conductorPath = path.resolve(
-    process.cwd(),
-    flag(["--conductor", "-c"]) || ".conductor/conductor.json",
-  );
+  const workflowPath = path.resolve(process.cwd(), flag(["--workflow", "--conductor", "-c"]) || ".conductor/workflow.json");
 
   const fail = (msg) => {
     console.error(red(`✗ coverage ${msg}`));
     return false;
   };
 
-  if (!fs.existsSync(cardsPath)) {
-    return fail(`— no cards.json at ${path.relative(process.cwd(), cardsPath)}.`);
-  }
-  if (!fs.existsSync(conductorPath)) {
-    return fail(`— no conductor at ${path.relative(process.cwd(), conductorPath)}.`);
-  }
+  if (!fs.existsSync(cardsPath)) return fail(`— no cards.json at ${path.relative(process.cwd(), cardsPath)}.`);
+  if (!fs.existsSync(workflowPath)) return fail(`— no workflow at ${path.relative(process.cwd(), workflowPath)}.`);
 
   let cards;
   try {
@@ -56,31 +38,30 @@ export async function runCoverage(args) {
   } catch (e) {
     return fail(`— could not parse cards.json: ${e.message}`);
   }
-  if (cards.length === 0) {
-    return fail(`— ${path.relative(process.cwd(), cardsPath)} has no cards.`);
-  }
+  if (cards.length === 0) return fail(`— ${path.relative(process.cwd(), cardsPath)} has no cards.`);
 
   let doc;
   try {
-    doc = JSON.parse(fs.readFileSync(conductorPath, "utf8"));
+    doc = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
   } catch (e) {
-    return fail(`— could not parse conductor JSON: ${e.message}`);
+    return fail(`— could not parse workflow JSON: ${e.message}`);
   }
 
-  const stepIds = conductorCardIds(doc);
-  const { total, missing } = computeCoverage(cards, stepIds);
+  const steps = Array.isArray(doc.steps) ? doc.steps : [];
+  const { total, missing } = computeCoverage(cards, steps);
 
   console.log("");
-  if (missing.length === 0) {
-    console.log(green(`✓ coverage: all ${total} cards are present in conductor.json`));
-    console.log(dim(`  ${path.relative(process.cwd(), cardsPath)} ↔ ${path.relative(process.cwd(), conductorPath)}`));
+  if (missing.length === 0 && steps.length === cards.length) {
+    console.log(green(`✓ coverage: all ${total} cards are present in workflow.json`));
+    console.log(dim(`  ${path.relative(process.cwd(), cardsPath)} ↔ ${path.relative(process.cwd(), workflowPath)}`));
     console.log("");
     return true;
   }
 
-  console.error(red(`✗ coverage: ${missing.length} of ${total} card(s) are missing from conductor.json`));
-  for (const card of missing) console.error(red(`    ✗ ${card.id}`));
-  console.error(dim("  every card in cards.json must appear as a step or loop sub-step"));
+  const extra = Math.max(0, steps.length - cards.length);
+  console.error(red(`✗ coverage: ${missing.length} missing card(s), ${extra} extra workflow step(s)`));
+  for (const { index, card } of missing) console.error(red(`    ✗ card ${index}: ${card.title || "Untitled"}`));
+  console.error(dim("  every cards.json array entry must appear at the same index in workflow.json"));
   console.error("");
   return false;
 }
