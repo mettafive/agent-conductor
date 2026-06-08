@@ -19,6 +19,8 @@ export interface ConductorStep {
   instruction: string;
   firstLine: string;
   isCondition: boolean;
+  retired?: boolean;
+  retired_by?: string;
   output?: string;
   requires: number[];
   // loops (§4.3)
@@ -78,19 +80,25 @@ export interface KnowledgeEntry {
   source_run?: string;
   source_card?: string | number;
   source_card_title?: string;
+  created?: string;
   tag?: string;
   detail?: string;
+  card_duration_seconds?: number;
   /** instruction | gate | new_step | remove_step | reorder */
   type?: string;
   current?: string;
   proposed?: string;
   run_applied?: string;
+  applied_in?: string | null;
+  applied_as?: string | null;
   note?: string;
 }
 
 export interface Insight {
+  id?: string;
   type: string;
   seed: string;
+  title?: string;
   step?: string;
   scope?: Scope;
   confidence?: string;
@@ -113,7 +121,7 @@ export interface HeartbeatEntry {
   /** The last beat of a step — summarizes + carries context to the next step. */
   finalBeat?: boolean;
   system?: boolean;
-  tone?: "feedback";
+  tone?: "feedback" | "insight";
   /** Opens a new activity card (one coherent unit of work: one intent, one target).
    *  This beat's note is the card title; following beats (no card) are its detail. */
   card?: boolean;

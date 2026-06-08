@@ -1,7 +1,5 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { KnowledgeEntry } from "../lib/types";
-import { InsightsDashboard } from "./InsightsDashboard";
 import { Icon } from "./Icon";
 import { HEARTBEAT_OPTIONS, stallSecondsFor } from "../lib/settings";
 
@@ -110,9 +108,6 @@ export function Settings({
   chimesOn,
   onToggleTicks,
   onToggleChimes,
-  workflow,
-  knowledge,
-  runCount,
   heartbeatInterval,
   onSetHeartbeatInterval,
 }: {
@@ -122,9 +117,6 @@ export function Settings({
   chimesOn: boolean;
   onToggleTicks: () => void;
   onToggleChimes: () => void;
-  workflow: string;
-  knowledge: KnowledgeEntry[];
-  runCount: number;
   heartbeatInterval: number;
   onSetHeartbeatInterval: (seconds: number) => void;
 }) {
@@ -196,10 +188,6 @@ export function Settings({
               {/* Shortcuts */}
               <Shortcuts />
 
-              {/* Knowledge */}
-              <div className="border-t border-line">
-                <InsightsDashboard workflow={workflow} knowledge={knowledge} runCount={runCount} />
-              </div>
             </div>
           </motion.div>
         </motion.div>

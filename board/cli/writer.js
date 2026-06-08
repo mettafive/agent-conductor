@@ -5,6 +5,7 @@ import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js"
 import { appendAutoHeartbeat } from "./heartbeats.js";
 import {
   appendKnowledge,
+  appendInsightHeartbeat,
   archiveRun,
   conductorRootFromStatus,
   timestampRunId,
@@ -642,25 +643,7 @@ export async function runSuggest(args) {
   });
   const res = saveConductor(conductorPath, doc);
   if (!res.ok) return fail(`legacy workflow knowledge not written — ${res.error}`);
-  // Surface the learning live: drop an insight-tagged heartbeat on the current (or --step) step so
-  // it shows in the stream + the Insights tab. The knowledge store and the beat stream are separate
-  // rails — without this the Insights tab stays empty even though we captured learnings.
-  try {
-    const status = JSON.parse(fs.readFileSync(sp, "utf8"));
-    const stepId = str(["--step"], undefined) || status.current_step;
-    const st = stepId && status.steps && status.steps[stepId];
-    if (st) {
-      if (!Array.isArray(st.heartbeat)) st.heartbeat = [];
-      st.heartbeat.push({
-        at: new Date().toISOString(),
-        note: `Insight: ${title}`,
-        insight: { type: str(["--type"], undefined) || "learning", seed: title, scope },
-      });
-      fs.writeFileSync(sp, JSON.stringify(status, null, 2));
-    }
-  } catch {
-    /* status not writable — the knowledge is still saved */
-  }
+  appendInsightHeartbeat(sp, { ...entry, scope, tag: str(["--type"], undefined) || entry.tag || "learning" }, step);
   return ok(
     `knowledge ${entry.id} [${scope}] "${title.length > 46 ? title.slice(0, 46) + "…" : title}" — ${merged.status} (observed ${merged.observed}×)`,
   );

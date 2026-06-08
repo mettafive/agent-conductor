@@ -150,6 +150,43 @@ export function appendKnowledge(root, item) {
   });
 }
 
+export function appendInsightHeartbeat(statusPath, entry, fallbackStep) {
+  try {
+    if (!statusPath || !entry) return false;
+    const status = readJsonMaybe(statusPath);
+    if (!status || !status.steps || typeof status.steps !== "object") return false;
+    const stepId =
+      entry.source_card !== undefined && entry.source_card !== null
+        ? String(entry.source_card)
+        : fallbackStep !== undefined && fallbackStep !== null
+          ? String(fallbackStep)
+          : status.current_step !== undefined && status.current_step !== null
+            ? String(status.current_step)
+            : undefined;
+    if (!stepId) return false;
+    const step = (status.steps[stepId] = status.steps[stepId] || { attempt: 1 });
+    if (!Array.isArray(step.heartbeat)) step.heartbeat = [];
+    step.heartbeat.push({
+      at: new Date().toISOString(),
+      note: `Insight: ${entry.title}`,
+      system: false,
+      tone: "insight",
+      insight: {
+        id: entry.id,
+        type: entry.tag || entry.type || "learning",
+        seed: entry.title,
+        title: entry.title,
+        step: stepId,
+        scope: entry.scope || "this-conductor",
+      },
+    });
+    writeJson(statusPath, status);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function logLearning(root, message) {
   try {
     const file = path.join(root, "logs", "post-card-learning.log");
@@ -239,19 +276,22 @@ function artifactForPrompt({ statusPath, stepId, entry, step }) {
 
 function postCardLearningPrompt({ step, entry, artifact, duration }) {
   return `You are reviewing a completed card from an automated workflow. The card passed its checker — the goal was achieved and the artifact is correct.
-
 Do not suggest changes to what the card does. The goal is fixed.
 
-Your job: determine whether the NEXT run of this card could arrive at the same result dramatically faster.
+This workflow runs again and again on different content each time — a different subject, slug, or family per run. Any insight you record becomes a permanent part of the card's instruction and will be applied to future runs whose content you cannot see. An improvement only counts if it would help those runs too, not just a repeat of this one.
 
-Look for:
-- Facts that were rediscovered from scratch (file paths, database locations, API endpoints, CLI commands) that could be provided upfront
+Your job: determine whether the NEXT run of this card — on different content — could arrive at the same result dramatically faster.
+
+Look for improvements to the card's method, expressed so they hold for any subject:
+- Facts the card rediscovered from scratch (where its inputs live, database locations, API endpoints, CLI commands) that the instruction could tell it to read from the run's inputs/state upfront — describe the kind of input to provide, never this run's specific values.
 - Unnecessary tool calls or wrong paths tried before finding the right approach
 - Setup work that is identical every run and could be skipped
-- Information that was fetched remotely but is stable and could be cached in the instruction
+- Information that is invariant across all runs — not merely stable for this run's subject — that could live in the instruction
 
-If there is a meaningful improvement, return:
-{ "insight": true, "detail": "<one sentence describing what to provide or change so the next run is faster>" }
+Express the improvement in general terms. Never name this run's specific slug, file path, number, or list — those are this run's data, not a durable lesson; state the rule they were an example of instead. If the only speed-up you can find is specific to this run's content, with no form that would help a run on different content, return { "insight": false }.
+
+If there is a meaningful, transferable improvement, return:
+{ "insight": true, "detail": "<one sentence describing the general method change so any future run is faster>" }
 
 If the card executed efficiently and there is no meaningful improvement, return:
 { "insight": false }
@@ -260,13 +300,10 @@ Return only the JSON object. No other text.
 
 Card instruction:
 ${step.instruction || step.title || ""}
-
 Card duration seconds:
 ${duration ?? "unknown"}
-
 Execution trace available from status.json:
 ${traceForPrompt(entry)}
-
 Final artifact:
 ${artifact}`;
 }
@@ -323,6 +360,7 @@ export async function postCardLearning({ statusPath, workflowPath, stepId } = {}
       applied_in: null,
       applied_as: null,
     });
+    appendInsightHeartbeat(resolvedStatusPath, entryWritten, stepId);
     logLearning(root, `card ${stepId}: wrote ${entryWritten.id}`);
     return entryWritten;
   } catch (e) {
@@ -426,10 +464,12 @@ export function archiveRun(statusPath, workflowPath) {
       source: "human",
       source_run: runId,
       source_card: note.step,
+      source_card_title: note.card_title,
       title: note.card_title || `Human note on card ${note.step || note.card || "unknown"}`,
       detail: note.text,
       status: "open",
     });
+    appendInsightHeartbeat(statusPath, entry, note.step);
     created.push(entry.id);
   }
   if (created.length) {

@@ -24,7 +24,7 @@ npx conductor-board cards .conductor/cards.json
 npx conductor-board order --cards .conductor/cards.json --out .conductor/workflow.json
 npx conductor-board validate .conductor/workflow.json
 npx conductor-board status-init .conductor/workflow.json
-npx conductor-board check 0 --output-file .conductor/outputs/0.md
+npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "PASS ...\nSUMMARY: ..."
 npx conductor-board complete 0
 npx conductor-board feedback 0
@@ -87,7 +87,7 @@ Agents keep the board live by writing status as they work:
 
 ```bash
 npx conductor-board step 0 running
-npx conductor-board check 0 --output-file .conductor/outputs/0.md
+npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "PASS ...\nSUMMARY: ..."
 npx conductor-board complete 0
 ```

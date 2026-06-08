@@ -10,12 +10,16 @@ export function TopBar({
   elapsed,
   done,
   total,
+  insightCount = 0,
+  onOpenInsights,
 }: {
   workflow?: string;
   status?: string;
   elapsed?: string | null;
   done?: number;
   total?: number;
+  insightCount?: number;
+  onOpenInsights?: () => void;
 }) {
   const shownStatus = status ?? "idle";
   return (
@@ -41,6 +45,22 @@ export function TopBar({
           <span className="rounded border border-line bg-panel px-2 py-0.5 font-mono text-[11px] text-mist">
             {done}/{total} done
           </span>
+        )}
+        {onOpenInsights && (
+          <button
+            type="button"
+            onClick={onOpenInsights}
+            className={`flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[11px] transition-colors ${
+              insightCount > 0
+                ? "border-amber/35 bg-amber/[0.08] text-amber hover:bg-amber/[0.14]"
+                : "border-line bg-panel text-mist hover:border-line-2 hover:text-chalk"
+            }`}
+            title={insightCount > 0 ? `${insightCount} fresh insight${insightCount === 1 ? "" : "s"} this run` : "Open insights"}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${insightCount > 0 ? "bg-amber shadow-[0_0_8px_rgba(251,191,36,0.55)]" : "bg-dim"}`} />
+            <span>Insights</span>
+            <span className="rounded border border-current/25 px-1 text-[10px]">{insightCount}</span>
+          </button>
         )}
       </div>
     </header>

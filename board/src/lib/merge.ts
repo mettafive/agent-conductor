@@ -358,16 +358,17 @@ function buildModelImpl(snap: Snapshot): BoardModel {
 
   // The Phase 0 improvement cards lead, then the real workflow steps.
   const steps: BoardStep[] = [...improveSteps, ...workflowSteps];
+  const visibleWorkflowSteps = workflowSteps.filter((s) => !s.retired);
 
   // Progress counts the WORKFLOW only — Phase 0 is a pre-flight, not the work.
-  const total = workflowSteps.length;
-  const done = workflowSteps.filter((s) => s.column === "done").length;
+  const total = visibleWorkflowSteps.length;
+  const done = visibleWorkflowSteps.filter((s) => s.column === "done").length;
 
   // Weighted progress: a loop contributes one unit per sub-step per iteration,
   // so a 5-page × 4-sub-step loop reads as 20 units instead of one stuck step.
   let unitsTotal = 0;
   let unitsDone = 0;
-  for (const s of workflowSteps) {
+  for (const s of visibleWorkflowSteps) {
     if (s.isLoop && s.loop) {
       const iters = s.loop.iterations;
       const subCount = s.subSteps?.length || iters[0]?.steps.length || 1;

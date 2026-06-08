@@ -14,6 +14,7 @@ import {
   checkWorkflowWithDependencyGuard,
   listLockedEdges,
 } from "./order.js";
+import { receiptArtifactName } from "./artifacts.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -169,6 +170,28 @@ function normalizeOrderCoverageCheck(payload) {
   };
 }
 
+function normalizeRemovalSafetyCheck(payload) {
+  const verdict = String(payload?.verdict || "").toUpperCase() === "SAFE" ? "SAFE" : "UNSAFE";
+  const dependents = Array.isArray(payload?.dependents)
+    ? payload.dependents.map((item) => ({
+        card: Number.isInteger(Number(item?.card)) ? Number(item.card) : null,
+        reference: compact(item?.reference || item?.reason || item?.feedback),
+      })).filter((item) => Number.isInteger(item.card) || item.reference)
+    : [];
+  return {
+    verdict,
+    passed: verdict === "SAFE",
+    feedback: compact(payload?.feedback),
+    dependents,
+    repair_prompt: compact(payload?.repair_prompt),
+    failed_patches: verdict === "SAFE" ? [] : dependents.map((item) => ({
+      card: item.card,
+      feedback: item.reference || compact(payload?.feedback) || "A surviving card still depends on the removed card.",
+      required_repair: compact(payload?.repair_prompt) || "Edit surviving dependencies/instructions before retiring this card.",
+    })),
+  };
+}
+
 function latestRunSummary(root) {
   const runs = path.join(root, "runs");
   if (!fs.existsSync(runs)) return null;
@@ -181,6 +204,110 @@ function latestRunSummary(root) {
     if (summary) return summary;
   }
   return null;
+}
+
+const INTEGRATION_PHASES = [
+  { key: "instruction", title: "Apply instruction insights", instruction: "Fold open instruction insights into the relevant card instructions while preserving existing requirements." },
+  { key: "order", title: "Map order insights", instruction: "Apply approved dependency/order insights as requires deltas and validate the graph." },
+  { key: "add", title: "Add cards", instruction: "Append any approved new cards and place them safely in the dependency graph." },
+  { key: "remove", title: "Retire cards", instruction: "Neuter approved obsolete cards in place and hide them from board display." },
+  { key: "validate", title: "Validate updated workflow", instruction: "Validate the updated cards and workflow before handing off to execution." },
+];
+
+function integrationWorkflow(openItems) {
+  const needed = new Set(["validate"]);
+  if (openItems.some(isInstructionChangeItem)) needed.add("instruction");
+  if (openItems.some(isOrderChangeItem)) needed.add("order");
+  if (openItems.some(isAddChangeItem)) needed.add("add");
+  if (openItems.some(isRemoveChangeItem)) needed.add("remove");
+  const selected = INTEGRATION_PHASES.filter((phase) => needed.has(phase.key));
+  return {
+    conductor: "3.0.0",
+    name: "Integrating insights",
+    description: "Apply open knowledge items before starting the next run.",
+    max_attempts: 5,
+    steps: selected.map((phase, index) => ({
+      title: phase.title,
+      instruction: phase.instruction,
+      requires: index === 0 ? [] : [index - 1],
+      phase_key: phase.key,
+    })),
+  };
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function writeIntegrationStatus(statusPath, status) {
+  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
+  fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+}
+
+function initIntegrationBoard(root, openItems) {
+  const workflow = integrationWorkflow(openItems);
+  const workflowPath = path.join(root, "integration.workflow.json");
+  const statusPath = path.join(root, "integration.status.json");
+  writeJson(workflowPath, workflow);
+  const steps = {};
+  for (const [index] of workflow.steps.entries()) {
+    steps[String(index)] = { status: "pending", gate: "pending", attempt: 1 };
+  }
+  writeIntegrationStatus(statusPath, {
+    workflow: workflow.name,
+    run_id: `integration-${nowIso().replace(/\.\d+Z$/, "").replace(/:/g, "-")}`,
+    status: "running",
+    goal: workflow.description,
+    current_step: null,
+    started_at: nowIso(),
+    steps,
+  });
+  const phaseToStep = new Map(workflow.steps.map((step, index) => [step.phase_key, index]));
+  return { workflowPath, statusPath, phaseToStep };
+}
+
+function integrationProgressNote(evt) {
+  const label = evt.maxAttempts ? `${evt.attempt}/${evt.maxAttempts}` : "";
+  const phase = INTEGRATION_PHASES.find((item) => item.key === evt.phase)?.title || evt.phase;
+  if (evt.event === "phase-start") return `${phase}: started.`;
+  if (evt.event === "phase-end") return evt.passed ? `${phase}: passed.` : `${phase}: failed. ${compact(evt.feedback)}`;
+  if (evt.event === "attempt-start") return `${phase}: attempt ${label} started.`;
+  if (evt.event === "check-start") return `${phase}: checker attempt ${label} started.`;
+  if (evt.event === "check-end") return evt.passed ? `${phase}: checker attempt ${label} passed.` : `${phase} feedback: ${compact(evt.feedback)}`;
+  return `${phase}: ${evt.event}`;
+}
+
+function makeIntegrationProgress({ statusPath, phaseToStep }) {
+  return (evt) => {
+    const step = phaseToStep.get(evt.phase);
+    if (!Number.isInteger(step)) return;
+    const status = readJsonMaybe(statusPath) || {};
+    status.steps = status.steps && typeof status.steps === "object" ? status.steps : {};
+    const key = String(step);
+    const cell = status.steps[key] || { status: "pending", gate: "pending", attempt: 1 };
+    if (!cell.started_at) cell.started_at = nowIso();
+    if (evt.attempt) cell.attempt = evt.attempt;
+    const checking = evt.event === "check-start" || (evt.event === "check-end" && evt.passed === false);
+    const done = evt.event === "phase-end" && evt.passed !== false;
+    const failed = evt.event === "phase-end" && evt.passed === false;
+    cell.status = failed ? "failed" : done ? "done" : "running";
+    cell.gate = failed ? "failed" : done ? "passed" : checking ? "checking" : "pending";
+    cell.heartbeat = Array.isArray(cell.heartbeat) ? cell.heartbeat : [];
+    const note = integrationProgressNote(evt);
+    if (note) {
+      cell.heartbeat.push({
+        at: nowIso(),
+        note,
+        ...(evt.tone ? { tone: evt.tone } : {}),
+      });
+    }
+    if (done || failed) cell.completed_at = nowIso();
+    status.steps[key] = cell;
+    status.current_step = done ? null : key;
+    status.status = failed ? "failed" : evt.phase === "validate" && done ? "done" : "running";
+    if (status.status === "done" || status.status === "failed") status.completed_at = nowIso();
+    writeIntegrationStatus(statusPath, status);
+  };
 }
 
 function integrationPrompt({ skill, cards, workflow, openItems, summary, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 5 }) {
@@ -564,6 +691,129 @@ Proposed new cards:
 ${JSON.stringify(addChanges, null, 2)}`;
 }
 
+function removeIntegrationPrompt({ cards, workflow, removeItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 5 }) {
+  return `You are the Agent Conductor integration remove-card composer.
+
+Instruction, order, and add-card changes have already passed. You may only
+propose card removals for open knowledge items explicitly flagged as remove or
+retire-card changes.
+
+Allowed change type for this phase: "remove_card" only.
+Do not edit instructions directly. Do not delete cards. Do not renumber cards.
+Do not remove dependencies. Do not add a skipped state.
+
+Remove means: identify an existing card that should be retired. Runtime will
+neuter it into a documented no-op and set a display-only retired flag on the
+workflow step. The card still executes trivially so dependents do not break.
+
+Each remove_card patch is:
+{
+  "type": "remove_card",
+  "knowledge_ids": ["K-014"],
+  "card": 4,
+  "change": "Retire the obsolete image upload card."
+}
+
+If a remove item cannot be handled by retiring one existing card, dismiss it with
+a concrete reason. Do not attempt structural edits beyond remove_card.
+
+Locked remove-card patches that already passed:
+${JSON.stringify(locked, null, 2)}
+
+Locked patches are final. Copy them exactly into your output. Only repair failed
+or unhandled remove items.
+
+Feedback to repair:
+${checkerFeedback || "(none)"}
+
+Attempt: ${attempt}/${maxAttempts}
+
+Current cards:
+${JSON.stringify(cards, null, 2)}
+
+Current workflow:
+${JSON.stringify(workflow, null, 2)}
+
+Open remove insights:
+${JSON.stringify(removeItems, null, 2)}
+
+Return JSON only:
+{
+  "changes": [
+    {
+      "type": "remove_card",
+      "knowledge_ids": ["K-014"],
+      "card": 4,
+      "change": "Retired obsolete card."
+    }
+  ],
+  "dismissed": []
+}`;
+}
+
+function removeCoverageCheckerPrompt({ removeItems, removeChanges, cards }) {
+  return `You are an independent remove-coverage checker for Agent Conductor v3.
+
+You receive the open knowledge items flagged as remove-card changes and the
+proposed remove_card patches. The composer is not trusted. Your only job: does
+each patch target the card the insight actually meant, for the reason given?
+
+You do NOT judge orphan safety — whether other cards still need the removed
+card's output is a separate safety check. Judge only intent match.
+
+Read each patch cold against its insight and the current card list.
+- PASS if the targeted card is the one the insight asks to remove/retire.
+- FAIL if the patch targets a different card, or the insight is not really a
+  remove-card request.
+
+Return JSON only:
+{
+  "verdict": "PASS" | "FAIL",
+  "feedback": "short summary",
+  "passed": [ { "knowledge_id": "K-014", "reason": "patch targets the obsolete card requested by the insight" } ],
+  "failed": [ { "knowledge_id": "K-015", "problem": "what is wrong", "required_repair": "what the composer must do next" } ],
+  "repair_prompt": "direct instructions for the next attempt"
+}
+
+Current cards:
+${JSON.stringify(cards, null, 2)}
+
+Open remove insights:
+${JSON.stringify(removeItems, null, 2)}
+
+Proposed remove patches:
+${JSON.stringify(removeChanges, null, 2)}`;
+}
+
+function removalSafetyCheckerPrompt({ removeTarget, survivingCards }) {
+  return `You are an independent removal-safety checker for Agent Conductor v3.
+
+You receive the card proposed for removal and the instructions of every other
+non-retired card. The composer is not trusted. Your only job: does any surviving
+card still depend on the card being removed?
+
+A surviving card depends on it if its instruction references, consumes, or builds
+on the removed card's output or artifact — by name, by path, or by description.
+Read each surviving instruction cold.
+
+- SAFE only if NO surviving instruction depends on the removed card's output.
+- UNSAFE if any surviving card still needs it. Name every dependent.
+
+Return JSON only:
+{
+  "verdict": "SAFE" | "UNSAFE",
+  "feedback": "short summary",
+  "dependents": [ { "card": 6, "reference": "what in card 6's instruction still needs the removed card's output" } ],
+  "repair_prompt": "if unsafe, what must change before this card can be removed"
+}
+
+Card to remove:
+${JSON.stringify(removeTarget, null, 2)}
+
+Surviving (non-retired) card instructions:
+${JSON.stringify(survivingCards, null, 2)}`;
+}
+
 function words(text) {
   return new Set(String(text || "").toLowerCase().match(/[a-z0-9åäö]+/g) || []);
 }
@@ -617,10 +867,27 @@ function isAddChangeItem(item) {
   );
 }
 
+function isRemoveChangeItem(item) {
+  const tags = knowledgeTags(item);
+  return Boolean(
+    item?.remove_card ||
+    item?.card_remove ||
+    item?.retire_card ||
+    item?.retired_card ||
+    tags.includes("remove") ||
+    tags.includes("remove_card") ||
+    tags.includes("remove-card") ||
+    tags.includes("card-remove") ||
+    tags.includes("retire") ||
+    tags.includes("retired") ||
+    tags.includes("retire-card"),
+  );
+}
+
 function isInstructionChangeItem(item) {
   const tags = knowledgeTags(item);
   if (tags.includes("instruction") || tags.includes("edit_instruction")) return true;
-  return !isOrderChangeItem(item) && !isAddChangeItem(item);
+  return !isOrderChangeItem(item) && !isAddChangeItem(item) && !isRemoveChangeItem(item);
 }
 
 function hasInstructionFacet(id, instructionItems) {
@@ -633,6 +900,10 @@ function hasOrderFacet(id, orderItems) {
 
 function hasAddFacet(id, addItems) {
   return addItems.some((item) => item.id === id);
+}
+
+function hasRemoveFacet(id, removeItems) {
+  return removeItems.some((item) => item.id === id);
 }
 
 function sourceCardKey(item) {
@@ -857,6 +1128,12 @@ function addChangeIds(result) {
     .flatMap((change) => change.knowledge_ids || []));
 }
 
+function removeChangeIds(result) {
+  return new Set((result.changes || [])
+    .filter((change) => change.type === "remove_card")
+    .flatMap((change) => change.knowledge_ids || []));
+}
+
 function orderRepairFeedback(check) {
   const lines = [];
   if (check.feedback) lines.push(`Checker summary: ${check.feedback}`);
@@ -894,6 +1171,22 @@ function lockPassedAddPatches(locked, result, check) {
     for (const id of item.knowledge_ids || []) {
       const change = byKnowledge.get(id);
       if (change) locked.set(`add:${id}`, { kind: "change", value: { ...change, knowledge_ids: [...(change.knowledge_ids || [])] } });
+      else if (byDismissed.has(id)) locked.set(`dismissed:${id}`, { kind: "dismissed", value: { ...byDismissed.get(id) } });
+    }
+  }
+}
+
+function lockPassedRemovePatches(locked, result, check) {
+  const byKnowledge = new Map();
+  for (const change of result.changes || []) {
+    if (change.type !== "remove_card") continue;
+    for (const id of change.knowledge_ids || []) byKnowledge.set(id, change);
+  }
+  const byDismissed = new Map((result.dismissed || []).map((item) => [item.id, item]));
+  for (const item of check.passed_patches || []) {
+    for (const id of item.knowledge_ids || []) {
+      const change = byKnowledge.get(id);
+      if (change) locked.set(`remove:${id}`, { kind: "change", value: { ...change, knowledge_ids: [...(change.knowledge_ids || [])] } });
       else if (byDismissed.has(id)) locked.set(`dismissed:${id}`, { kind: "dismissed", value: { ...byDismissed.get(id) } });
     }
   }
@@ -1001,6 +1294,53 @@ function applyAddChanges({ cards, workflow, changes, addItems }) {
   return { cards: nextCards, workflow: nextWorkflow, applied };
 }
 
+function retiredInstruction({ index, step, knowledgeIds }) {
+  const idLabel = knowledgeIds.join(", ");
+  const receipt = `.conductor/artifacts/${receiptArtifactName(index, step)}`;
+  return `This step has been retired by ${idLabel}. Produce an empty markdown receipt at ${receipt} documenting that the step is retired and no work is required, then take no other action.`;
+}
+
+function applyRemoveChanges({ cards, workflow, changes, removeItems }) {
+  const allowed = new Set(removeItems.map((item) => item.id));
+  const nextCards = cards.map((card) => ({ ...card }));
+  const nextWorkflow = {
+    ...workflow,
+    steps: (workflow.steps || []).map((step) => ({ ...step, requires: [...(step.requires || [])] })),
+  };
+  const applied = [];
+
+  for (const change of changes || []) {
+    if (change.type !== "remove_card") {
+      throw new Error(`unsupported remove integration change type "${change.type || "(missing)"}"; only remove_card is enabled`);
+    }
+    if (!change.knowledge_ids?.length) throw new Error("remove_card change is missing knowledge_ids");
+    for (const id of change.knowledge_ids) {
+      if (!allowed.has(id)) throw new Error(`remove_card references non-remove knowledge item ${id}`);
+    }
+    const card = Number(change.card);
+    if (!Number.isInteger(card) || card < 0 || card >= nextCards.length || !nextWorkflow.steps?.[card]) {
+      throw new Error(`remove_card references invalid card ${change.card}`);
+    }
+    const instruction = retiredInstruction({ index: card, step: nextWorkflow.steps[card], knowledgeIds: change.knowledge_ids });
+    nextCards[card].instruction = instruction;
+    nextWorkflow.steps[card].instruction = instruction;
+    nextWorkflow.steps[card].retired = true;
+    nextWorkflow.steps[card].retired_by = change.knowledge_ids.join(",");
+    applied.push({
+      ...change,
+      card,
+      title: nextWorkflow.steps[card].title || nextCards[card].title,
+      retired_by: change.knowledge_ids.join(","),
+      new_instruction: instruction,
+    });
+  }
+
+  if (nextCards.length !== cards.length || nextWorkflow.steps.length !== workflow.steps.length) {
+    throw new Error("remove_card attempted to change card or workflow length");
+  }
+  return { cards: nextCards, workflow: nextWorkflow, applied };
+}
+
 function localAddQualityCheck({ addChanges }) {
   const failed = [];
   const passed = [];
@@ -1071,6 +1411,71 @@ function localAddCoverageCheck({ addItems, addChanges }) {
     passed_patches: passed,
     failed_patches: failed,
     repair_prompt: failed.map((item) => `${item.knowledge_ids?.join(", ")}: ${item.required_repair || item.feedback}`).join("\n"),
+  };
+}
+
+function localRemoveCoverageCheck({ removeItems, removeChanges }) {
+  const handled = removeChangeIds({ changes: removeChanges });
+  const failed = [];
+  const passed = [];
+  for (const item of removeItems) {
+    if (!handled.has(item.id)) {
+      failed.push({
+        knowledge_ids: [item.id],
+        feedback: "Open remove-card item was not addressed.",
+        required_repair: "Return a remove_card patch for this item or dismiss it with a concrete reason.",
+      });
+    }
+  }
+  for (const change of removeChanges || []) {
+    const ids = change.knowledge_ids || [];
+    if (!Number.isInteger(change.card)) {
+      failed.push({
+        knowledge_ids: ids,
+        feedback: "remove_card patch does not name a numeric card index.",
+        required_repair: "Return the exact card index to retire.",
+      });
+      continue;
+    }
+    for (const id of ids) {
+      passed.push({ knowledge_ids: [id], kind: "remove_card", reason: "Patch names a concrete card to retire." });
+    }
+  }
+  return {
+    verdict: failed.length ? "FAIL" : "PASS",
+    passed: failed.length === 0,
+    feedback: failed.length ? `${failed.length} remove-card coverage issue(s) remain.` : "All remove-card items are covered.",
+    passed_patches: passed,
+    failed_patches: failed,
+    repair_prompt: failed.map((item) => `${item.knowledge_ids?.join(", ")}: ${item.required_repair || item.feedback}`).join("\n"),
+  };
+}
+
+function localRemovalSafetyCheck({ removeTarget, survivingCards }) {
+  const titleWords = [...words(removeTarget?.title || "")].filter((word) => word.length > 4);
+  const instructionWords = [...words(removeTarget?.instruction || "")].filter((word) => word.length > 6);
+  const signals = new Set([...titleWords, ...instructionWords].slice(0, 12));
+  const dependents = [];
+  if (signals.size) {
+    for (const card of survivingCards || []) {
+      const text = `${card.title || ""} ${card.instruction || ""}`.toLowerCase();
+      const hit = [...signals].find((word) => text.includes(word.toLowerCase()));
+      if (hit) {
+        dependents.push({ card: card.card, reference: `Instruction appears to reference removed-card signal "${hit}".` });
+      }
+    }
+  }
+  return {
+    verdict: dependents.length ? "UNSAFE" : "SAFE",
+    passed: dependents.length === 0,
+    feedback: dependents.length ? `${dependents.length} surviving card(s) may still depend on the retired card.` : "No surviving card appears to depend on the retired card.",
+    dependents,
+    failed_patches: dependents.map((item) => ({
+      card: item.card,
+      feedback: item.reference,
+      required_repair: "Remove or rewrite surviving references before retiring this card.",
+    })),
+    repair_prompt: dependents.length ? "Do not retire this card until surviving references to its output are removed or redirected." : "",
   };
 }
 
@@ -1147,7 +1552,7 @@ function localOrderCoverageCheck({ orderItems, orderChanges }) {
   };
 }
 
-async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAttempts = 5, strict = false }) {
+async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAttempts = 5, strict = false, progress } = {}) {
   if (!orderItems.length) {
     return { result: { changes: [], dismissed: [] }, workflow, report: { ok: true, attempts: [], final: null, locked: [] } };
   }
@@ -1159,6 +1564,7 @@ async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAt
   let lastWorkflow = workflow;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    progress?.({ phase: "order", event: "attempt-start", attempt, maxAttempts });
     let result;
     const prompt = orderIntegrationPrompt({
       cards,
@@ -1201,6 +1607,7 @@ async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAt
     }
     lastWorkflow = candidate;
 
+    progress?.({ phase: "order", event: "check-start", attempt, maxAttempts });
     const guard = await checkWorkflowWithDependencyGuard(candidate, {
       cards,
       lockedEdges,
@@ -1221,8 +1628,9 @@ async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAt
         repair_prompt: (guard.check.blocking_issues || []).map((issue) => issue.required_repair || issue.problem).filter(Boolean).join("\n"),
         guard: guard.check,
       };
-      attempts.push({ attempt, result, workflow: candidate, check, guard: guard.check, locked_edges: listLockedEdges(lockedEdges) });
       checkerFeedback = orderRepairFeedback(check) || guard.check.feedback;
+      attempts.push({ attempt, result, workflow: candidate, check, guard: guard.check, locked_edges: listLockedEdges(lockedEdges) });
+      progress?.({ phase: "order", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
       continue;
     }
 
@@ -1241,9 +1649,11 @@ async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAt
     lockPassedOrderPatches(locked, result, coverage);
     attempts.push({ attempt, result, workflow: candidate, check: coverage, guard: guard.check, locked: [...locked.values()].map((item) => item.value) });
     if (coverage.passed) {
+      progress?.({ phase: "order", event: "check-end", attempt, maxAttempts, passed: true });
       return { result: mergeLockedOrder(result, locked), workflow: candidate, report: { ok: true, attempts, final: coverage, guard: guard.check, locked: [...locked.values()].map((item) => item.value) } };
     }
     checkerFeedback = orderRepairFeedback(coverage);
+    progress?.({ phase: "order", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
   }
 
   return {
@@ -1253,7 +1663,7 @@ async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAt
   };
 }
 
-async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttempts = 5, strict = false }) {
+async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttempts = 5, strict = false, progress } = {}) {
   if (!addItems.length) {
     return { result: { changes: [], dismissed: [] }, cards, workflow, report: { ok: true, attempts: [], final: null, locked: [] } };
   }
@@ -1266,6 +1676,7 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
   let lastWorkflow = workflow;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    progress?.({ phase: "add", event: "attempt-start", attempt, maxAttempts });
     let result;
     const prompt = addIntegrationPrompt({
       cards,
@@ -1287,6 +1698,7 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
     lastResult = result;
 
     let check;
+    progress?.({ phase: "add", event: "check-start", attempt, maxAttempts });
     try {
       const rawQuality = await callModel(addQualityCheckerPrompt({ addChanges: result.changes || [], nextIndex: cards.length }), {
         role: "integration-add-quality",
@@ -1300,6 +1712,7 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
     if (!check.passed) {
       attempts.push({ attempt, result, workflow: null, check, phase: "quality" });
       checkerFeedback = orderRepairFeedback(check);
+      progress?.({ phase: "add", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
       continue;
     }
 
@@ -1321,6 +1734,7 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
       };
       attempts.push({ attempt, result, workflow: null, check, phase: "mechanical" });
       checkerFeedback = orderRepairFeedback(check);
+      progress?.({ phase: "add", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
       continue;
     }
     lastCards = candidate.cards;
@@ -1348,6 +1762,7 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
       };
       attempts.push({ attempt, result, cards: candidate.cards, workflow: candidate.workflow, check, guard: guard.check, phase: "placement" });
       checkerFeedback = orderRepairFeedback(check) || guard.check.feedback;
+      progress?.({ phase: "add", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
       continue;
     }
 
@@ -1365,11 +1780,13 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
     lockPassedAddPatches(locked, result, check);
     attempts.push({ attempt, result, cards: candidate.cards, workflow: candidate.workflow, check, guard: guard.check, phase: "coverage", locked: [...locked.values()].map((item) => item.value) });
     if (check.passed) {
+      progress?.({ phase: "add", event: "check-end", attempt, maxAttempts, passed: true });
       const merged = mergeLockedOrder(result, locked);
       const applied = applyAddChanges({ cards, workflow, changes: merged.changes, addItems });
       return { result: { ...merged, changes: applied.applied }, cards: applied.cards, workflow: applied.workflow, report: { ok: true, attempts, final: check, guard: guard.check, locked: [...locked.values()].map((item) => item.value) } };
     }
     checkerFeedback = orderRepairFeedback(check);
+    progress?.({ phase: "add", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
   }
 
   return {
@@ -1380,12 +1797,157 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
   };
 }
 
-async function composeCheckIntegration({ skill, cards, workflow, openItems, summary, maxAttempts = 5, strict = false }) {
+async function composeCheckRemoveIntegration({ cards, workflow, removeItems, maxAttempts = 5, strict = false, progress } = {}) {
+  if (!removeItems.length) {
+    return { result: { changes: [], dismissed: [] }, cards, workflow, report: { ok: true, attempts: [], final: null, locked: [] } };
+  }
+  const locked = new Map();
+  const attempts = [];
+  let checkerFeedback = "";
+  let lastResult = null;
+  let lastCards = cards;
+  let lastWorkflow = workflow;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    progress?.({ phase: "remove", event: "attempt-start", attempt, maxAttempts });
+    let result;
+    const prompt = removeIntegrationPrompt({
+      cards,
+      workflow,
+      removeItems,
+      locked: [...locked.values()].map((item) => item.value),
+      checkerFeedback,
+      attempt,
+      maxAttempts,
+    });
+    try {
+      const raw = await callModel(prompt, { role: "integration-remove", attempt });
+      result = normalizeIntegration(extractJson(raw));
+    } catch (e) {
+      if (strict) throw new Error(`integration remove model failed: ${e.message}`);
+      result = { changes: [], dismissed: [] };
+    }
+    result = mergeLockedOrder(result, locked);
+    lastResult = result;
+
+    let check;
+    progress?.({ phase: "remove", event: "check-start", attempt, maxAttempts });
+    try {
+      const rawCoverage = await callModel(removeCoverageCheckerPrompt({ removeItems, removeChanges: result.changes || [], cards }), {
+        role: "integration-remove-checker",
+        attempt,
+      });
+      check = normalizeOrderCoverageCheck(extractJson(rawCoverage));
+    } catch (e) {
+      if (strict) throw new Error(`integration remove coverage checker failed: ${e.message}`);
+      check = localRemoveCoverageCheck({ removeItems, removeChanges: result.changes || [] });
+    }
+    if (!check.passed) {
+      attempts.push({ attempt, result, cards: null, workflow: null, check, phase: "coverage" });
+      checkerFeedback = orderRepairFeedback(check);
+      progress?.({ phase: "remove", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
+      continue;
+    }
+
+    let safetyFailed = false;
+    for (const change of result.changes || []) {
+      const target = Number(change.card);
+      const removeTarget = {
+        card: target,
+        title: cards[target]?.title || workflow.steps?.[target]?.title,
+        instruction: cards[target]?.instruction || workflow.steps?.[target]?.instruction,
+      };
+      const survivingCards = cards
+        .map((card, index) => ({
+          card: index,
+          title: card.title || workflow.steps?.[index]?.title,
+          instruction: card.instruction || workflow.steps?.[index]?.instruction,
+          retired: workflow.steps?.[index]?.retired === true,
+        }))
+        .filter((card) => card.card !== target && !card.retired);
+      let safety;
+      try {
+        const rawSafety = await callModel(removalSafetyCheckerPrompt({ removeTarget, survivingCards }), {
+          role: "integration-remove-safety",
+          attempt,
+        });
+        safety = normalizeRemovalSafetyCheck(extractJson(rawSafety));
+      } catch (e) {
+        if (strict) throw new Error(`integration remove safety checker failed: ${e.message}`);
+        safety = localRemovalSafetyCheck({ removeTarget, survivingCards });
+      }
+      if (!safety.passed) {
+        check = {
+          verdict: "FAIL",
+          passed: false,
+          feedback: safety.feedback || `Card ${target} cannot be retired safely.`,
+          failed_patches: (change.knowledge_ids || []).map((id) => ({
+            knowledge_ids: [id],
+            card: target,
+            feedback: safety.feedback,
+            required_repair: safety.repair_prompt || "Rewrite surviving cards so none consume the removed card's output, then retry.",
+          })),
+          repair_prompt: safety.repair_prompt,
+          safety,
+        };
+        attempts.push({ attempt, result, cards: null, workflow: null, check, phase: "orphan-safety" });
+        checkerFeedback = orderRepairFeedback(check) || safety.feedback;
+        progress?.({ phase: "remove", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
+        safetyFailed = true;
+        break;
+      }
+    }
+    if (safetyFailed) continue;
+
+    let candidate;
+    try {
+      candidate = applyRemoveChanges({ cards, workflow, changes: result.changes, removeItems });
+    } catch (e) {
+      check = {
+        verdict: "FAIL",
+        passed: false,
+        feedback: e.message,
+        failed_patches: (result.changes || []).map((change) => ({
+          knowledge_ids: change.knowledge_ids || [],
+          feedback: e.message,
+          required_repair: "Return legal remove_card patches only for remove-flagged knowledge items.",
+        })),
+      };
+      attempts.push({ attempt, result, cards: null, workflow: null, check, phase: "mechanical" });
+      checkerFeedback = orderRepairFeedback(check);
+      progress?.({ phase: "remove", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
+      continue;
+    }
+    lastCards = candidate.cards;
+    lastWorkflow = candidate.workflow;
+
+    lockPassedRemovePatches(locked, result, check);
+    attempts.push({ attempt, result, cards: candidate.cards, workflow: candidate.workflow, check, phase: "coverage+safety", locked: [...locked.values()].map((item) => item.value) });
+    if (check.passed) {
+      progress?.({ phase: "remove", event: "check-end", attempt, maxAttempts, passed: true });
+      const merged = mergeLockedOrder(result, locked);
+      const applied = applyRemoveChanges({ cards, workflow, changes: merged.changes, removeItems });
+      return { result: { ...merged, changes: applied.applied }, cards: applied.cards, workflow: applied.workflow, report: { ok: true, attempts, final: check, locked: [...locked.values()].map((item) => item.value) } };
+    }
+    checkerFeedback = orderRepairFeedback(check);
+    progress?.({ phase: "remove", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
+  }
+
+  return {
+    result: mergeLockedOrder(lastResult || { changes: [], dismissed: [] }, locked),
+    cards: lastCards,
+    workflow: lastWorkflow,
+    report: { ok: false, attempts, final: attempts.at(-1)?.check || null, locked: [...locked.values()].map((item) => item.value) },
+  };
+}
+
+async function composeCheckIntegration({ skill, cards, workflow, openItems, summary, maxAttempts = 5, strict = false, progress } = {}) {
   const locked = new Map();
   const attempts = [];
   let checkerFeedback = "";
   let lastResult = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    progress?.({ phase: "instruction", event: "attempt-start", attempt, maxAttempts });
     let result;
     const prompt = integrationPrompt({
       skill,
@@ -1409,6 +1971,7 @@ async function composeCheckIntegration({ skill, cards, workflow, openItems, summ
     lastResult = result;
 
     let check;
+    progress?.({ phase: "instruction", event: "check-start", attempt, maxAttempts });
     try {
       const checkPrompt = integrationCheckerPrompt({ cards, openItems, result });
       const rawCheck = await callModel(checkPrompt, { role: "integration-checker", attempt });
@@ -1421,9 +1984,11 @@ async function composeCheckIntegration({ skill, cards, workflow, openItems, summ
     attempts.push({ attempt, result, check, locked: lockedList(locked) });
 
     if (check.passed) {
+      progress?.({ phase: "instruction", event: "check-end", attempt, maxAttempts, passed: true });
       return { result: mergeLocked(result, locked), report: { ok: true, attempts, final: check, locked: lockedList(locked) } };
     }
     checkerFeedback = repairFeedback(check);
+    progress?.({ phase: "instruction", event: "check-end", attempt, maxAttempts, passed: false, feedback: checkerFeedback, tone: "feedback" });
   }
   return {
     result: mergeLocked(lastResult || { changes: [], dismissed: [] }, locked),
@@ -1523,6 +2088,30 @@ function assertLedgerConsistency({ cards, workflow, changes, knowledge }) {
       }
       continue;
     }
+    if (change.type === "remove_card") {
+      const index = change.card;
+      if (!Number.isInteger(index)) throw new Error(`ledger check failed: remove_card missing retired card index`);
+      const card = cards[index];
+      const step = workflow?.steps?.[index];
+      if (!card || !step) throw new Error(`ledger check failed: retired card ${index} is missing from cards.json or workflow.json`);
+      if (step.retired !== true) {
+        throw new Error(`ledger check failed: card ${index} is marked applied as removed, but workflow.json does not set retired: true`);
+      }
+      const retiredBy = compact(step.retired_by);
+      for (const id of change.knowledge_ids || []) {
+        if (!retiredBy.includes(id)) {
+          throw new Error(`ledger check failed: card ${index} retired_by does not include ${id}`);
+        }
+      }
+      const instruction = compact(step.instruction || card.instruction).toLowerCase();
+      if (!instruction.includes("retired") || !instruction.includes("no work is required")) {
+        throw new Error(`ledger check failed: retired card ${index} instruction is not a documented no-op`);
+      }
+      if (card.instruction !== step.instruction) {
+        throw new Error(`ledger check failed: retired card ${index} cards.json and workflow.json instructions diverge`);
+      }
+      continue;
+    }
     if (change.type === "edit_instruction") {
       const instruction = compact(cards[change.card]?.instruction).toLowerCase();
       if (!instruction) throw new Error(`ledger check failed: card ${change.card} has no shipped instruction`);
@@ -1580,6 +2169,7 @@ function renderArtifact({ runId, openItems, changes, dismissed, report }) {
   const edited = changes.filter((change) => change.type === "edit_instruction");
   const reordered = changes.filter((change) => change.type === "edit_order");
   const added = changes.filter((change) => change.type === "add_card");
+  const removed = changes.filter((change) => change.type === "remove_card");
   return [
     `# Integration — ${runId}`,
     "",
@@ -1589,6 +2179,7 @@ function renderArtifact({ runId, openItems, changes, dismissed, report }) {
     `- ${edited.length} card edit${edited.length === 1 ? "" : "s"}`,
     `- ${reordered.length} order edit${reordered.length === 1 ? "" : "s"}`,
     `- ${added.length} new card${added.length === 1 ? "" : "s"} added`,
+    `- ${removed.length} card${removed.length === 1 ? "" : "s"} retired`,
     `- ${dismissed.length} dismissed`,
     `- Passed on attempt ${report?.attempts?.length || 1} of 5`,
     reordered.length
@@ -1611,11 +2202,16 @@ function renderArtifact({ runId, openItems, changes, dismissed, report }) {
           change.type === "add_card"
             ? `- **Requires:** ${JSON.stringify(change.requires || {})}`
             : "",
+          change.type === "remove_card"
+            ? `- **Retired card:** ${change.card}. ${change.title || ""}`
+            : "",
           change.type === "edit_order"
             ? "- **Tier:** 2 (order edit)"
             : change.type === "add_card"
               ? "- **Tier:** 3 (add card)"
-              : "- **Tier:** 1 (instruction edit)",
+              : change.type === "remove_card"
+                ? "- **Tier:** 4 (retire card)"
+                : "- **Tier:** 1 (instruction edit)",
         ].join("\n")).join("\n\n")
       : "_none_",
     "",
@@ -1665,22 +2261,30 @@ export async function runIntegration(args) {
   const instructionItems = openItems.filter(isInstructionChangeItem);
   const orderItems = openItems.filter(isOrderChangeItem);
   const addItems = openItems.filter(isAddChangeItem);
+  const removeItems = openItems.filter(isRemoveChangeItem);
+  const maxAttempts = Number(flag(args, ["--max-attempts"]) || 5);
+  const integrationBoard = initIntegrationBoard(root, openItems);
+  const progress = makeIntegrationProgress(integrationBoard);
 
   const skill = skillPath && fs.existsSync(skillPath) ? fs.readFileSync(skillPath, "utf8") : "";
   let loop = { result: { changes: [], dismissed: [] }, report: { ok: true, attempts: [], final: null } };
   try {
     if (instructionItems.length) {
+      progress({ phase: "instruction", event: "phase-start" });
       loop = await composeCheckIntegration({
         skill,
         cards,
         workflow,
         openItems: instructionItems,
         summary: latestRunSummary(root),
-        maxAttempts: Number(flag(args, ["--max-attempts"]) || 5),
+        maxAttempts,
         strict: args.includes("--strict"),
+        progress,
       });
+      progress({ phase: "instruction", event: "phase-end", passed: loop.report.ok, feedback: repairFeedback(loop.report.final || {}) });
     }
   } catch (e) {
+    progress({ phase: "instruction", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
     console.error(red(`✗ integration failed: ${e.message}`));
     return false;
   }
@@ -1706,14 +2310,18 @@ export async function runIntegration(args) {
   let orderLoop = { result: { changes: [], dismissed: [] }, workflow: nextWorkflow, report: { ok: true, attempts: [], final: null } };
   if (orderItems.length) {
     try {
+      progress({ phase: "order", event: "phase-start" });
       orderLoop = await composeCheckOrderIntegration({
         cards: applied.cards,
         workflow: nextWorkflow,
         orderItems,
-        maxAttempts: Number(flag(args, ["--max-attempts"]) || 5),
+        maxAttempts,
         strict: args.includes("--strict"),
+        progress,
       });
+      progress({ phase: "order", event: "phase-end", passed: true });
     } catch (e) {
+      progress({ phase: "order", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
       console.error(red(`✗ order integration failed: ${e.message}`));
       return false;
     }
@@ -1749,14 +2357,18 @@ export async function runIntegration(args) {
   let addLoop = { result: { changes: [], dismissed: [] }, cards: nextCards, workflow: nextWorkflow, report: { ok: true, attempts: [], final: null } };
   if (addItems.length) {
     try {
+      progress({ phase: "add", event: "phase-start" });
       addLoop = await composeCheckAddIntegration({
         cards: nextCards,
         workflow: nextWorkflow,
         addItems,
-        maxAttempts: Number(flag(args, ["--max-attempts"]) || 5),
+        maxAttempts,
         strict: args.includes("--strict"),
+        progress,
       });
+      progress({ phase: "add", event: "phase-end", passed: true });
     } catch (e) {
+      progress({ phase: "add", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
       console.error(red(`✗ add-card integration failed: ${e.message}`));
       return false;
     }
@@ -1803,9 +2415,68 @@ export async function runIntegration(args) {
     }
   }
 
+  let removeLoop = { result: { changes: [], dismissed: [] }, cards: nextCards, workflow: nextWorkflow, report: { ok: true, attempts: [], final: null } };
+  if (removeItems.length) {
+    try {
+      progress({ phase: "remove", event: "phase-start" });
+      removeLoop = await composeCheckRemoveIntegration({
+        cards: nextCards,
+        workflow: nextWorkflow,
+        removeItems,
+        maxAttempts,
+        strict: args.includes("--strict"),
+        progress,
+      });
+      progress({ phase: "remove", event: "phase-end", passed: true });
+    } catch (e) {
+      progress({ phase: "remove", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
+      console.error(red(`✗ remove-card integration failed: ${e.message}`));
+      return false;
+    }
+    if (removeLoop.report.ok) {
+      nextCards = removeLoop.cards;
+      nextWorkflow = removeLoop.workflow;
+    } else {
+      const reason = orderRepairFeedback(removeLoop.report.final || {}) || "can't remove card: coverage or orphan-safety guard did not approve the requested removal";
+      removeLoop.result = {
+        changes: [],
+        dismissed: removeItems.map((item) => ({
+          id: item.id,
+          reason: reason.startsWith("can't remove card") ? reason : `can't remove card: ${reason}`,
+        })),
+      };
+    }
+  }
+
+  const removeDismissedIds = new Set((removeLoop.result.dismissed || []).map((item) => item.id));
+  if (removeDismissedIds.size) {
+    const filteredInstructionChanges = (result.changes || []).filter((change) => !(change.knowledge_ids || []).some((id) => removeDismissedIds.has(id)));
+    const filteredOrderChanges = (orderLoop.result.changes || []).filter((change) => !(change.knowledge_ids || []).some((id) => removeDismissedIds.has(id)));
+    const filteredAddChanges = (addLoop.result.changes || []).filter((change) => !(change.knowledge_ids || []).some((id) => removeDismissedIds.has(id)));
+    if (
+      filteredInstructionChanges.length !== (result.changes || []).length ||
+      filteredOrderChanges.length !== (orderLoop.result.changes || []).length ||
+      filteredAddChanges.length !== (addLoop.result.changes || []).length
+    ) {
+      applied = applyInstructionPatches({ cards, workflow, changes: filteredInstructionChanges, openItems });
+      result = { ...result, changes: filteredInstructionChanges };
+      nextCards = applied.cards;
+      nextWorkflow = applied.workflow;
+      const orderApplied = applyOrderDeltas({ workflow: nextWorkflow, changes: filteredOrderChanges, orderItems });
+      orderLoop.result = { ...orderLoop.result, changes: orderApplied.applied };
+      nextWorkflow = orderApplied.workflow;
+      const addApplied = applyAddChanges({ cards: nextCards, workflow: nextWorkflow, changes: filteredAddChanges, addItems });
+      addLoop.result = { ...addLoop.result, changes: addApplied.applied };
+      nextCards = addApplied.cards;
+      nextWorkflow = addApplied.workflow;
+      removeLoop.cards = nextCards;
+      removeLoop.workflow = nextWorkflow;
+    }
+  }
+
   const finalResult = {
-    changes: [...(result.changes || []), ...(orderLoop.result.changes || []), ...(addLoop.result.changes || [])],
-    dismissed: [...(result.dismissed || []), ...(orderLoop.result.dismissed || []), ...(addLoop.result.dismissed || [])],
+    changes: [...(result.changes || []), ...(orderLoop.result.changes || []), ...(addLoop.result.changes || []), ...(removeLoop.result.changes || [])],
+    dismissed: [...(result.dismissed || []), ...(orderLoop.result.dismissed || []), ...(addLoop.result.dismissed || []), ...(removeLoop.result.dismissed || [])],
   };
   const unhandled = unresolvedItems(openItems, finalResult);
   if (unhandled.length) {
@@ -1814,17 +2485,21 @@ export async function runIntegration(args) {
   }
 
   try {
+    progress({ phase: "validate", event: "phase-start" });
     assertLedgerConsistency({ cards: nextCards, workflow: nextWorkflow, changes: finalResult.changes, knowledge });
   } catch (e) {
+    progress({ phase: "validate", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
     console.error(red(`✗ integration rejected by guard: ${e.message}`));
     return false;
   }
 
   const errors = validateConductor(nextWorkflow);
   if (errors.length) {
+    progress({ phase: "validate", event: "phase-end", passed: false, feedback: errors[0], tone: "feedback" });
     console.error(red(`✗ integration would create invalid workflow: ${errors[0]}`));
     return false;
   }
+  progress({ phase: "validate", event: "phase-end", passed: true });
 
   writeJson(cardsPath, nextCards);
   writeJson(workflowPath, nextWorkflow);
@@ -1842,6 +2517,14 @@ export async function runIntegration(args) {
         item.applied_as = `tier-3:add-card-${change.card_index}`;
         item.applied_card = change.card_index;
         item.applied_order = change.requires;
+      } else if (change.type === "remove_card") {
+        item.applied_as = hasInstructionFacet(id, instructionItems)
+          ? `tier-1+4:edit-card-${change.card}+remove-card`
+          : `tier-4:remove-card-${change.card}`;
+        item.applied_card = change.card;
+        item.applied_remove = { card: change.card, retired_by: change.retired_by };
+      } else if (hasRemoveFacet(id, removeItems) && hasInstructionFacet(id, instructionItems)) {
+        item.applied_as = `tier-1+4:edit-card-${change.card}+remove-card`;
       } else if (hasOrderFacet(id, orderItems) && hasInstructionFacet(id, instructionItems)) {
         item.applied_as = `tier-1+2:edit-card-${change.card}+edit-order`;
       } else if (hasAddFacet(id, addItems) && hasInstructionFacet(id, instructionItems)) {
@@ -1871,7 +2554,8 @@ export async function runIntegration(args) {
       ...loop.report,
       order_attempts: orderLoop.report.attempts || [],
       add_attempts: addLoop.report.attempts || [],
-      attempts: [...(loop.report.attempts || []), ...(orderLoop.report.attempts || []), ...(addLoop.report.attempts || [])],
+      remove_attempts: removeLoop.report.attempts || [],
+      attempts: [...(loop.report.attempts || []), ...(orderLoop.report.attempts || []), ...(addLoop.report.attempts || []), ...(removeLoop.report.attempts || [])],
     },
   });
   fs.writeFileSync(path.join(artifactsDir, "integration.md"), artifact);
@@ -1883,8 +2567,9 @@ export async function runIntegration(args) {
     edited: finalResult.changes.filter((change) => change.type === "edit_instruction").length,
     reordered: finalResult.changes.filter((change) => change.type === "edit_order").length,
     added: finalResult.changes.filter((change) => change.type === "add_card").length,
+    retired: finalResult.changes.filter((change) => change.type === "remove_card").length,
     dismissed: finalResult.dismissed.length,
-    attempts: (loop.report.attempts?.length || 0) + (orderLoop.report.attempts?.length || 0) + (addLoop.report.attempts?.length || 0),
+    attempts: (loop.report.attempts?.length || 0) + (orderLoop.report.attempts?.length || 0) + (addLoop.report.attempts?.length || 0) + (removeLoop.report.attempts?.length || 0),
     changes: finalResult.changes,
     dismissed_items: finalResult.dismissed,
     artifact: "integration.md",

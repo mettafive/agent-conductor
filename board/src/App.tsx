@@ -17,6 +17,7 @@ import { clockSince } from "./lib/view";
 import { TopBar } from "./components/TopBar";
 import { WorkflowKanban } from "./components/WorkflowKanban";
 import { Settings } from "./components/Settings";
+import { InsightsModal } from "./components/InsightsModal";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
 import { loadHeartbeatInterval, saveHeartbeatInterval, stallSecondsFor } from "./lib/settings";
@@ -32,6 +33,7 @@ export function App() {
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
   const [heartbeatInterval, setHeartbeatInterval] = useState(loadHeartbeatInterval);
   const [showSettings, setShowSettings] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const now = useNow(1000);
 
   useEffect(() => {
@@ -89,11 +91,16 @@ export function App() {
       if (e.key === "Escape" && showSettings) {
         e.preventDefault();
         setShowSettings(false);
+        return;
+      }
+      if (e.key === "Escape" && showInsights) {
+        e.preventDefault();
+        setShowInsights(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showSettings]);
+  }, [showSettings, showInsights]);
 
   const liveStarted = !!(
     liveSnap.status &&
@@ -107,6 +114,8 @@ export function App() {
       : model.overallStatus === "done" || model.overallStatus === "failed"
         ? clockSince(model.startedAt, now, model.endedAt)
         : null;
+  const runCount = (activeWf && workflows[activeWf]?.history.length) || 0;
+  const freshInsightCount = model.runId ? model.knowledge.filter((item) => item.source_run === model.runId).length : 0;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -116,6 +125,8 @@ export function App() {
         elapsed={elapsed}
         done={model.done}
         total={model.total}
+        insightCount={freshInsightCount}
+        onOpenInsights={() => setShowInsights(true)}
       />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* v2 sidebar nav — parked, kept for styling reference.
@@ -199,11 +210,16 @@ export function App() {
           setChimesMuted(!next);
           setChimesOn(next);
         }}
-        workflow={activeWf ?? model.workflow}
-        knowledge={model.knowledge}
-        runCount={(activeWf && workflows[activeWf]?.history.length) || 0}
         heartbeatInterval={heartbeatInterval}
         onSetHeartbeatInterval={setHeartbeatInterval}
+      />
+      <InsightsModal
+        open={showInsights}
+        onClose={() => setShowInsights(false)}
+        workflow={activeWf ?? model.workflow}
+        knowledge={model.knowledge}
+        runCount={runCount}
+        currentRunId={model.runId}
       />
     </div>
   );

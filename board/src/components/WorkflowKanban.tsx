@@ -82,6 +82,77 @@ function requirementTitles(step: BoardStep, steps: BoardStep[]): string[] {
     .map((dep) => dep.title);
 }
 
+function unmetRequirementIndexes(step: BoardStep, steps: BoardStep[]): number[] {
+  return step.requires
+    .filter((idx) => {
+      const dep = steps[idx];
+      return !!dep && dep.column !== "done" && !dep.retired;
+    })
+    .sort((a, b) => a - b);
+}
+
+function graphDepths(steps: BoardStep[]): number[] {
+  const cache = new Map<number, number>();
+  const visiting = new Set<number>();
+  const depth = (idx: number): number => {
+    if (cache.has(idx)) return cache.get(idx)!;
+    if (visiting.has(idx)) return 0;
+    visiting.add(idx);
+    const step = steps[idx];
+    const value = !step || step.requires.length === 0
+      ? 0
+      : 1 + Math.max(...step.requires.map((req) => depth(req)));
+    visiting.delete(idx);
+    cache.set(idx, value);
+    return value;
+  };
+  return steps.map((_, idx) => depth(idx));
+}
+
+interface PendingBand {
+  key: string;
+  title: string;
+  gateIndexes: number[];
+  steps: BoardStep[];
+  order: number;
+}
+
+function pendingBands(pendingSteps: BoardStep[], allSteps: BoardStep[]): PendingBand[] {
+  const depths = graphDepths(allSteps);
+  const map = new Map<string, PendingBand>();
+
+  for (const step of pendingSteps) {
+    const gateIndexes = unmetRequirementIndexes(step, allSteps);
+    const key = gateIndexes.length ? gateIndexes.join(",") : "ready";
+    const existing = map.get(key);
+    if (existing) {
+      existing.steps.push(step);
+      existing.order = Math.min(existing.order, step.index);
+      continue;
+    }
+
+    const gateTitles = gateIndexes
+      .map((idx) => allSteps[idx]?.title)
+      .filter((title): title is string => !!title);
+    map.set(key, {
+      key,
+      gateIndexes,
+      steps: [step],
+      title: gateIndexes.length ? `Waiting for · ${gateTitles.join(", ")}` : "Ready",
+      order: step.index,
+    });
+  }
+
+  return [...map.values()].sort((a, b) => {
+    if (a.key === "ready") return -1;
+    if (b.key === "ready") return 1;
+    const aDepth = Math.max(...a.gateIndexes.map((idx) => depths[idx] ?? 0));
+    const bDepth = Math.max(...b.gateIndexes.map((idx) => depths[idx] ?? 0));
+    if (aDepth !== bDepth) return aDepth - bDepth;
+    return a.order - b.order;
+  });
+}
+
 function statusLine(step: BoardStep, steps: BoardStep[], maxAttempts: number): string {
   if (step.column === "pending") {
     const waiting = requirementTitles(step, steps);
@@ -144,7 +215,7 @@ function isDiagnosticArtifactFile(file: ArtifactFile): boolean {
 }
 
 function isMigrationArtifactFile(file: ArtifactFile): boolean {
-  return /^(create-cards|map-dependencies|validate-workflow|migration-plan|integration)\.md$/i.test(file.name);
+  return /^(create-cards|map-dependencies|validate-workflow|migration-plan)\.md$/i.test(file.name);
 }
 
 function orderedArtifactFiles(files: ArtifactFile[]): ArtifactFile[] {
@@ -789,7 +860,9 @@ interface IntegrationSummary {
   processed: number;
   applied: number;
   edited: number;
+  reordered?: number;
   added: number;
+  retired?: number;
   dismissed: number;
   changes: IntegrationChange[];
   dismissed_items: { id: string; reason?: string }[];
@@ -802,6 +875,14 @@ function isCompileLifecycle(model: BoardModel, steps: BoardStep[]): boolean {
     steps.some((step) => step.title === "Create Cards") &&
       steps.some((step) => step.title === "Map Dependencies") &&
       steps.some((step) => step.title === "Validate Workflow")
+  );
+}
+
+function isIntegrationLifecycle(model: BoardModel, steps: BoardStep[]): boolean {
+  return (
+    model.workflow === "Integrating insights" ||
+    steps.some((step) => step.title === "Apply instruction insights") &&
+      steps.some((step) => step.title === "Validate updated workflow")
   );
 }
 
@@ -819,13 +900,15 @@ function IntegrationSummaryPanel({
   const applied = summary.applied ?? 0;
   const dismissed = summary.dismissed ?? 0;
   const added = summary.added ?? 0;
+  const retired = summary.retired ?? 0;
+  const reordered = summary.reordered ?? 0;
 
   return (
     <div className="mt-4 rounded-md border border-line bg-panel/70 p-4">
       <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mint">Integration complete</div>
       <div className="mt-2 font-mono text-[11px] leading-relaxed text-mist">
         <div>{summary.processed} knowledge item{summary.processed === 1 ? "" : "s"} processed</div>
-        <div>{applied} applied · {added} new card{added === 1 ? "" : "s"} · {dismissed} dismissed</div>
+        <div>{applied} applied · {added} new card{added === 1 ? "" : "s"} · {reordered} order edit{reordered === 1 ? "" : "s"} · {retired} retired · {dismissed} dismissed</div>
       </div>
 
       {(summary.changes?.length > 0 || summary.dismissed_items?.length > 0) && (
@@ -868,6 +951,69 @@ function IntegrationSummaryPanel({
           {starting ? "Starting..." : "Start Run"}
         </button>
         {!starting && <span className="font-mono text-[11px] text-dim">review the changes, then start when ready</span>}
+      </div>
+    </div>
+  );
+}
+
+function IntegrationCompletePanel({
+  model,
+}: {
+  model: BoardModel;
+}) {
+  const [summary, setSummary] = useState<IntegrationSummary | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/integration-summary`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled) setSummary(data);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [model.workflow]);
+
+  async function startRun() {
+    if (starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true, run_id: summary?.run_id }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `start failed: ${res.status}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-line bg-panel/40 px-5 py-4">
+      <div className="mx-auto max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
+        {summary ? (
+          <IntegrationSummaryPanel
+            summary={summary}
+            starting={starting}
+            error={error}
+            onStart={() => void startRun()}
+          />
+        ) : (
+          <div className="font-mono text-[11px] text-mist">
+            Integration complete. {error ? <span className="text-rose">{error}</span> : "Loading summary..."}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1005,8 +1151,13 @@ function ExecutionCompletePanel({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const visibleNotes = (notes || []).filter((note) => note.status !== "removed");
-  const visibleKnowledge = (model.knowledge || []).filter((item) => item.status !== "applied" || item.note || item.title);
-  const openKnowledge = (model.knowledge || []).filter((item) => item.status === "open" || item.status === "emerging");
+  const knowledge = model.knowledge || [];
+  const agentInsights = knowledge.filter((item) => (item.source || "agent") !== "human");
+  const humanInsights = knowledge.filter((item) => item.source === "human");
+  const agentOpen = agentInsights.filter((item) => item.status === "open" || item.status === "emerging");
+  const humanOpen = humanInsights.filter((item) => item.status === "open" || item.status === "emerging");
+  const appliedCount = knowledge.filter((item) => item.status === "applied").length;
+  const openKnowledge = (model.knowledge || []).filter((item) => item.status === "open");
   const passed = steps.filter((step) => step.column === "done").length;
   const failed = steps.filter((step) => step.column === "failed").length;
   const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
@@ -1047,47 +1198,26 @@ function ExecutionCompletePanel({
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-mist">
               <span>{passed}/{steps.length} passed</span>
               {failed > 0 && <span className="text-rose">{failed} failed</span>}
-              {visibleNotes.length > 0 && <span>{visibleNotes.length} comment{visibleNotes.length === 1 ? "" : "s"}</span>}
-              {visibleKnowledge.length > 0 && (
-                <span>{visibleKnowledge.length} knowledge item{visibleKnowledge.length === 1 ? "" : "s"}</span>
-              )}
+              {agentOpen.length > 0 && <span>{agentOpen.length} agent insight{agentOpen.length === 1 ? "" : "s"} open</span>}
+              {humanOpen.length > 0 && <span>{humanOpen.length} comment insight{humanOpen.length === 1 ? "" : "s"} open</span>}
+              {appliedCount > 0 && <span>{appliedCount} applied</span>}
             </div>
 
-            {(visibleKnowledge.length > 0 || visibleNotes.length > 0) && (
+            {(knowledge.length > 0 || visibleNotes.length > 0) && (
               <div className="mt-4 grid gap-3 border-t border-line pt-3 md:grid-cols-2">
-                {visibleKnowledge.length > 0 && (
-                  <div>
-                    <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">Insights for next run</div>
-                    <div className="mt-1.5 space-y-1.5">
-                      {visibleKnowledge.slice(0, 4).map((item, index) => (
-                        <div key={`${item.title}-${index}`} className="rounded border border-line/70 bg-panel/40 px-2 py-1.5 text-[11px] leading-snug text-mist">
-                          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-amber">{item.status}</span>
-                          <span className="ml-2 text-chalk">{item.title}</span>
-                          {item.note && <div className="mt-1 text-dim">{item.note}</div>}
-                        </div>
-                      ))}
-                      {visibleKnowledge.length > 4 && (
-                        <div className="font-mono text-[10px] text-dim">+{visibleKnowledge.length - 4} more</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {visibleNotes.length > 0 && (
-                  <div>
-                    <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">Pending improvements</div>
-                    <div className="mt-1.5 space-y-1.5">
-                      {visibleNotes.slice(0, 4).map((note) => (
-                        <div key={note.id} className="rounded border border-line/70 bg-panel/40 px-2 py-1.5 text-[11px] leading-snug text-mist">
-                          <span className="text-chalk">{note.card_title || `Card ${note.card || note.step}`}</span>
-                          <div className="mt-1 text-dim">{note.text}</div>
-                        </div>
-                      ))}
-                      {visibleNotes.length > 4 && (
-                        <div className="font-mono text-[10px] text-dim">+{visibleNotes.length - 4} more</div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                <KnowledgePreview
+                  title="Agent insights"
+                  empty="No agent insights yet."
+                  items={agentInsights}
+                  preferred={["open", "emerging", "proven", "applied"]}
+                />
+                <KnowledgePreview
+                  title="Your comments"
+                  empty="No comment insights yet."
+                  items={humanInsights}
+                  preferred={["open", "emerging", "applied"]}
+                  fallbackNotes={visibleNotes}
+                />
               </div>
             )}
 
@@ -1113,6 +1243,78 @@ function ExecutionCompletePanel({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgePreview({
+  title,
+  empty,
+  items,
+  preferred,
+  fallbackNotes,
+}: {
+  title: string;
+  empty: string;
+  items: BoardModel["knowledge"];
+  preferred: string[];
+  fallbackNotes?: DeveloperNote[];
+}) {
+  const ordered = [...items].sort((a, b) => {
+    const ai = preferred.indexOf(a.status);
+    const bi = preferred.indexOf(b.status);
+    const ar = ai === -1 ? 99 : ai;
+    const br = bi === -1 ? 99 : bi;
+    if (ar !== br) return ar - br;
+    return String(b.id || b.title).localeCompare(String(a.id || a.title));
+  });
+  const counts = ordered.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] || 0) + 1;
+    return acc;
+  }, {});
+  const shown = ordered.slice(0, 5);
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">{title}</div>
+        {preferred.map((status) =>
+          counts[status] ? (
+            <span key={status} className="rounded border border-line/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-mist">
+              {status} {counts[status]}
+            </span>
+          ) : null,
+        )}
+      </div>
+      <div className="mt-1.5 space-y-1.5">
+        {shown.map((item, index) => (
+          <div key={`${item.id || item.title}-${index}`} className="rounded border border-line/70 bg-panel/40 px-2 py-1.5 text-[11px] leading-snug text-mist">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={`font-mono text-[9px] uppercase tracking-[0.1em] ${item.status === "open" ? "text-amber" : item.status === "applied" ? "text-mint" : "text-mist"}`}>
+                {item.status}
+              </span>
+              {item.tag && <span className="rounded bg-amber/[0.08] px-1 font-mono text-[9px] text-amber">{item.tag}</span>}
+              {item.source_card_title && <span className="text-dim">{item.source_card_title}</span>}
+            </div>
+            <div className="mt-0.5 text-chalk">{item.title}</div>
+            {(item.detail || item.note) && <div className="mt-1 text-dim">{item.detail || item.note}</div>}
+          </div>
+        ))}
+        {shown.length === 0 &&
+          (fallbackNotes?.length ? (
+            fallbackNotes.slice(0, 5).map((note) => (
+              <div key={note.id} className="rounded border border-line/70 bg-panel/40 px-2 py-1.5 text-[11px] leading-snug text-mist">
+                <span className="text-chalk">{note.card_title || `Card ${note.card || note.step}`}</span>
+                <div className="mt-1 text-dim">{note.text}</div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded border border-line/60 bg-panel/20 px-2 py-2 font-mono text-[10px] text-dim">{empty}</div>
+          ))}
+        {ordered.length > shown.length && (
+          <div className="font-mono text-[10px] text-dim">+{ordered.length - shown.length} more</div>
+        )}
       </div>
     </div>
   );
@@ -1460,18 +1662,62 @@ function ArtifactModal({
   );
 }
 
-function WorkflowCard({
-  step,
+function PendingColumnCards({
   steps,
+  allSteps,
   model,
   notes,
   maxAttempts,
 }: {
-  step: BoardStep;
   steps: BoardStep[];
+  allSteps: BoardStep[];
   model: BoardModel;
   notes?: DeveloperNote[];
   maxAttempts: number;
+}) {
+  const bands = useMemo(() => pendingBands(steps, allSteps), [steps, allSteps]);
+
+  return (
+    <div className="space-y-3">
+      {bands.map((band) => (
+        <div key={band.key}>
+          <div className="mb-1.5 flex items-center gap-2 px-2 font-mono text-[9px] uppercase tracking-[0.14em] text-dim">
+            <span className={`h-1.5 w-1.5 rounded-full ${band.key === "ready" ? "bg-mint/70" : "bg-dim/70"}`} />
+            <span>{band.title}</span>
+          </div>
+          <AnimatePresence mode="popLayout" initial={false}>
+            {band.steps.map((step) => (
+              <WorkflowCard
+                key={step.id}
+                step={step}
+                allSteps={allSteps}
+                model={model}
+                notes={notes}
+                maxAttempts={maxAttempts}
+                variant="pending"
+              />
+            ))}
+          </AnimatePresence>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WorkflowCard({
+  step,
+  allSteps,
+  model,
+  notes,
+  maxAttempts,
+  variant = "default",
+}: {
+  step: BoardStep;
+  allSteps: BoardStep[];
+  model: BoardModel;
+  notes?: DeveloperNote[];
+  maxAttempts: number;
+  variant?: "default" | "pending";
 }) {
   const [open, setOpen] = useState(false);
   const [artifactOpen, setArtifactOpen] = useState(false);
@@ -1488,6 +1734,7 @@ function WorkflowCard({
   const gateTotal = step.criteria.length;
   const canBrowseArtifacts = canOpenReceipt(step);
   const hasDetail = true;
+  const pendingVariant = variant === "pending";
   const [pulse, setPulse] = useState(false);
   const prevAt = useRef<string | undefined>(undefined);
   const seeded = useRef(false);
@@ -1532,7 +1779,7 @@ function WorkflowCard({
         <div className="flex items-center gap-2.5">
           <Led state={step.column} />
           <span className="min-w-0 flex-1 truncate text-[13px] text-chalk">{step.title}</span>
-          {cardNotes.length > 0 && (
+          {!pendingVariant && cardNotes.length > 0 && (
             <span
               className="shrink-0 rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-mist"
               title={`${cardNotes.length} comment${cardNotes.length === 1 ? "" : "s"}`}
@@ -1540,7 +1787,7 @@ function WorkflowCard({
               {cardNotes.length} comment{cardNotes.length === 1 ? "" : "s"}
             </span>
           )}
-          {canBrowseArtifacts && (
+          {!pendingVariant && canBrowseArtifacts && (
             <button
               type="button"
               onClick={(e) => {
@@ -1553,23 +1800,25 @@ function WorkflowCard({
               artifact
             </button>
           )}
-          {step.attempt > 1 && (
+          {!pendingVariant && step.attempt > 1 && (
             <span title={`${step.attempt} attempts`} className="shrink-0 text-[11px] text-dim">
               attempt {step.attempt}
             </span>
           )}
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-[18px] text-[11px] text-dim">
-        <span className={step.column === "pending" ? "text-mist" : ""}>{statusLine(step, steps, maxAttempts)}</span>
-        {gateTotal > 0 && (
+        <span className={pendingVariant ? "text-dim" : step.column === "pending" ? "text-mist" : ""}>
+          {pendingVariant ? (unmetRequirementIndexes(step, allSteps).length ? "pending" : "ready") : statusLine(step, allSteps, maxAttempts)}
+        </span>
+        {!pendingVariant && gateTotal > 0 && (
           <span className="tabular-nums">
             {passed}/{gateTotal} checks
           </span>
         )}
-        {dur && <span className="tabular-nums">{dur}</span>}
-        {finalBeat && <span title="handed off">→ {finalBeat.handoff?.to ?? "handed off"}</span>}
+        {!pendingVariant && dur && <span className="tabular-nums">{dur}</span>}
+        {!pendingVariant && finalBeat && <span title="handed off">→ {finalBeat.handoff?.to ?? "handed off"}</span>}
         </div>
-        {latest && (
+        {!pendingVariant && latest && (
         <div
           title={latest.note}
           className="mt-2 flex items-start gap-2 pl-[18px] text-[12px] leading-snug text-mist"
@@ -1660,9 +1909,11 @@ export function WorkflowKanban({
 }) {
   const [settledView, setSettledView] = useState<"summary" | "board">("summary");
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
-  const rawSteps = model.steps.filter((s) => s.phase === "workflow");
+  const allRawSteps = model.steps.filter((s) => s.phase === "workflow");
+  const rawSteps = allRawSteps.filter((s) => !s.retired);
   const rawSettled = model.overallStatus === "done" || model.overallStatus === "failed";
   const steps = useDwellSteps(rawSteps, rawSteps.length > 0, false);
+  const allSteps = useDwellSteps(allRawSteps, allRawSteps.length > 0, false);
   const settled =
     rawSettled && steps.every((s) => s.column === "done" || s.column === "failed");
   const [compileArtifactStep, setCompileArtifactStep] = useState<BoardStep | null>(null);
@@ -1686,10 +1937,16 @@ export function WorkflowKanban({
   const latchedSettled = !settled && !!settledSnapshot && (!model.runId || model.runId === settledSnapshot.runId);
   const displayModel = settled ? model : latchedSettled ? settledSnapshot.model : model;
   const displaySteps = settled ? steps : latchedSettled ? settledSnapshot.steps : steps;
+  const displayAllSteps = settled
+    ? allSteps
+    : latchedSettled
+      ? settledSnapshot.model.steps.filter((s) => s.phase === "workflow")
+      : allSteps;
   const displayNotes = settled ? notes : latchedSettled ? settledSnapshot.notes : notes;
   const cols: Col[] = displaySteps.some((s) => s.column === "failed") ? [...BASE_COLS, "failed"] : BASE_COLS;
   const maxAttempts = displayModel.maxAttempts;
   const compileLifecycle = isCompileLifecycle(displayModel, displaySteps);
+  const integrationLifecycle = isIntegrationLifecycle(displayModel, displaySteps);
 
   if ((settled || latchedSettled) && displaySteps.length > 0) {
     return (
@@ -1699,7 +1956,10 @@ export function WorkflowKanban({
           {settledView === "summary" && compileLifecycle && (
             <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} />
           )}
-          {settledView === "summary" && !compileLifecycle && (
+          {settledView === "summary" && integrationLifecycle && (
+            <IntegrationCompletePanel model={displayModel} />
+          )}
+          {settledView === "summary" && !compileLifecycle && !integrationLifecycle && (
             <ExecutionCompletePanel
               model={displayModel}
               steps={displaySteps}
@@ -1720,20 +1980,30 @@ export function WorkflowKanban({
                         <h2 className="text-[11px] text-mist">{LABEL[col]}</h2>
                         <span className="ml-auto text-[11px] tabular-nums text-dim">{inCol.length}</span>
                       </div>
-                      <div>
-                        <AnimatePresence mode="popLayout" initial={false}>
-                          {inCol.map((step) => (
-                            <WorkflowCard
-                              key={step.id}
-                              step={step}
-                              steps={displaySteps}
-                              model={displayModel}
-                              notes={displayNotes}
-                              maxAttempts={maxAttempts}
-                            />
-                          ))}
-                        </AnimatePresence>
-                      </div>
+                      {col === "pending" ? (
+                        <PendingColumnCards
+                          steps={inCol}
+                          allSteps={displayAllSteps}
+                          model={displayModel}
+                          notes={displayNotes}
+                          maxAttempts={maxAttempts}
+                        />
+                      ) : (
+                        <div>
+                          <AnimatePresence mode="popLayout" initial={false}>
+                            {inCol.map((step) => (
+                              <WorkflowCard
+                                key={step.id}
+                                step={step}
+                                allSteps={displayAllSteps}
+                                model={displayModel}
+                                notes={displayNotes}
+                                maxAttempts={maxAttempts}
+                              />
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      )}
                     </section>
                   );
                 })}
@@ -1767,20 +2037,30 @@ export function WorkflowKanban({
                   <h2 className="text-[11px] text-mist">{LABEL[col]}</h2>
                   <span className="ml-auto text-[11px] tabular-nums text-dim">{inCol.length}</span>
                 </div>
-                <div>
-                  <AnimatePresence mode="popLayout" initial={false}>
-                    {inCol.map((step) => (
-                      <WorkflowCard
-                        key={step.id}
-                        step={step}
-                        steps={steps}
-                        model={model}
-                        notes={notes}
-                        maxAttempts={maxAttempts}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </div>
+                {col === "pending" ? (
+                  <PendingColumnCards
+                    steps={inCol}
+                    allSteps={allSteps}
+                    model={model}
+                    notes={notes}
+                    maxAttempts={maxAttempts}
+                  />
+                ) : (
+                  <div>
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      {inCol.map((step) => (
+                        <WorkflowCard
+                          key={step.id}
+                          step={step}
+                          allSteps={allSteps}
+                          model={model}
+                          notes={notes}
+                          maxAttempts={maxAttempts}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
               </section>
             );
           })}

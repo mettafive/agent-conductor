@@ -43,6 +43,7 @@ type Conn = "connecting" | "live" | "lost";
 function beatTextClass(b?: Pick<StreamBeat, "tone" | "note">): string {
   if (!b) return "text-mist";
   if (b.tone === "feedback") return "text-amber";
+  if (b.tone === "insight") return "text-amber";
   if (/^\s*(✓|passed|pass|checker passed|creating .* passed|workflow accepted)/i.test(plainNote(b.note))) return "text-mint";
   return "text-mist";
 }
@@ -74,10 +75,11 @@ type ShownInsight = {
 function insightFor(b: StreamBeat, knowledge?: KnowledgeEntry[]): ShownInsight {
   const seed = b.insight?.seed ?? plainNote(b.note);
   const k =
+    (b.insight?.id ? knowledge?.find((e) => e.id === b.insight?.id) : undefined) ??
     knowledge?.find((e) => e.title === seed) ??
     (seed ? knowledge?.find((e) => e.title?.startsWith(seed.slice(0, 24))) : undefined);
   return {
-    title: k?.title ?? seed,
+    title: k?.title ?? b.insight?.title ?? seed,
     note: k?.note,
     current: k?.current,
     proposed: k?.proposed,
@@ -480,7 +482,7 @@ function ExpandedMonitor({
             <div
               key={b.key}
               className={`flex items-start gap-2 rounded py-px ${
-                b.tone === "feedback" || b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""
+                b.tone === "feedback" || b.tone === "insight" || b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""
               }`}
             >
               <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
@@ -502,10 +504,10 @@ function ExpandedMonitor({
                     e.stopPropagation();
                     setModalInsight(insightFor(b, knowledge));
                   }}
-                  className="mt-px shrink-0 select-none rounded bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
+                  className="mt-px shrink-0 select-none rounded border border-amber/25 bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
                   title="captured a learning — click to see it"
                 >
-                  insight
+                  ◇ insight
                 </button>
               )}
             </div>

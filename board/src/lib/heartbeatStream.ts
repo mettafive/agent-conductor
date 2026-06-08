@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Insight } from "./types";
+import type { Insight, Scope } from "./types";
 import type { WorkflowEntry } from "./useBoardState";
 
 /** One heartbeat, flattened out of its step and tagged with its origin. */
@@ -15,7 +15,7 @@ export interface StreamBeat {
   sub?: string;
   finalBeat: boolean;
   system: boolean;
-  tone?: "feedback";
+  tone?: "feedback" | "insight";
 }
 
 interface RawBeat {
@@ -25,13 +25,19 @@ interface RawBeat {
   sub?: string;
   finalBeat?: boolean;
   system?: boolean;
-  tone?: "feedback";
-  insight?: { type?: string; seed?: string; step?: string; confidence?: string };
+  tone?: "feedback" | "insight";
+  insight?: { id?: string; type?: string; seed?: string; title?: string; step?: string; scope?: string; confidence?: string };
 }
 
 interface RawStep {
   heartbeat?: RawBeat[];
   iterations?: Record<string, Record<string, { heartbeat?: RawBeat[] }>>;
+}
+
+const SCOPES: Scope[] = ["this-conductor", "upstream", "template", "tooling", "corpus"];
+
+function scopeOf(value?: string): Scope | undefined {
+  return SCOPES.includes(value as Scope) ? (value as Scope) : undefined;
 }
 
 function toStreamBeat(
@@ -55,13 +61,16 @@ function toStreamBeat(
     sub: h.sub ?? sub,
     finalBeat: h.finalBeat === true,
     system: h.system === true,
-    tone: h.tone === "feedback" ? "feedback" : undefined,
+    tone: h.tone === "feedback" || h.tone === "insight" ? h.tone : undefined,
     insight:
       h.insight && typeof h.insight.type === "string"
         ? {
+            id: h.insight.id,
             type: h.insight.type,
-            seed: h.insight.seed ?? "",
+            seed: h.insight.seed ?? h.insight.title ?? "",
+            title: h.insight.title,
             step: h.insight.step,
+            scope: scopeOf(h.insight.scope),
             confidence: h.insight.confidence,
           }
         : undefined,

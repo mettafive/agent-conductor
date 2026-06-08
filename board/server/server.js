@@ -227,6 +227,26 @@ function discoverConductor(statusPath, explicit) {
   return null;
 }
 
+function latestArchivedRunStatus(workflowDir) {
+  const runsDir = path.join(workflowDir, "runs");
+  try {
+    if (!fs.existsSync(runsDir)) return null;
+    const dirs = fs.readdirSync(runsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .reverse();
+    for (const dir of dirs) {
+      const archivedStatus = path.join(runsDir, dir, "status.json");
+      if (!fs.existsSync(archivedStatus)) continue;
+      return JSON.parse(fs.readFileSync(archivedStatus, "utf8"));
+    }
+  } catch {
+    /* archive fallback is best-effort */
+  }
+  return null;
+}
+
 function readSnapshot(statusPath, conductorPath) {
   let status = null;
   let workflowJson = null;
@@ -239,6 +259,7 @@ function readSnapshot(statusPath, conductorPath) {
   } catch (e) {
     status = { _error: `Could not parse status.json: ${e.message}` };
   }
+  if (!status) status = latestArchivedRunStatus(workflowDir);
   try {
     if (conductorPath && fs.existsSync(conductorPath)) {
       workflowJson = fs.readFileSync(conductorPath, "utf8");
@@ -692,6 +713,13 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
   if (fs.existsSync(flatStatus) || (flatConductor && fs.existsSync(flatConductor))) {
     add(workflowName(flatStatus, flatConductor, conductorDir), conductorDir, flatStatus, flatConductor);
   }
+  for (const variant of ["compile", "integration"]) {
+    const sp = path.join(conductorDir, `${variant}.status.json`);
+    const cp = path.join(conductorDir, `${variant}.workflow.json`);
+    if (fs.existsSync(sp) || fs.existsSync(cp)) {
+      add(workflowName(sp, cp, conductorDir), conductorDir, sp, fs.existsSync(cp) ? cp : null);
+    }
+  }
 
   // subdirectories
   if (fs.existsSync(conductorDir)) {
@@ -704,6 +732,13 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
         : discoverConductor(sp, null);
       if (fs.existsSync(sp) || (cp && fs.existsSync(cp))) {
         add(workflowName(sp, cp, dir), dir, sp, cp);
+      }
+      for (const variant of ["compile", "integration"]) {
+        const vsp = path.join(dir, `${variant}.status.json`);
+        const vcp = path.join(dir, `${variant}.workflow.json`);
+        if (fs.existsSync(vsp) || fs.existsSync(vcp)) {
+          add(workflowName(vsp, vcp, dir), dir, vsp, fs.existsSync(vcp) ? vcp : null);
+        }
       }
     }
   }
@@ -1137,6 +1172,13 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
           validate_workflow: status?.steps?.["2"]?.artifact || null,
         },
       });
+    }
+
+    if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/integration-summary$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "workflow not found" });
+      const summary = latestIntegrationSummary(wf);
+      return summary ? json(res, 200, { ok: true, ...summary }) : json(res, 404, { error: "integration summary not found" });
     }
 
     if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/start-run$/))) {

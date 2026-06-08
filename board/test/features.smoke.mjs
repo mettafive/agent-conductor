@@ -1913,6 +1913,11 @@ test("integrate: ignores applied knowledge and resolves same-card duplicates", (
   assert(/each page/.test(cards[1].instruction) && /parent/.test(cards[1].instruction), `duplicate learning should be present in shipped instruction:\n${cards[1].instruction}`);
   const artifact = fs.readFileSync(path.join(root, "runs", "run-2", "artifacts", "integration.md"), "utf8");
   assert(/2 open knowledge items reviewed/.test(artifact), `integration should review only open items:\n${artifact}`);
+  const integrationWorkflow = JSON.parse(fs.readFileSync(path.join(root, "integration.workflow.json"), "utf8"));
+  const integrationStatus = JSON.parse(fs.readFileSync(path.join(root, "integration.status.json"), "utf8"));
+  assert(integrationWorkflow.name === "Integrating insights", `integration workflow should be visible:\n${JSON.stringify(integrationWorkflow, null, 2)}`);
+  assert(integrationWorkflow.steps.map((step) => step.title).join("|") === "Apply instruction insights|Validate updated workflow", `instruction-only integration should show edit + validate phases:\n${JSON.stringify(integrationWorkflow, null, 2)}`);
+  assert(integrationStatus.status === "done" && integrationStatus.steps["0"].status === "done" && integrationStatus.steps["1"].status === "done", `integration status should complete visibly:\n${JSON.stringify(integrationStatus, null, 2)}`);
 });
 
 test("integrate: patch guard preserves card order and dependencies", () => {
@@ -2317,6 +2322,7 @@ test("integrate: no open insights is idempotent", () => {
   assert(r.code === 0, `idempotent integration should pass:\n${r.out}`);
   assert(fs.readFileSync(path.join(root, "cards.json"), "utf8") === beforeCards, "cards changed despite no open insights");
   assert(fs.readFileSync(path.join(root, "workflow.json"), "utf8") === beforeWorkflow, "workflow changed despite no open insights");
+  assert(!fs.existsSync(path.join(root, "integration.status.json")), "no-open integration should not create an integration kanban");
 });
 
 test("integrate: order insight can move a dependency edge after instruction loop", () => {
@@ -2816,6 +2822,256 @@ test("integrate: atomic instruction plus add-card does not commit edit when add 
   assert(cards.length === 1 && cards[0].instruction === "Publish the page.", `instruction should not commit alone and no card should append:\n${JSON.stringify(cards, null, 2)}`);
   const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
   assert(knowledge.items[0].status === "dismissed", `atomic item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: remove-card neuters in place and sets retired display flag", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "remove-skill");
+  fs.mkdirSync(root, { recursive: true });
+  const cardsDoc = [
+    { title: "Research", instruction: "Research the page." },
+    { title: "Old audit", instruction: "Run the obsolete audit and write the audit receipt." },
+    { title: "Publish", instruction: "Publish the final page." },
+  ];
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "remove-skill",
+    description: "Remove skill.",
+    steps: [
+      { title: "Research", instruction: "Research the page.", requires: [] },
+      { title: "Old audit", instruction: "Run the obsolete audit and write the audit receipt.", requires: [0] },
+      { title: "Publish", instruction: "Publish the final page.", requires: [1] },
+    ],
+  };
+  writeFile(tmp, ".conductor/remove-skill/cards.json", JSON.stringify(cardsDoc, null, 2));
+  writeFile(tmp, ".conductor/remove-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/remove-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-901", source_card: 1, tag: "remove-card", title: "Retire old audit", detail: "The old audit card is obsolete and should be retired.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-remove-1.json": {
+      changes: [
+        { type: "remove_card", knowledge_ids: ["K-901"], card: 1, change: "Retired obsolete audit card." },
+      ],
+    },
+    "integration-remove-checker-1.json": {
+      verdict: "PASS",
+      feedback: "The requested card is targeted.",
+      passed: [{ knowledge_id: "K-901", reason: "Old audit is the obsolete card." }],
+    },
+    "integration-remove-safety-1.json": {
+      verdict: "SAFE",
+      feedback: "No surviving card consumes old audit output.",
+      dependents: [],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/remove-skill", "--run-id", "run-remove-1"], tmp));
+
+  assert(r.code === 0, `remove-card integration should pass:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(cards.length === 3 && workflow.steps.length === 3, "remove_card must not change array length");
+  assert(cards[1].title === "Old audit" && workflow.steps[1].title === "Old audit", "remove_card must not renumber or rename");
+  assert(workflow.steps[1].retired === true && workflow.steps[1].retired_by === "K-901", `retired flag missing:\n${JSON.stringify(workflow.steps[1], null, 2)}`);
+  assert(/retired by K-901/.test(cards[1].instruction) && /no work is required/.test(cards[1].instruction), `card was not neutered:\n${cards[1].instruction}`);
+  assert(JSON.stringify(workflow.steps.map((step) => step.requires)) === JSON.stringify(workflowDoc.steps.map((step) => step.requires)), `requires should stay untouched:\n${JSON.stringify(workflow, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "applied" && knowledge.items[0].applied_card === 1, `remove item should be applied:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: remove-card orphan scan blocks surviving consumers", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "orphan-remove-skill");
+  fs.mkdirSync(root, { recursive: true });
+  const cardsDoc = [
+    { title: "Research", instruction: "Research the page." },
+    { title: "Image manifest", instruction: "Create the image manifest artifact." },
+    { title: "Attach images", instruction: "Attach images using the image manifest artifact from the Image manifest card." },
+  ];
+  const workflowDoc = {
+    conductor: "3.0.0",
+    name: "orphan-remove-skill",
+    description: "Orphan remove skill.",
+    steps: [
+      { title: "Research", instruction: "Research the page.", requires: [] },
+      { title: "Image manifest", instruction: "Create the image manifest artifact.", requires: [0] },
+      { title: "Attach images", instruction: "Attach images using the image manifest artifact from the Image manifest card.", requires: [1] },
+    ],
+  };
+  writeFile(tmp, ".conductor/orphan-remove-skill/cards.json", JSON.stringify(cardsDoc, null, 2));
+  writeFile(tmp, ".conductor/orphan-remove-skill/workflow.json", JSON.stringify(workflowDoc, null, 2));
+  writeFile(tmp, ".conductor/orphan-remove-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-902", source_card: 1, tag: "remove-card", title: "Remove manifest", detail: "Retire the image manifest card.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-remove-1.json": {
+      changes: [
+        { type: "remove_card", knowledge_ids: ["K-902"], card: 1, change: "Retire image manifest." },
+      ],
+    },
+    "integration-remove-checker-1.json": {
+      verdict: "PASS",
+      feedback: "The manifest card was targeted.",
+      passed: [{ knowledge_id: "K-902", reason: "Targets image manifest." }],
+    },
+    "integration-remove-safety-1.json": {
+      verdict: "UNSAFE",
+      feedback: "Card 2 still consumes the manifest output.",
+      dependents: [{ card: 2, reference: "Attach images uses the image manifest artifact." }],
+      repair_prompt: "Rewrite Attach images before retiring the manifest card.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/orphan-remove-skill", "--run-id", "run-remove-2", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `unsafe remove should be dismissed honestly:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(cards[1].instruction === cardsDoc[1].instruction && workflow.steps[1].retired !== true, `unsafe remove should not mutate card:\n${JSON.stringify({ cards, workflow }, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed" && /can't remove card/.test(knowledge.items[0].dismissed_reason), `unsafe item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
+});
+
+test("integrate: remove coverage rejects wrong target", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "wrong-remove-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/wrong-remove-skill/cards.json", JSON.stringify([
+    { title: "Keep", instruction: "Keep this card." },
+    { title: "Retire me", instruction: "This card is obsolete." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/wrong-remove-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "wrong-remove-skill",
+    description: "Wrong remove skill.",
+    steps: [
+      { title: "Keep", instruction: "Keep this card.", requires: [] },
+      { title: "Retire me", instruction: "This card is obsolete.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/wrong-remove-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-903", source_card: 1, tag: "remove-card", title: "Retire obsolete card", detail: "Retire the Retire me card.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-remove-1.json": {
+      changes: [
+        { type: "remove_card", knowledge_ids: ["K-903"], card: 0, change: "Wrong card." },
+      ],
+    },
+    "integration-remove-checker-1.json": {
+      verdict: "FAIL",
+      feedback: "Wrong card targeted.",
+      failed: [{ knowledge_id: "K-903", problem: "Insight asked to retire card 1.", required_repair: "Target card 1." }],
+      repair_prompt: "Target card 1.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/wrong-remove-skill", "--run-id", "run-remove-3", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `wrong remove should be dismissed honestly:\n${r.out}`);
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(workflow.steps.every((step) => step.retired !== true), `wrong target should not retire anything:\n${JSON.stringify(workflow, null, 2)}`);
+});
+
+test("integrate: non-remove knowledge cannot smuggle remove_card", () => {
+  const tmp = tmpdir();
+  fs.mkdirSync(path.join(tmp, ".conductor", "smuggle-remove-skill"), { recursive: true });
+  writeFile(tmp, ".conductor/smuggle-remove-skill/cards.json", JSON.stringify([
+    { title: "Research", instruction: "Research." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/smuggle-remove-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "smuggle-remove-skill",
+    description: "Smuggle remove skill.",
+    steps: [
+      { title: "Research", instruction: "Research.", requires: [] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/smuggle-remove-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-904", source_card: 0, title: "Mention sources", detail: "Research should mention sources.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        { type: "remove_card", knowledge_ids: ["K-904"], card: 0, change: "Illegally retires a normal instruction item." },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Bad fixture incorrectly approves smuggling.",
+      passed_patches: [{ knowledge_id: "K-904", reason: "bad fixture" }],
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/smuggle-remove-skill", "--run-id", "run-remove-4"], tmp));
+
+  assert(r.code !== 0, `remove smuggling should be mechanically rejected:\n${r.out}`);
+  assert(/unsupported integration change type|only edit_instruction/.test(r.out), `expected remove_card rejection:\n${r.out}`);
+});
+
+test("integrate: atomic instruction plus remove-card does not commit edit when remove fails", () => {
+  const tmp = tmpdir();
+  const root = path.join(tmp, ".conductor", "atomic-remove-skill");
+  fs.mkdirSync(root, { recursive: true });
+  writeFile(tmp, ".conductor/atomic-remove-skill/cards.json", JSON.stringify([
+    { title: "Manifest", instruction: "Create manifest." },
+    { title: "Consumer", instruction: "Use the Manifest output." },
+  ], null, 2));
+  writeFile(tmp, ".conductor/atomic-remove-skill/workflow.json", JSON.stringify({
+    conductor: "3.0.0",
+    name: "atomic-remove-skill",
+    description: "Atomic remove skill.",
+    steps: [
+      { title: "Manifest", instruction: "Create manifest.", requires: [] },
+      { title: "Consumer", instruction: "Use the Manifest output.", requires: [0] },
+    ],
+  }, null, 2));
+  writeFile(tmp, ".conductor/atomic-remove-skill/knowledge.json", JSON.stringify({
+    items: [
+      { id: "K-905", source_card: 0, tags: ["instruction", "remove-card"], title: "Retire manifest after noting why", detail: "Document that the manifest is retired and retire the card.", status: "open" },
+    ],
+  }, null, 2));
+
+  const r = withDecomposeFixtures(tmp, {
+    "integration-1.json": {
+      changes: [
+        { type: "edit_instruction", card: 0, knowledge_ids: ["K-905"], new_instruction: "Create manifest and document why it may be retired.", change: "Instruction facet." },
+      ],
+    },
+    "integration-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Instruction facet passed.",
+      passed_patches: [{ card: 0, knowledge_ids: ["K-905"], reason: "Instruction mentions retirement." }],
+    },
+    "integration-remove-1.json": {
+      changes: [
+        { type: "remove_card", knowledge_ids: ["K-905"], card: 0, change: "Retire manifest." },
+      ],
+    },
+    "integration-remove-checker-1.json": {
+      verdict: "PASS",
+      feedback: "Target is right.",
+      passed: [{ knowledge_id: "K-905", reason: "Manifest targeted." }],
+    },
+    "integration-remove-safety-1.json": {
+      verdict: "UNSAFE",
+      feedback: "Consumer still uses manifest.",
+      dependents: [{ card: 1, reference: "Uses Manifest output." }],
+      repair_prompt: "Rewrite Consumer before retiring Manifest.",
+    },
+  }, () => cli(["integrate", "--dir", ".conductor/atomic-remove-skill", "--run-id", "run-remove-5", "--max-attempts", "1"], tmp));
+
+  assert(r.code === 0, `failed remove facet should dismiss whole insight:\n${r.out}`);
+  const cards = JSON.parse(fs.readFileSync(path.join(root, "cards.json"), "utf8"));
+  const workflow = JSON.parse(fs.readFileSync(path.join(root, "workflow.json"), "utf8"));
+  assert(cards[0].instruction === "Create manifest." && workflow.steps[0].retired !== true, `instruction should not commit alone and card should not retire:\n${JSON.stringify({ cards, workflow }, null, 2)}`);
+  const knowledge = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  assert(knowledge.items[0].status === "dismissed", `atomic remove item should be dismissed:\n${JSON.stringify(knowledge, null, 2)}`);
 });
 
 test("test: runs a clean temp structural E2E and cleans up", () => {

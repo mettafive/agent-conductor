@@ -5,6 +5,8 @@ interface RawStep {
   title?: string;
   instruction?: string;
   type?: string;
+  retired?: boolean;
+  retired_by?: string;
   requires?: number[];
   output?: string;
   over?: string;
@@ -30,6 +32,8 @@ function toStep(s: RawStep, index: number): ConductorStep {
     instruction,
     firstLine: firstLineOf(instruction),
     isCondition: false,
+    retired: s.retired === true,
+    retired_by: typeof s.retired_by === "string" ? s.retired_by : undefined,
     output: s.output,
     requires: Array.isArray(s.requires) ? s.requires : [],
     isLoop,
@@ -70,12 +74,16 @@ export function parseKnowledge(raw: unknown): KnowledgeEntry[] {
         source_card:
           typeof o.source_card === "string" || typeof o.source_card === "number" ? o.source_card : undefined,
         source_card_title: typeof o.source_card_title === "string" ? o.source_card_title : undefined,
+        created: typeof o.created === "string" ? o.created : undefined,
         tag: typeof o.tag === "string" ? o.tag : undefined,
         detail: typeof o.detail === "string" ? o.detail : undefined,
+        card_duration_seconds: typeof o.card_duration_seconds === "number" ? o.card_duration_seconds : undefined,
         type: typeof o.type === "string" ? o.type : undefined,
         current: typeof o.current === "string" ? o.current : undefined,
         proposed: typeof o.proposed === "string" ? o.proposed : undefined,
         run_applied: typeof o.run_applied === "string" ? o.run_applied : undefined,
+        applied_in: typeof o.applied_in === "string" || o.applied_in === null ? o.applied_in : undefined,
+        applied_as: typeof o.applied_as === "string" || o.applied_as === null ? o.applied_as : undefined,
         note: typeof o.note === "string" ? o.note : typeof o.detail === "string" ? o.detail : undefined,
       });
     }
