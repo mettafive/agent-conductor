@@ -31,6 +31,12 @@ npx conductor-board feedback 0
 npx conductor-board integrate --dir .conductor/<workflow-name>   # apply open knowledge before a repeat run
 npx conductor-board learn-card 0 --path .conductor/status.json --workflow .conductor/workflow.json
 npx conductor-board backfill-summaries .conductor/status.json
+
+# autonomous execution plane (opt-in; runs beside the manual flow above)
+npx conductor-board run-card 0 --path .conductor/status.json --workflow .conductor/workflow.json   # run one eligible card in a bounded worker
+npx conductor-board dispatch  --path .conductor/status.json --workflow .conductor/workflow.json --cap 6  # fan out eligible cards, refill + reclaim
+npx conductor-board pause     --path .conductor/status.json   # hold the run (dispatcher idles, work-timer freezes)
+npx conductor-board resume    --path .conductor/status.json   # resume (work-timer continues)
 ```
 
 `compile` is the normal starting point for a run: it reuses an accepted cached
@@ -48,6 +54,27 @@ There is no heuristic fallback.
 Conductor learns across runs: agents post insights with `suggest`, which (with
 human directives and comments) accumulate in `knowledge.json`; `integrate`
 applies the open items to the cards before a repeat run.
+
+## Autonomous execution (opt-in)
+
+Beyond driving cards by hand (`step` / `check` / `gate-result` / `complete`), the
+board ships a model-free execution plane that runs cards for you:
+
+- `run-card <id>` runs one eligible card in a single bounded worker process.
+- `dispatch` is a dumb loop that hands eligible cards to `run-card` workers up to a
+  concurrency cap, refills as they finish, and reclaims a worker that dies. It is
+  not a model — quality is still gated by each card's own checker.
+- `fold-card` folds a finished card's artifacts into the run snapshot off the
+  critical path; the run-end consolidation is idempotent.
+
+Run states: a run is `running`, `paused` (a manual `pause`, distinct from failed —
+the dispatcher idles and the work-timer freezes), `failed` (with the reason
+surfaced on the board), or `done`. The work-timer accumulates only running time:
+it freezes on pause/done/failed and continues on resume.
+
+`--timing` (together with `CONDUCTOR_TIMING=1`) enables the Timekeeper: per-card
+phase timing plus a run-level aggregate written to a timing file. It is off by
+default, and default behavior is byte-identical without it.
 
 ## What It Does
 
