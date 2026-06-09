@@ -14,11 +14,12 @@ Each card in `workflow.json` has:
 {
   "title": "Research the treatment",
   "instruction": "Gather at least 4 veterinary sources covering what, when, cost, and owner concerns.",
+  "summary": "Researches the treatment from veterinary sources. Produces a sourced reference covering what it is, when it is needed, typical cost, and common owner concerns.",
   "requires": []
 }
 ```
 
-`cards.json` in the card-design phase is a JSON array with objects containing only `title` and `instruction`.
+`cards.json` in the card-design phase is a JSON array of objects with `title`, `instruction`, and a generated `summary`.
 The dependency-mapping phase adds integer `requires` and writes the final workflow.
 
 If a unit of work cannot be independently checked against a concrete instruction,
@@ -28,6 +29,7 @@ fold it into a card that can be checked.
 
 - **Card:** one verifiable unit of work on the board.
 - **Instruction:** what the agent must do; this is what the checker evaluates.
+- **Summary:** a short plain-language line about the card for the board. Generated, not user-authored: the composer writes an intent summary at `decompose`; the checker writes an outcome summary at verification.
 - **Artifact:** the durable markdown receipt the card produced: `.conductor/artifacts/<card-index>-<slugified-card-title>.md`.
 - **Update:** agent narration shown on the board; never proof of completion.
 - **Checker:** independent evaluator comparing the instruction to the artifact.
@@ -106,6 +108,12 @@ the card has a browsable artifact in `.conductor/artifacts/`.
 and the produced output on the right. Evaluate that prompt in a clean context,
 then record the verdict with `gate-result`. If there is no output at all,
 `check` records a failure with evidence `no output was produced.`
+
+`gate-result <step>[::iter::sub] --passed|--failed [--evidence "..."]` records the
+verdict. It also accepts `--summary`, `--made`, and `--checked` (one complete
+sentence each) to set the three human display lines the board shows; any line you
+omit is generated from `--evidence`. The `--summary` you pass here is the card's
+outcome summary.
 
 The artifact must be either the actual work product or a verifiable action
 record. If the artifact merely describes what was done without proof, the checker
@@ -212,11 +220,30 @@ references, dependency cycles, loop shape, and card coverage when
 
 ## Learnings
 
-At the end of a run, capture useful learnings:
+Conductor learns across runs. While working, post insights as you find them; at
+the end of a run, capture anything still useful:
 
 ```bash
 npx conductor-board suggest "Source coverage must include owner concerns" --scope this-conductor
 npx conductor-board knowledge --min 1
+```
+
+Suggestions (plus human directives and card comments) accumulate in
+`knowledge.json`. Archiving a run appends its open notes. Before a repeat run,
+`integrate` applies the open knowledge items to `cards.json` (the "Improve & Run"
+path):
+
+```bash
+npx conductor-board integrate --dir .conductor/<workflow-name>
+```
+
+Two more learners run over stored data:
+
+```bash
+# post-card efficiency learner (how the card ran; never changes what it does)
+npx conductor-board learn-card <card> --path .conductor/status.json --workflow .conductor/workflow.json
+# one-shot regeneration of clean verdict summaries in a run's stored data
+npx conductor-board backfill-summaries .conductor/status.json
 ```
 
 Phase 0 self-improvement is parked in v3 and runs only when a conductor explicitly

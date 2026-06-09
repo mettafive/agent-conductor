@@ -12,11 +12,13 @@ const QUICKSTART = `{
     {
       "title": "Research",
       "instruction": "Research {topic}. Gather five credible sources.",
+      "summary": "Researches the topic and gathers five credible sources for the report.",
       "requires": []
     },
     {
       "title": "Write",
       "instruction": "Write an 800-word report, citing every claim.",
+      "summary": "Writes the 800-word report from the research, citing every claim.",
       "requires": [0]
     }
   ]
@@ -94,6 +96,7 @@ export function SpecPage() {
           { t: "Situational work", d: "Write the situation into the instruction; every card still runs." },
           { t: "Dependencies", d: "requires lists the card indexes that must be done first." },
           { t: "Outputs", d: "output: names data that downstream steps template in." },
+          { t: "Summary", d: "summary: a generated plain-language line the board shows. The composer writes the intent; the checker writes the outcome." },
         ].map((f) => (
           <Reveal key={f.t} className="h-full">
             <div className="flex h-full flex-col rounded-xl border border-line bg-panel/30 p-5">

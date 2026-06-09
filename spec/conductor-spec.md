@@ -11,7 +11,7 @@ steps during execution.
 
 ## Card Shape
 
-Every card has two fields in `cards.json` and three fields in `workflow.json`
+Every card has three fields in `cards.json` and four fields in `workflow.json`
 after dependency mapping:
 
 `cards.json`:
@@ -20,7 +20,8 @@ after dependency mapping:
 [
   {
     "title": "Research the treatment",
-    "instruction": "Gather at least 4 veterinary sources covering what, when, cost, and owner concerns."
+    "instruction": "Gather at least 4 veterinary sources covering what, when, cost, and owner concerns.",
+    "summary": "Researches the treatment from veterinary sources. Produces a sourced reference covering what it is, when it is needed, typical cost, and common owner concerns."
   }
 ]
 ```
@@ -31,12 +32,14 @@ after dependency mapping:
 {
   "title": "Research the treatment",
   "instruction": "Gather at least 4 veterinary sources covering what, when, cost, and owner concerns.",
+  "summary": "Researches the treatment from veterinary sources. Produces a sourced reference covering what it is, when it is needed, typical cost, and common owner concerns.",
   "requires": []
 }
 ```
 
 - `title`: what the unit of work is, shown on the board.
 - `instruction`: what the work agent does and what the checker verifies against.
+- `summary`: a short plain-language description of the card, for a non-technical user watching the board. It is **generated, not user-authored**: the composer writes a one- to two-sentence intent summary during `decompose`, and the checker writes an outcome summary at verification (`gate-result --summary`). The board shows the best available summary.
 - `requires`: list of card indexes that must be done first. Use `[]` for no dependencies.
 - Card identity is the array index. There is no card `id` field.
 
@@ -154,3 +157,20 @@ npx conductor-board validate .conductor/workflow.json
 When `.conductor/cards.json` is present next to the conductor file, `validate`
 also confirms every card from `cards.json` exists at the same array index in
 `workflow.json`.
+
+## Learning Across Runs
+
+Conductor improves a workflow over repeated runs. The loop:
+
+1. **Capture.** While working, an agent posts insights with
+   `suggest "..." --scope this-conductor`. Human directives and card comments
+   are captured the same way.
+2. **Accumulate.** Open items collect in `knowledge.json`. When a run is
+   archived, its open notes are appended there.
+3. **Integrate.** Before a repeat run, `integrate` (the "Improve & Run" path)
+   applies the open knowledge items to `cards.json`.
+4. **Learn per card.** `learn-card` is the post-card efficiency learner: after a
+   card completes it derives an efficiency insight about how the card ran (it
+   never changes what the card does).
+5. **Backfill.** `backfill-summaries` regenerates clean verdict summaries over a
+   run's stored data.

@@ -28,6 +28,9 @@ npx conductor-board check 0 --output-file .conductor/artifacts/0-research.md
 npx conductor-board gate-result 0 --passed --evidence "PASS ...\nSUMMARY: ..."
 npx conductor-board complete 0
 npx conductor-board feedback 0
+npx conductor-board integrate --dir .conductor/<workflow-name>   # apply open knowledge before a repeat run
+npx conductor-board learn-card 0 --path .conductor/status.json --workflow .conductor/workflow.json
+npx conductor-board backfill-summaries .conductor/status.json
 ```
 
 `compile` is the normal starting point for a run: it reuses an accepted cached
@@ -42,6 +45,10 @@ use local `codex exec` by default; override with `CONDUCTOR_DECOMPOSE_COMMAND`
 or disable Codex with `CONDUCTOR_DECOMPOSE_CODEX=0` and use `OPENAI_API_KEY`.
 There is no heuristic fallback.
 
+Conductor learns across runs: agents post insights with `suggest`, which (with
+human directives and comments) accumulate in `knowledge.json`; `integrate`
+applies the open items to the cards before a repeat run.
+
 ## What It Does
 
 - Serves a local React board and streams status changes over Server-Sent Events.
@@ -55,8 +62,10 @@ There is no heuristic fallback.
 
 ## Workflow Format
 
-The board expects JSON. A workflow card has `title`, `instruction`, and
-`requires`; array index is the card identity.
+The board expects JSON. A workflow card has `title`, `instruction`, `summary`,
+and `requires`; array index is the card identity. `summary` is generated (the
+composer writes an intent summary, the checker an outcome summary), not
+hand-authored.
 
 ```json
 {
@@ -68,11 +77,13 @@ The board expects JSON. A workflow card has `title`, `instruction`, and
     {
       "title": "Research",
       "instruction": "Gather at least five credible sources with URLs and takeaways.",
+      "summary": "Researches the topic and collects credible sources with URLs and takeaways for the report card.",
       "requires": []
     },
     {
       "title": "Write report",
       "instruction": "Write the report from the research and cite factual claims.",
+      "summary": "Writes the report from the research and cites every factual claim back to a source.",
       "requires": [0]
     }
   ]
@@ -96,6 +107,10 @@ npx conductor-board complete 0
 card output against the card instruction, then records a verdict with
 `gate-result`. `complete` consumes that verdict. If the verdict failed, the card
 stays running and `feedback` returns the checker evidence for retry.
+
+`gate-result` accepts `--passed|--failed` with `--evidence`, plus `--summary`,
+`--made`, and `--checked` to set the three human display lines the board shows
+(any omitted line is generated from `--evidence`).
 
 The output passed to `check` must be the actual work product. If it only
 describes what the agent did instead of showing the content, code, data, diff,

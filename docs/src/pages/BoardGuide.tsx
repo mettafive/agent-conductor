@@ -17,11 +17,13 @@ const CONDUCTOR_JSON = `{
     {
       "title": "Research",
       "instruction": "Gather five credible sources on {topic}.",
+      "summary": "Researches the topic and collects five credible sources for the report.",
       "requires": []
     },
     {
       "title": "Write",
       "instruction": "Write an 800-word report, citing every claim.",
+      "summary": "Writes the 800-word report from the research, citing every claim.",
       "requires": [0]
     }
   ]
@@ -280,7 +282,7 @@ export function BoardGuide() {
                     {[
                       ["Board", "The local web app you open with npx conductor-board. Watches .conductor/ and updates live over Server-Sent Events."],
                       ["Workflow", "One workflow.json + its status.json. The board can show several side by side."],
-                      ["Card", "A unit of work in the workflow. Has a title, instruction, and requires list; its array index is its identity."],
+                      ["Card", "A unit of work in the workflow. Has a title, instruction, generated summary, and requires list; its array index is its identity."],
                       ["Checker", "An independent reviewer that compares the card's output to its instruction before it moves to Done."],
                       ["Column", "A lane representing a step's state: Pending, Running, Checking, Done (and Failed)."],
                       ["Update", "A timestamped Codex-style progress note: concise context about what the agent learned, decided, changed, or is handing off."],

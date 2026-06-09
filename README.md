@@ -10,7 +10,9 @@ No separate checker configuration needed.
 
 Agent Conductor takes a skill or runbook and turns it into a `workflow.json`.
 The agent executes each card, keeps `.conductor/status.json` current, and a local
-board shows the run live: pending, running, checking, done.
+board shows the run live: pending, running, checking, done. Conductor also learns
+across runs: insights and directives accumulate in `knowledge.json` and can be
+integrated back into the cards before a repeat run.
 
 Visibility is the default. Conductor is for watching agent work happen, not for
 silent execution. Use headless mode only for unattended environments such as CI,
@@ -29,16 +31,22 @@ The card schema is intentionally small:
     {
       "title": "Research",
       "instruction": "Gather at least five credible sources, each with a URL and takeaway.",
+      "summary": "Researches the topic and collects credible sources. Produces a source list, each with a URL and a takeaway, for the report card to draw from.",
       "requires": []
     },
     {
       "title": "Write report",
       "instruction": "Write the report from the research and cite every factual claim.",
+      "summary": "Writes the report from the gathered research. Produces a finished report that cites every factual claim back to a source.",
       "requires": [0]
     }
   ]
 }
 ```
+
+`summary` is generated, not hand-written: the composer writes a short intent
+summary when it decomposes the skill, and the checker writes an outcome summary
+at verification. The board shows the best available one.
 
 ## Runtime Check
 
