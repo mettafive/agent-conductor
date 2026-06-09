@@ -399,6 +399,30 @@ export async function runDispatch(args) {
     for (const [index, info] of [...inFlight]) {
       const onDisk = stepStatus(status, doc, index);
 
+      // ===== THE TRIGGER: gate-ACCEPTANCE (card terminal on disk), NOT exit. =====
+      // A card is DONE when its artifact is durable (gate-accepted), not when the
+      // worker process winds down. The gate had to READ the artifact to accept it,
+      // so an accepted (terminal) card is durable by definition (Phase 1 verified:
+      // complete writes the receipt + st.artifact + status:done in one save, and
+      // collectDependencyInputs reads the live .conductor/artifacts/<dep> — nothing
+      // a dependent needs is written after acceptance; the fold is a detached COPY).
+      // If the on-disk status is terminal while the worker PROCESS is still alive,
+      // free the slot NOW (so the next eligible card is handed at acceptance) and
+      // STOP the spent worker in the background (it must not linger as a writer that
+      // can race the artifact / .conductor dir). Its ~65s claude -p wind-down then
+      // runs OFF the critical path; the OS reaps it. Guard: we delete the in-flight
+      // entry here, so the later child.on("close")/info.exited pass finds nothing in
+      // inFlight for this index => NO double-free, NO re-hand, NO double-count.
+      if (!info.exited && TERMINAL.has(onDisk)) {
+        console.log(
+          `  ${green("ACCEPTED")} card ${index} ${dim(`(on-disk: ${onDisk} at gate-acceptance; freeing slot + stopping worker — teardown backgrounded)`)}`,
+        );
+        info.terminal = true; // mark so a stray later pass is a definitive no-op
+        if (info.pgid) killGroup(info.pgid); // stop the spent worker; OS reaps in bg
+        inFlight.delete(index); // free the slot ONCE, at acceptance
+        continue;
+      }
+
       // Primary: a tracked run-card PROCESS has EXITED.
       if (info.exited) {
         if (TERMINAL.has(onDisk)) {
