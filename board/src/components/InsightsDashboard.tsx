@@ -78,21 +78,21 @@ function AccumulatedGroup({ items }: { items: KnowledgeEntry[] }) {
   const [open, setOpen] = useState(false);
   const tags = Array.from(new Set(items.map((item) => item.tag).filter(Boolean))) as string[];
   return (
-    <div className="rounded-xl border border-line bg-panel/25 p-4">
-      <button type="button" onClick={() => setOpen((next) => !next)} className="flex w-full flex-wrap items-baseline gap-2 text-left">
+    <div className="rounded-xl">
+      <button type="button" onClick={() => setOpen((next) => !next)} aria-expanded={open} className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/40 px-3 py-2 text-left transition-colors hover:border-line-2 hover:bg-panel-2/40">
         <h3 className="font-mono text-[13px] font-semibold uppercase tracking-[0.12em] text-chalk">Earlier insights</h3>
         <span className="font-mono text-[10px] text-line-2">{items.length}</span>
-        <span className="font-mono text-[10px] text-dim">accumulated across prior runs</span>
+        <span className="font-mono text-[10px] text-dim">Accumulated across prior runs</span>
         <motion.span
           aria-hidden
           animate={{ rotate: open ? 90 : 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          className="ml-auto font-mono text-[11px] leading-none text-dim"
+          className="ml-auto font-mono text-[13px] leading-none text-mist"
         >
           ›
         </motion.span>
       </button>
-      <div className="mt-4 flex flex-wrap gap-1.5">
+      <div className="mt-3 flex flex-wrap gap-1.5">
         {STATUS_ORDER.map((status) => {
           const count = items.filter((item) => item.status === status).length;
           if (!count) return null;

@@ -1,10 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import pkg from "./package.json" with { type: "json" };
 
 // Served from the local board server at the root, so relative asset paths.
 export default defineConfig({
   base: "./",
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [react(), tailwindcss()],
   // Dev only: proxy the board server's SSE + API so `npm run dev` gives live HMR
   // of the UI while real status updates stream from a board running on :3042.

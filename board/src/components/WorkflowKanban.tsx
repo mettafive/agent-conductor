@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import type { BoardModel, BoardStep, Column as Col, DeveloperNote } from "../lib/types";
 import { fmtDur } from "../lib/format";
 import { clockSince } from "../lib/view";
 import { renderNote } from "../lib/heartbeat";
-import { useNow } from "../lib/useNow";
 import { Led } from "./Led";
-import { HeartbeatTimeline, NoteThread } from "./HeartbeatTimeline";
+import { NoteThread } from "./HeartbeatTimeline";
 
 const BASE_COLS: Col[] = ["pending", "running", "checking", "done"];
 const DWELL_MS = 1000;
@@ -518,52 +517,88 @@ function toneClasses(tone: "green" | "amber" | "red") {
   };
 }
 
+/**
+ * The shared RUN-HEADER. Rendered in BOTH the live and settled board views as the
+ * thin run-row at the top of the board area. LEFT carries the run name plus the
+ * status cluster ([Led + status] · done/total · elapsed) lifted out of the
+ * masthead; RIGHT carries the `Insights N` button. The Summary/Board toggle only
+ * renders when the run has settled (there's no summary during a live run).
+ */
 function CompletionHeader({
   model,
   steps,
   view,
   onView,
+  settled,
+  elapsed,
 }: {
   model: BoardModel;
   steps: BoardStep[];
   view: "summary" | "board";
   onView: (view: "summary" | "board") => void;
+  settled: boolean;
+  elapsed?: string | null;
 }) {
   const failed = steps.filter((s) => s.column === "failed").length;
   const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
   const retries = totalRetries(steps);
+  const shownStatus = model.overallStatus ?? "idle";
 
   return (
-    <div className="shrink-0 border-b border-line bg-ink/95 px-5 py-4">
-      <div className="mx-auto flex max-w-[1280px] flex-wrap items-start gap-3">
+    <div className="shrink-0 border-b border-line bg-ink/95">
+      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-5 py-7">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <Led state={model.overallStatus} />
             <h2 className="truncate text-[20px] font-semibold text-chalk">{model.workflow}</h2>
           </div>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[14px] text-mist-2">
-            <span>{totalTime || "0s"} total</span>
-            <span>{model.total} cards</span>
-            {retries > 0 && <span>{retries} retries</span>}
-            {model.insightCount > 0 && <span>{model.insightCount} insights</span>}
-            {failed > 0 && <span className="text-rose">{failed} failed</span>}
+          {/* status cluster — [status] · done/total · elapsed, lifted from the masthead */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[14px] text-mist-2">
+            <span className="capitalize">{shownStatus}</span>
+            <span className="text-dim">·</span>
+            <span className="tabular-nums">
+              {model.done}/{model.total}
+            </span>
+            {(elapsed || totalTime) && (
+              <>
+                <span className="text-dim">·</span>
+                <span className="tabular-nums text-mist">{elapsed ?? totalTime}</span>
+              </>
+            )}
+            {retries > 0 && (
+              <>
+                <span className="text-dim">·</span>
+                <span>{retries} retries</span>
+              </>
+            )}
+            {failed > 0 && (
+              <>
+                <span className="text-dim">·</span>
+                <span className="text-rose">{failed} failed</span>
+              </>
+            )}
           </div>
         </div>
-        <div className="flex rounded-md border border-line bg-panel p-0.5 text-[15px]">
-          <button
-            className={`rounded px-3 py-1 ${view === "summary" ? "bg-panel-2 text-chalk" : "text-mist hover:text-chalk"}`}
-            type="button"
-            onClick={() => onView("summary")}
-          >
-            Summary
-          </button>
-          <button
-            className={`rounded px-3 py-1 ${view === "board" ? "bg-panel-2 text-chalk" : "text-mist hover:text-chalk"}`}
-            type="button"
-            onClick={() => onView("board")}
-          >
-            Board
-          </button>
+        <div className="flex shrink-0 items-center gap-3">
+          {/* Summary/Board toggle — only when settled (no summary during a live run). */}
+          {settled && (
+            <div className="flex rounded-md border border-line bg-panel p-0.5 text-[15px]">
+              <button
+                className={`rounded px-3 py-1 ${view === "summary" ? "bg-panel-2 text-chalk" : "text-mist hover:text-chalk"}`}
+                type="button"
+                onClick={() => onView("summary")}
+              >
+                Summary
+              </button>
+              <button
+                className={`rounded px-3 py-1 ${view === "board" ? "bg-panel-2 text-chalk" : "text-mist hover:text-chalk"}`}
+                type="button"
+                onClick={() => onView("board")}
+              >
+                Board
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -590,13 +625,13 @@ function GlossRow({
   const cls = toneClasses(tone);
   const failed = step.column === "failed";
   const dur = fmtDur(step.started_at, step.completed_at);
-  // stat — only attempt · dur (no "passed" word); on fail the label carries "failed after N".
-  const statLine = `${attemptLabel(step, maxAttempts)}${dur ? ` · ${dur}` : ""}`;
+  // tries only on the right now; duration moved to the far-left gutter.
+  const triesLine = attemptLabel(step, maxAttempts);
   const canBrowseArtifacts = canOpenReceipt(step);
 
   // Insight marker: only when a knowledge entry was authored from this card.
   const cardInsights = (model.knowledge || []).filter(
-    (k) => String(k.source_card ?? "") === String(step.id),
+    (k) => String(k.source_card ?? "") === String(step.id) && k.source_run === model.runId,
   );
   const hasInsight = cardInsights.length > 0;
 
@@ -629,16 +664,8 @@ function GlossRow({
   const summaryEqualsChecked = !!sumNorm && sumNorm === chkNorm;
 
   return (
-    <motion.div
-      layout
-      variants={{
-        hidden: { opacity: 0, y: 12 },
-        show: { opacity: 1, y: 0 },
-      }}
-      transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-      className="relative"
-    >
-      {/* the gloss row — node · title · stat. lifted off the black. */}
+    <motion.div layout className="relative">
+      {/* the gloss row — [dur] · node · title · tries. a quiet row within the panel. */}
       <div
         role="button"
         tabIndex={0}
@@ -652,11 +679,17 @@ function GlossRow({
             setOpen((v) => !v);
           }
         }}
-        className={`flex cursor-pointer items-center gap-3.5 rounded-md border px-3 py-2.5 transition-colors hover:bg-panel-2/40 ${
-          failed ? "border-rose/30 bg-rose/5" : "border-line/60 bg-panel/30"
+        className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-3.5 transition-colors hover:bg-panel-2/30 ${
+          failed ? "bg-rose/[0.04]" : ""
         }`}
       >
-        {/* spine node — smaller; colored by tone */}
+        {/* duration gutter — far left, left-aligned, quiet muted mono. Done cards
+            with no measurable duration default to 0s; pending stay blank. */}
+        <span className={`w-14 shrink-0 text-left font-mono text-[12px] tabular-nums ${failed ? "text-rose/70" : "text-mist"}`}>
+          {dur || (step.column === "done" ? "0s" : "")}
+        </span>
+
+        {/* spine node — smaller; colored by tone (spine threads its center) */}
         <div className="relative z-10 grid h-5 w-5 shrink-0 place-items-center">
           <div className={`grid h-4 w-4 place-items-center rounded-full border border-line bg-ink font-mono text-[10px] ${cls.meta} ${cls.dot}`}>
             {cls.icon}
@@ -668,9 +701,9 @@ function GlossRow({
           {step.title}
         </h3>
 
-        {/* stat — one quiet line: try · dur (no "passed" word) */}
+        {/* stat — tries only now (duration moved to the left gutter) */}
         <span className={`shrink-0 font-mono text-[13px] ${failed ? "text-rose" : "text-mist-2"}`}>
-          {statLine}
+          {triesLine}
         </span>
       </div>
 
@@ -684,7 +717,7 @@ function GlossRow({
             transition={{ duration: 0.22 }}
             className="overflow-hidden"
           >
-            <div className="ml-[42px] mt-1.5 space-y-3 border-l border-line pl-4">
+            <div className="ml-[100px] mt-3 space-y-4 border-l border-line pb-3 pl-7 pr-2 pt-2">
               {/* failing criterion — loud, only on failure */}
               {failed && failingCriterion && (
                 <div className="rounded-md border border-rose/40 bg-rose/10 px-3 py-2">
@@ -740,8 +773,8 @@ function GlossRow({
                     onClick={() => setDrawer((d) => (d === "criteria" ? null : "criteria"))}
                     className={`rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${
                       drawer === "criteria"
-                        ? "border-line-2 bg-panel-2/60 text-chalk"
-                        : "border-line text-mist-2 hover:bg-panel-2/40"
+                        ? "border-[#3b82f6]/40 bg-[#3b82f6]/25 text-[#93c5fd]"
+                        : "border-[#3b82f6]/40 bg-[#3b82f6]/15 text-[#93c5fd] hover:bg-[#3b82f6]/25"
                     }`}
                   >
                     Criteria
@@ -851,29 +884,27 @@ function CompletionTimeline({
     <>
       <div className="px-5 py-5">
         <div className="mx-auto max-w-[820px]">
-          <motion.div
-            initial="hidden"
-            animate="show"
-            variants={{
-              hidden: {},
-              show: { transition: { staggerChildren: 0.06, delayChildren: 0.04 } },
-            }}
-            className="relative"
-          >
-            {/* the spine — a vertical thread the nodes ride */}
-            <div className="pointer-events-none absolute bottom-3 left-[27px] top-3 w-px bg-line" />
-            <div className="relative space-y-1">
-              {rows.map((step) => (
-                <GlossRow
-                  key={step.id}
-                  model={model}
-                  step={step}
-                  maxAttempts={maxAttempts}
-                  onArtifact={setArtifactStep}
-                />
-              ))}
+          {/* one elevated panel — the whole gloss reads as a single component */}
+          <div className="rounded-xl border border-line bg-panel/40 p-2 shadow-[0_1px_0_0_rgba(255,255,255,0.02),0_8px_24px_-12px_rgba(0,0,0,0.6)]">
+            <div className="relative">
+              {/* the spine — a vertical thread centered on the node dots.
+                  left = row px-3 (12) + dur gutter w-14 (56) + gap-3 (12) + node half (10) = 90px.
+                  inset top/bottom by one dot-center offset (row py-3.5=14 + node half 10 = 24)
+                  so it runs first→last dot center. */}
+              <div className="pointer-events-none absolute bottom-[24px] left-[90px] top-[24px] w-px bg-line" />
+              <div className="relative divide-y divide-line/40">
+                {rows.map((step) => (
+                  <GlossRow
+                    key={step.id}
+                    model={model}
+                    step={step}
+                    maxAttempts={maxAttempts}
+                    onArtifact={setArtifactStep}
+                  />
+                ))}
+              </div>
             </div>
-          </motion.div>
+          </div>
         </div>
       </div>
       <AnimatePresence>
@@ -1001,7 +1032,7 @@ function IntegrationSummaryPanel({
         >
           {starting ? "Starting..." : "Start Run"}
         </button>
-        {!starting && <span className="font-mono text-[11px] text-dim">review the changes, then start when ready</span>}
+        {!starting && <span className="font-mono text-[11px] text-dim">Review the changes, then start when ready</span>}
       </div>
     </div>
   );
@@ -1193,7 +1224,17 @@ function CompileCompletePanel({
  *  so the outcome + Improve & Run stay reachable from BOTH the summary and board
  *  views. Animates in when the run settles; self-guards to normal execution runs
  *  (not the compile / integration lifecycle workflows). */
-export function RunCompleteBanner({ model }: { model: BoardModel }) {
+export function RunCompleteBanner({
+  model,
+  insightCount = 0,
+  onOpenInsights,
+}: {
+  model: BoardModel;
+  /** Fresh-insight count for this run (App-computed); shown as an inline badge. */
+  insightCount?: number;
+  /** Opens the insights modal. */
+  onOpenInsights?: () => void;
+}) {
   const [integration, setIntegration] = useState<IntegrationSummary | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1262,31 +1303,46 @@ export function RunCompleteBanner({ model }: { model: BoardModel }) {
                 <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-mint">
                   {failedCount > 0 ? "Run finished" : "Run complete"}
                 </div>
-                <div className="mt-0.5 truncate text-[14px] font-medium text-chalk">
+                <div className="mt-0.5 truncate text-[16.5px] font-medium text-chalk">
                   {model.workflow} finished{totalTime ? ` in ${totalTime}` : ""}
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[10.5px] text-mist">
                   <span>
-                    {passed}/{steps.length} passed
+                    {passed} of {steps.length} card{steps.length === 1 ? "" : "s"} passed
                   </span>
-                  {failedCount > 0 && <span className="text-rose">{failedCount} failed</span>}
+                  {failedCount > 0 && <span className="text-rose">· {failedCount} failed</span>}
                   {agentOpen.length > 0 && (
                     <span>
-                      {agentOpen.length} agent insight{agentOpen.length === 1 ? "" : "s"} open
+                      · {agentOpen.length} new insight{agentOpen.length === 1 ? "" : "s"}
                     </span>
                   )}
-                  {appliedCount > 0 && <span>{appliedCount} applied</span>}
+                  {appliedCount > 0 && <span>· {appliedCount} insight{appliedCount === 1 ? "" : "s"} applied</span>}
                 </div>
                 {error && <div className="mt-1 text-[10.5px] text-rose">{error}</div>}
               </div>
-              <button
-                type="button"
-                disabled={starting}
-                onClick={() => void startRun()}
-                className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
-              >
-                {starting ? "Starting..." : buttonLabel}
-              </button>
+              <div className="flex shrink-0 items-center gap-3">
+                {onOpenInsights && (
+                  <button
+                    type="button"
+                    onClick={onOpenInsights}
+                    className="flex shrink-0 items-center gap-2 rounded-md border border-amber/40 bg-amber/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-amber transition-colors hover:bg-amber/25"
+                    title={insightCount > 0 ? `${insightCount} fresh insight${insightCount === 1 ? "" : "s"} this run` : "Open insights"}
+                  >
+                    <span>View insights from run</span>
+                    {insightCount > 0 && (
+                      <span className="rounded-sm bg-amber/20 px-1 text-[10px] tabular-nums">{insightCount}</span>
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={starting}
+                  onClick={() => void startRun()}
+                  className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
+                >
+                  {starting ? "Starting..." : buttonLabel}
+                </button>
+              </div>
             </div>
           )}
         </motion.div>
@@ -1481,7 +1537,7 @@ function ArtifactModal({
         <div className="grid min-h-0 flex-1 overflow-hidden grid-cols-[320px_minmax(0,1fr)]">
           <aside className="board-scroll min-h-0 overflow-y-auto overscroll-contain border-r border-line bg-ink/30 p-3">
             {loading ? (
-              <div className="font-mono text-[11px] text-dim">loading artifact...</div>
+              <div className="font-mono text-[11px] text-dim">Loading artifact...</div>
             ) : files.length === 0 ? (
               <div className="rounded border border-line bg-panel/40 p-3 text-[12px] text-dim">
                 No artifacts found in `.conductor/artifacts`.
@@ -1547,7 +1603,7 @@ function ArtifactModal({
             </div>
             <div className="board-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain bg-ink/20 px-6 py-5">
               {contentLoading ? (
-                <div className="font-mono text-[11px] text-dim">loading preview...</div>
+                <div className="font-mono text-[11px] text-dim">Loading preview...</div>
               ) : content && artifactKind(content) === "image" && content.download_url ? (
                 <div className="flex min-h-full items-center justify-center">
                   <img
@@ -1679,6 +1735,71 @@ function PendingColumnCards({
   );
 }
 
+/** A centered modal shell — same chrome as ArtifactModal/InsightsModal: dimmed
+ *  backdrop, a fade/scale panel with a header (title + Close), click-backdrop
+ *  and Esc to close, stopPropagation on the panel so clicks inside don't bubble
+ *  to the card. Used by the Insight and Condition card modals. */
+function CardModal({
+  title,
+  eyebrow,
+  onClose,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 8 }}
+        transition={{ duration: 0.18 }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-[min(640px,94vw)] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3.5">
+          <div className="min-w-0 flex-1">
+            {eyebrow && (
+              <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-dim">{eyebrow}</div>
+            )}
+            <div className="truncate text-[15px] font-medium leading-snug text-chalk">{title}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-line px-3 py-1.5 font-mono text-[12px] text-mist transition-colors hover:border-line-2 hover:text-chalk"
+          >
+            Close
+          </button>
+        </div>
+        <div className="board-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 function WorkflowCard({
   step,
   allSteps,
@@ -1696,9 +1817,8 @@ function WorkflowCard({
 }) {
   const [open, setOpen] = useState(false);
   const [artifactOpen, setArtifactOpen] = useState(false);
-  const [insightOpen, setInsightOpen] = useState(false);
-  const [conditionOpen, setConditionOpen] = useState(false);
-  const now = useNow(5000);
+  const [insightModalOpen, setInsightModalOpen] = useState(false);
+  const [conditionModalOpen, setConditionModalOpen] = useState(false);
   const dur = fmtDur(step.started_at, step.completed_at);
   const latest = step.heartbeat.filter((h) => !h.system).at(-1) ?? step.heartbeat.at(-1);
   const finalBeat = step.heartbeat.find((h) => h.finalBeat);
@@ -1714,7 +1834,7 @@ function WorkflowCard({
   const verdict = step.criteria.find((c) => c.summary || c.evidence || c.made_summary || c.checked_summary);
   const failingCriterion = step.criteria.find((c) => c.passed === false);
   // Insight for this card: the knowledge entry(ies) authored from this card, plus the live beat.
-  const cardInsights = (model.knowledge || []).filter((k) => String(k.source_card ?? "") === String(step.id));
+  const cardInsights = (model.knowledge || []).filter((k) => String(k.source_card ?? "") === String(step.id) && k.source_run === model.runId);
   const beatInsight = step.heartbeat.find((h) => h.insight)?.insight;
   const hasInsight = cardInsights.length > 0 || !!beatInsight;
   const isRunning = step.column === "running" || step.column === "checking";
@@ -1811,10 +1931,10 @@ function WorkflowCard({
             transition={{ duration: 0.22 }}
             className="overflow-hidden"
           >
-            <div className="mt-2.5 space-y-2.5 border-t border-line pt-2.5 pl-7">
+            <div className="mt-2.5 space-y-2.5 border-t border-line pt-2.5">
               {/* status meta — moved out of the collapsed view: status · checks · duration · handoff */}
               <div className="flex flex-wrap items-center gap-2 text-[14px] text-mist">
-                <span className={pendingVariant ? "text-mist" : step.column === "pending" ? "text-mist" : ""}>
+                <span className={`capitalize ${pendingVariant ? "text-mist" : step.column === "pending" ? "text-mist" : ""}`}>
                   {pendingVariant ? (unmetRequirementIndexes(step, allSteps).length ? "pending" : "ready") : statusLine(step, allSteps, maxAttempts)}
                 </span>
                 {!pendingVariant && gateTotal > 0 && (
@@ -1841,18 +1961,6 @@ function WorkflowCard({
                 </div>
               )}
 
-              {/* activity timeline — the single history; the checker verdict now lives in the Condition drawer below */}
-              {step.heartbeat.length > 0 && (
-                <HeartbeatTimeline
-                  entries={step.heartbeat}
-                  learnings={step.learnings}
-                  now={now}
-                  running={isRunning}
-                  loop={step.loop}
-                  cardOverviews={step.cardOverviews}
-                />
-              )}
-
               {/* footer drawers — Artifact (always) · Insight (if present) · Condition (check + verdict) */}
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 {canBrowseArtifacts && (
@@ -1867,7 +1975,7 @@ function WorkflowCard({
                 {hasInsight && (
                   <button
                     type="button"
-                    onClick={() => setInsightOpen((v) => !v)}
+                    onClick={() => setInsightModalOpen(true)}
                     className="rounded-md border border-amber/30 bg-amber/10 px-2.5 py-1 font-mono text-[12px] text-amber transition-colors hover:bg-amber/20"
                   >
                     Insight
@@ -1875,119 +1983,12 @@ function WorkflowCard({
                 )}
                 <button
                   type="button"
-                  onClick={() => setConditionOpen((v) => !v)}
-                  className="rounded-md border border-line px-2.5 py-1 font-mono text-[12px] text-mist-2 transition-colors hover:border-line-2 hover:text-chalk"
+                  onClick={() => setConditionModalOpen(true)}
+                  className="rounded-md border border-[#3b82f6]/40 bg-[#3b82f6]/15 px-2.5 py-1 font-mono text-[12px] text-[#93c5fd] transition-colors hover:bg-[#3b82f6]/25"
                 >
                   Condition
                 </button>
               </div>
-
-              {/* insight popover — title · sentence · tag · K-id, reusing the insights-item styling */}
-              <AnimatePresence initial={false}>
-                {insightOpen && hasInsight && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.16, ease: "easeOut" }}
-                    className="space-y-1.5"
-                  >
-                    {cardInsights.length > 0
-                      ? cardInsights.map((k, i) => (
-                          <div key={k.id ?? i} className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-mono text-[13px] text-chalk">{k.title}</span>
-                              {k.id && <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{k.id}</span>}
-                              {k.tag && (
-                                <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{k.tag}</span>
-                              )}
-                            </div>
-                            {(k.detail || k.note) && (
-                              <p className="mt-1.5 text-[13px] leading-relaxed text-mist-2">{k.detail || k.note}</p>
-                            )}
-                          </div>
-                        ))
-                      : beatInsight && (
-                          <div className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-mono text-[13px] text-chalk">{beatInsight.title || beatInsight.seed}</span>
-                              {beatInsight.id && (
-                                <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{beatInsight.id}</span>
-                              )}
-                              {beatInsight.type && (
-                                <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{beatInsight.type}</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* condition drawer — the check's criteria + the checker verdict (moved out of the timeline) */}
-              <AnimatePresence initial={false}>
-                {conditionOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.16, ease: "easeOut" }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="space-y-2"
-                  >
-                    {/* on a failure, lead loud with the failing criterion */}
-                    {step.column === "failed" && failingCriterion && (
-                      <div className="rounded-md border border-rose/40 bg-rose/10 px-2.5 py-2">
-                        <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-rose">Failed check</div>
-                        <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-mist-2">
-                          {failingCriterion.summary || failingCriterion.evidence || failingCriterion.name || failingCriterion.text}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* criteria / condition list */}
-                    {step.criteria.length > 0 && (
-                      <ul className="space-y-0.5">
-                        {step.criteria.map((c, i) => (
-                          <li key={i} className="flex gap-1.5 text-[13px] leading-snug text-mist-2">
-                            <span
-                              className={
-                                c.passed === true ? "text-mint" : c.passed === false ? "text-rose" : "text-mist"
-                              }
-                            >
-                              {c.passed === true ? "✓" : c.passed === false ? "✕" : "·"}
-                            </span>
-                            <span>{c.name || c.text || c.summary}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {/* the checker verdict — made/checked summaries + the full evidence */}
-                    {verdict && (
-                      <div className="space-y-1.5">
-                        {verdict.made_summary && (
-                          <p className="text-[13px] leading-snug text-mist-2">
-                            <span className="text-mist">made · </span>
-                            {verdict.made_summary}
-                          </p>
-                        )}
-                        {verdict.checked_summary && (
-                          <p className="text-[13px] leading-snug text-mist-2">
-                            <span className="text-mist">checked · </span>
-                            {verdict.checked_summary}
-                          </p>
-                        )}
-                        {verdict.evidence && (
-                          <div className="border border-line/70 bg-ink/30 px-2 py-1.5 rounded text-[12px] text-mist-2 whitespace-pre-wrap">
-                            {verdict.evidence}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               {/* comments — exactly ONE section, at the very bottom of the card. A comment attaches to
                   the CARD (the step), not an activity beat: it posts with card = step.id, so the exact
@@ -2023,6 +2024,105 @@ function WorkflowCard({
           />
         )}
       </AnimatePresence>
+
+      {/* Insight modal — the card's insight(s): title · sentence · amber tag · K-id,
+          reusing the insights-item styling. */}
+      <AnimatePresence>
+        {insightModalOpen && hasInsight && (
+          <CardModal eyebrow="Insight" title={step.title} onClose={() => setInsightModalOpen(false)}>
+            <div className="space-y-1.5">
+              {cardInsights.length > 0
+                ? cardInsights.map((k, i) => (
+                    <div key={k.id ?? i} className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[13px] text-chalk">{k.title}</span>
+                        {k.id && <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{k.id}</span>}
+                        {k.tag && (
+                          <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{k.tag}</span>
+                        )}
+                      </div>
+                      {(k.detail || k.note) && (
+                        <p className="mt-1.5 text-[13px] leading-relaxed text-mist-2">{k.detail || k.note}</p>
+                      )}
+                    </div>
+                  ))
+                : beatInsight && (
+                    <div className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono text-[13px] text-chalk">{beatInsight.title || beatInsight.seed}</span>
+                        {beatInsight.id && (
+                          <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{beatInsight.id}</span>
+                        )}
+                        {beatInsight.type && (
+                          <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{beatInsight.type}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+            </div>
+          </CardModal>
+        )}
+      </AnimatePresence>
+
+      {/* Condition modal — failing criterion (loud, on failure) → criteria list → checker verdict */}
+      <AnimatePresence>
+        {conditionModalOpen && (
+          <CardModal eyebrow="Condition" title={step.title} onClose={() => setConditionModalOpen(false)}>
+            <div className="space-y-2">
+              {/* on a failure, lead loud with the failing criterion */}
+              {step.column === "failed" && failingCriterion && (
+                <div className="rounded-md border border-rose/40 bg-rose/10 px-2.5 py-2">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-rose">Failed check</div>
+                  <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-mist-2">
+                    {failingCriterion.summary || failingCriterion.evidence || failingCriterion.name || failingCriterion.text}
+                  </p>
+                </div>
+              )}
+
+              {/* criteria / condition list */}
+              {step.criteria.length > 0 && (
+                <ul className="space-y-0.5">
+                  {step.criteria.map((c, i) => (
+                    <li key={i} className="flex gap-1.5 text-[13px] leading-snug text-mist-2">
+                      <span
+                        className={
+                          c.passed === true ? "text-mint" : c.passed === false ? "text-rose" : "text-mist"
+                        }
+                      >
+                        {c.passed === true ? "✓" : c.passed === false ? "✕" : "·"}
+                      </span>
+                      <span>{c.name || c.text || c.summary}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* the checker verdict — made/checked summaries + the full evidence */}
+              {verdict && (
+                <div className="space-y-1.5">
+                  {verdict.made_summary && (
+                    <p className="text-[13px] leading-snug text-mist-2">
+                      <span className="text-mist">made · </span>
+                      {verdict.made_summary}
+                    </p>
+                  )}
+                  {verdict.checked_summary && (
+                    <p className="text-[13px] leading-snug text-mist-2">
+                      <span className="text-mist">checked · </span>
+                      {verdict.checked_summary}
+                    </p>
+                  )}
+                  {verdict.evidence && (
+                    <div className="border border-line/70 bg-ink/30 px-2 py-1.5 rounded text-[12px] text-mist-2 whitespace-pre-wrap">
+                      {verdict.evidence}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardModal>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -2030,11 +2130,14 @@ function WorkflowCard({
 export function WorkflowKanban({
   model,
   notes,
+  elapsed,
 }: {
   model: BoardModel;
   notes?: DeveloperNote[];
+  /** App-computed run elapsed clock (live ticking; falls back to total time when absent). */
+  elapsed?: string | null;
 }) {
-  const [settledView, setSettledView] = useState<"summary" | "board">("summary");
+  const [settledView, setSettledView] = useState<"summary" | "board">("board");
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
   const allRawSteps = model.steps.filter((s) => s.phase === "workflow");
   const rawSteps = allRawSteps.filter((s) => !s.retired);
@@ -2082,19 +2185,29 @@ export function WorkflowKanban({
             the centered header/title never shifts horizontally when one view
             scrolls and the other doesn't (that was the "title leaps" jump). */}
         <div className="board-scroll h-full overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
-          <CompletionHeader model={displayModel} steps={displaySteps} view={settledView} onView={setSettledView} />
+          <CompletionHeader
+            model={displayModel}
+            steps={displaySteps}
+            view={settledView}
+            onView={setSettledView}
+            settled
+            elapsed={elapsed}
+          />
           {/* Execution run-complete banner moved to a sticky bar above the heartbeat
               terminal (App → RunCompleteBanner), so it stays visible in both views. */}
           {/* Eased crossfade on the Summary ↔ Board swap. mode="wait" lets the
               outgoing view fade out before the incoming one fades in; the keyed
               motion.div drives a clean opacity (+tiny y) transition. Height is not
               animated, so the swap can't re-introduce the layout jump. */}
+          {/* Crossfade keyed on view + run id: swapping the Summary/Board toggle OR
+              loading a different past run does a clean opacity crossfade. The board
+              STRUCTURE renders identical every time — no per-card entrance stagger. */}
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
-              key={settledView}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              key={`${settledView}:${displayModel.runId ?? ""}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
             >
               {settledView === "summary" ? (
@@ -2112,10 +2225,12 @@ export function WorkflowKanban({
                       const inCol = displaySteps.filter((s) => s.column === col);
                       return (
                         <section key={col} className="min-w-0">
-                          <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
+                          <div className="mb-2 flex items-center gap-2 border-b border-line px-2 py-2">
                             <Led state={col} />
-                            <h2 className="text-[14px] text-mist-2">{LABEL[col]}</h2>
-                            <span className="ml-auto text-[14px] tabular-nums text-mist">{inCol.length}</span>
+                            <h2 className="text-[14px] font-medium text-chalk">{LABEL[col]}</h2>
+                            <span className="ml-auto rounded-full bg-panel-2/60 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-mist">
+                              {inCol.length}
+                            </span>
                           </div>
                           {col === "pending" ? (
                             <PendingColumnCards
@@ -2166,15 +2281,27 @@ export function WorkflowKanban({
   return (
     <LayoutGroup>
       <div className="h-full overflow-y-auto">
+        {/* The shared run-header — live state. Same component as the settled view;
+            the Summary/Board toggle is gated off since no summary exists mid-run. */}
+        <CompletionHeader
+          model={displayModel}
+          steps={displaySteps}
+          view={settledView}
+          onView={setSettledView}
+          settled={false}
+          elapsed={elapsed}
+        />
         <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
           {cols.map((col) => {
             const inCol = steps.filter((s) => s.column === col);
             return (
               <section key={col} className="min-w-0">
-                <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
+                <div className="mb-2 flex items-center gap-2 border-b border-line px-2 py-2">
                   <Led state={col} />
-                  <h2 className="text-[14px] text-mist-2">{LABEL[col]}</h2>
-                  <span className="ml-auto text-[14px] tabular-nums text-mist">{inCol.length}</span>
+                  <h2 className="text-[14px] font-medium text-chalk">{LABEL[col]}</h2>
+                  <span className="ml-auto rounded-full bg-panel-2/60 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-mist">
+                    {inCol.length}
+                  </span>
                 </div>
                 {col === "pending" ? (
                   <PendingColumnCards

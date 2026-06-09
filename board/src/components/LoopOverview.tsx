@@ -82,7 +82,7 @@ export function LoopOverview({
         )}
         {loopStep.parallel && (
           <span
-            title={loopStep.parallel === "auto" ? "agent decides at runtime" : "iterations run in parallel"}
+            title={loopStep.parallel === "auto" ? "Agent decides at runtime" : "Iterations run in parallel"}
             className="rounded border border-line px-1.5 py-0.5 font-mono text-[10px] text-mist"
           >
             ∥ {loopStep.parallel === "auto" ? "parallel: auto" : "parallel"}

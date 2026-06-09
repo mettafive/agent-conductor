@@ -186,7 +186,7 @@ function GroupBlock({
         </span>
         <span className="mt-px flex shrink-0 items-center gap-1.5">
           {group.insightCount > 0 && (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber" title="carries an insight" />
+            <span className="h-1.5 w-1.5 rounded-full bg-amber" title="Carries an insight" />
           )}
           {active && <span className="font-mono text-[9px] tracking-wide text-mint">● live</span>}
           <Stamp iso={group.endedAt} running={running} now={now} />
@@ -246,33 +246,32 @@ export function NoteThread({
   card: string;
   cardTitle: string;
 }) {
-  const [adding, setAdding] = useState(false);
+  // editingId tracks a saved note being edited inline; the bottom composer is
+  // ALWAYS shown (its own draft state) so leaving a comment is a real, visible field.
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const [draft, setDraft] = useState("");
 
-  const reset = () => {
-    setAdding(false);
-    setEditingId(null);
-    setDraft("");
-  };
-  const startAdd = () => {
-    reset();
-    setAdding(true);
-  };
   const startEdit = (n: DeveloperNote) => {
-    setAdding(false);
     setEditingId(n.id);
-    setDraft(n.text);
+    setEditDraft(n.text);
   };
-  const save = () => {
-    if (!draft.trim()) return reset();
-    postComment(
-      workflow,
-      editingId
-        ? { id: editingId, step, card, text: draft, directive: false }
-        : { step, card, cardTitle, text: draft, directive: false },
-    );
-    reset();
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditDraft("");
+  };
+  const saveEdit = () => {
+    if (!editDraft.trim()) return cancelEdit();
+    postComment(workflow, { id: editingId!, step, card, text: editDraft, directive: false });
+    cancelEdit();
+  };
+  const saveNew = () => {
+    if (!draft.trim()) {
+      setDraft("");
+      return;
+    }
+    postComment(workflow, { step, card, cardTitle, text: draft, directive: false });
+    setDraft("");
   };
   const remove = (n: DeveloperNote) => postComment(workflow, { id: n.id, step, card, text: "", action: "remove" });
 
@@ -282,31 +281,18 @@ export function NoteThread({
         editingId === n.id ? (
           <NoteEditor
             key={n.id}
-            draft={draft}
-            setDraft={setDraft}
-            onSave={save}
-            onCancel={reset}
+            draft={editDraft}
+            setDraft={setEditDraft}
+            onSave={saveEdit}
+            onCancel={cancelEdit}
           />
         ) : (
           <NoteRow key={n.id} note={n} onEdit={() => startEdit(n)} onRemove={() => remove(n)} />
         ),
       )}
 
-      {adding ? (
-        <NoteEditor
-          draft={draft}
-          setDraft={setDraft}
-          onSave={save}
-          onCancel={reset}
-        />
-      ) : (
-        <button
-          onClick={startAdd}
-          className="flex w-full items-center gap-1.5 rounded border border-dashed border-line-2 px-2 py-1 text-left font-mono text-[9.5px] text-dim transition-colors hover:border-mist/40 hover:text-mist"
-        >
-          <span className="text-mist">✎</span> add a comment…
-        </button>
-      )}
+      {/* the composer — a real, always-visible comment field at the bottom of the card */}
+      <NoteEditor draft={draft} setDraft={setDraft} onSave={saveNew} composer />
     </div>
   );
 }
@@ -341,23 +327,28 @@ function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () =
   );
 }
 
-/** The add/edit form. Comments are archived as knowledge candidates automatically. */
+/** The add/edit form. Comments are archived as knowledge candidates automatically.
+ *  In `composer` mode this is the always-visible, prominent comment field at the
+ *  bottom of the card (no autofocus, no cancel — it's a persistent input); when
+ *  editing a saved note it keeps the inline Save/cancel pair. */
 function NoteEditor({
   draft,
   setDraft,
   onSave,
   onCancel,
+  composer = false,
 }: {
   draft: string;
   setDraft: (s: string) => void;
   onSave: () => void;
-  onCancel: () => void;
+  onCancel?: () => void;
+  composer?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className={composer ? "space-y-2 rounded-lg border border-line-2 bg-ink/40 px-2.5 py-2.5" : "space-y-1.5"}>
       <textarea
-        autoFocus
-        rows={2}
+        autoFocus={!composer}
+        rows={composer ? 3 : 2}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onFocus={(e) =>
@@ -373,22 +364,42 @@ function NoteEditor({
           } else if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation(); // don't bubble to the board-level Esc (back-to-live)
-            onCancel();
+            onCancel?.();
           }
         }}
-        placeholder="Note on this activity… (Enter saves · Shift+Enter = new line)"
-        className="w-full rounded border border-line-2 bg-ink/50 px-2 py-1.5 text-[11px] leading-snug text-mist-2 outline-none focus:border-mist/40"
+        placeholder={
+          composer
+            ? "Add a comment on this card… (Enter saves · Shift+Enter = new line)"
+            : "Note on this activity… (Enter saves · Shift+Enter = new line)"
+        }
+        className={`w-full rounded border border-line-2 px-2 ${
+          composer ? "bg-ink/60 py-2 text-[12px]" : "bg-ink/50 py-1.5 text-[11px]"
+        } leading-snug text-mist-2 outline-none focus:border-mist/40`}
       />
-      <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
-        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-dim">knowledge candidate</span>
-        <span className="flex-1" />
-        <button onClick={onSave} className="rounded bg-line-2 px-2 py-0.5 text-chalk transition-colors hover:bg-line-2/70">
-          Save
+      {composer ? (
+        <button
+          onClick={onSave}
+          disabled={!draft.trim()}
+          className="w-full rounded bg-line-2 px-2.5 py-1 text-[9.5px] text-chalk transition-colors hover:bg-line-2/70 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Comment
         </button>
-        <button onClick={onCancel} className="text-dim transition-colors hover:text-mist">
-          cancel
-        </button>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 text-[9.5px]">
+          <span className="flex-1" />
+          <button
+            onClick={onSave}
+            className="rounded bg-line-2 px-2.5 py-1 text-chalk transition-colors hover:bg-line-2/70"
+          >
+            Save
+          </button>
+          {onCancel && (
+            <button onClick={onCancel} className="text-dim transition-colors hover:text-mist">
+              cancel
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

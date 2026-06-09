@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { EMPTY, useBoardState } from "./lib/useBoardState";
 import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
@@ -15,13 +16,43 @@ import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
 import { clockSince } from "./lib/view";
 import { TopBar } from "./components/TopBar";
+import { WorkflowSidebar } from "./components/WorkflowSidebar";
+import type { LiveEntry } from "./components/WorkflowSidebar";
+import { Icon } from "./components/Icon";
 import { WorkflowKanban, RunCompleteBanner } from "./components/WorkflowKanban";
 import { Settings } from "./components/Settings";
 import { InsightsModal } from "./components/InsightsModal";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
 import { loadHeartbeatInterval, saveHeartbeatInterval, stallSecondsFor } from "./lib/settings";
-import type { BoardModel, Snapshot } from "./lib/types";
+import type { StreamBeat } from "./lib/heartbeatStream";
+import type { BoardModel, HistoryRun, Snapshot } from "./lib/types";
+
+/** Flatten a viewed (past, static) run's persisted beats into one chronological StreamBeat[] —
+ *  the terminal's data source when the navigator is viewing a past run instead of the live stream. */
+function pastRunBeats(model: BoardModel): StreamBeat[] {
+  const out: StreamBeat[] = [];
+  for (const step of model.steps) {
+    step.heartbeat.forEach((h, i) => {
+      out.push({
+        key: `${model.workflow} ${step.id} ${h.iteration ?? ""} ${h.sub ?? ""} ${h.at} ${i}`,
+        workflow: model.workflow,
+        step: String(step.id),
+        title: step.title,
+        at: h.at,
+        note: h.note,
+        iteration: h.iteration,
+        sub: h.sub,
+        finalBeat: h.finalBeat === true,
+        system: h.system === true,
+        tone: h.tone,
+        insight: h.insight,
+      });
+    });
+  }
+  out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  return out;
+}
 
 const params = new URLSearchParams(window.location.search);
 
@@ -34,6 +65,13 @@ export function App() {
   const [heartbeatInterval, setHeartbeatInterval] = useState(loadHeartbeatInterval);
   const [showSettings, setShowSettings] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  // The Navigator drawer.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // A single value drives which past run is loaded onto the board. null = live/default source.
+  const [viewing, setViewing] = useState<{ wf: string; runId: string } | null>(null);
+  const [viewedModel, setViewedModel] = useState<BoardModel | null>(null);
+  // The newest-history fallback model, fetched once when there's no live run.
+  const [latestModel, setLatestModel] = useState<BoardModel | null>(null);
   const now = useNow(1000);
 
   useEffect(() => {
@@ -41,7 +79,7 @@ export function App() {
   }, [heartbeatInterval]);
 
   const { beats, log, arrival } = useHeartbeatStream(workflows, order);
-  const agentLog = log.filter((b) => !b.system);
+  const agentLog = log;
   const globalLastBeat = lastBeatIso(beats);
 
   useEffect(() => {
@@ -56,7 +94,97 @@ export function App() {
 
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
-  const model: BoardModel = liveModel;
+
+  // Does the live workflow actually have a run streaming (any steps written)?
+  const liveStarted = !!(
+    liveSnap.status &&
+    typeof liveSnap.status === "object" &&
+    Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0
+  );
+
+  // The newest finished run across all workflows (the active workflow's own newest wins ties via
+  // order) — the fallback board source when nothing is streaming.
+  const latestEntry = (() => {
+    type Latest = { wf: string; run: HistoryRun };
+    const wfs = activeWf ? [activeWf, ...order.filter((w) => w !== activeWf)] : order;
+    let best: Latest | null = null;
+    for (const wf of wfs) {
+      const top = workflows[wf]?.history?.[0]; // history is newest-first
+      if (!top) continue;
+      const bestAt = best ? best.run.completed_at ?? "" : "";
+      if (!best || (top.completed_at ?? "") > bestAt) best = { wf, run: top };
+    }
+    return best;
+  })();
+
+  // Load the viewed past run's snapshot whenever the selection changes. The board is then STATIC —
+  // incoming SSE updates do not replace it (we never re-derive viewedModel from live state).
+  useEffect(() => {
+    if (!viewing) {
+      setViewedModel(null);
+      return;
+    }
+    let cancelled = false;
+    setViewedModel(null);
+    fetch(`/api/workflow/${encodeURIComponent(viewing.wf)}/history/${encodeURIComponent(viewing.runId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rec) => {
+        if (!cancelled && rec?.snapshot) setViewedModel(buildModel(rec.snapshot as Snapshot));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [viewing]);
+
+  // Default-source fallback: when not viewing a past run and nothing is live, fetch the newest
+  // finished run's snapshot ONCE so the board lands on your last run instead of an empty screen.
+  const latestKey = latestEntry ? `${latestEntry.wf}::${latestEntry.run.run_id}` : null;
+  useEffect(() => {
+    if (viewing || liveStarted || !latestEntry) {
+      setLatestModel(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(
+      `/api/workflow/${encodeURIComponent(latestEntry.wf)}/history/${encodeURIComponent(latestEntry.run.run_id)}`,
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rec) => {
+        if (!cancelled && rec?.snapshot) setLatestModel(buildModel(rec.snapshot as Snapshot));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestKey, viewing, liveStarted]);
+
+  // Resolve the displayed model: a viewed past run wins; else the live run if it has started;
+  // else the newest finished run; else the empty live model (→ WaitingState).
+  const model: BoardModel =
+    (viewing && viewedModel) ? viewedModel : liveStarted ? liveModel : latestModel ?? liveModel;
+  // The board is interactive (live-following) only when showing the genuinely live run.
+  const boardStarted = (viewing && viewedModel) ? true : liveStarted ? true : !!latestModel;
+
+  // The terminal's beat source: a viewed past run isn't streaming, so source its persisted beats
+  // (flattened from steps[].heartbeat[]); otherwise the live session stream.
+  const viewingPast = !!(viewing && viewedModel);
+  const monitorBeats = useMemo(
+    () => (viewingPast ? pastRunBeats(viewedModel as BoardModel) : agentLog),
+    [viewingPast, viewedModel, agentLog],
+  );
+
+  // The live run pinned at the top of the drawer — only while a run is genuinely streaming.
+  const liveEntry: LiveEntry | null =
+    liveStarted && activeWf
+      ? {
+          workflow: activeWf,
+          runName: liveModel.runName || liveModel.runId || activeWf,
+          startedAt: liveModel.startedAt,
+          status: liveModel.overallStatus,
+        }
+      : null;
 
   const prevStatuses = useRef<Record<string, string>>({});
   useEffect(() => {
@@ -96,17 +224,17 @@ export function App() {
       if (e.key === "Escape" && showInsights) {
         e.preventDefault();
         setShowInsights(false);
+        return;
+      }
+      // No modal open — Escape closes the Navigator drawer if it's open.
+      if (e.key === "Escape" && drawerOpen) {
+        e.preventDefault();
+        setDrawerOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showSettings, showInsights]);
-
-  const liveStarted = !!(
-    liveSnap.status &&
-    typeof liveSnap.status === "object" &&
-    Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0
-  );
+  }, [showSettings, showInsights, drawerOpen]);
 
   const elapsed =
     model.overallStatus === "running"
@@ -120,17 +248,56 @@ export function App() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar
-        workflow={activeWf ?? model.workflow}
-        status={model.overallStatus}
-        elapsed={elapsed}
-        done={model.done}
-        total={model.total}
-        insightCount={freshInsightCount}
-        onOpenInsights={() => setShowInsights(true)}
+        left={
+          <button
+            type="button"
+            onClick={() => setDrawerOpen((o) => !o)}
+            aria-label={drawerOpen ? "Close runs" : "Open runs"}
+            aria-expanded={drawerOpen}
+            title="Runs"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-mist transition-colors hover:bg-panel-2 hover:text-chalk"
+          >
+            <Icon name={drawerOpen ? "cross" : "menu"} size={18} />
+          </button>
+        }
       />
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* v2 sidebar nav — parked, kept for styling reference.
-            <WorkflowSidebar ... /> can come back later as a drawer for past runs. */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {/* The Navigator — a hamburger-toggled drawer listing past runs. It OVERLAYS
+            the board (absolute within the main area) and slides in/out, so opening
+            it never reflows the board content. */}
+        <AnimatePresence>
+          {drawerOpen && (
+            <>
+              <motion.div
+                key="nav-scrim"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.22, ease: "easeInOut" }}
+                onClick={() => setDrawerOpen(false)}
+                className="absolute inset-0 z-20 bg-ink/40"
+              />
+              <motion.div
+                key="nav-drawer"
+                initial={{ x: "-100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "-100%" }}
+                transition={{ duration: 0.22, ease: "easeInOut" }}
+                className="absolute inset-y-0 left-0 z-30"
+              >
+                <WorkflowSidebar
+                  workflows={workflows}
+                  order={order}
+                  viewingRunId={viewing?.runId ?? null}
+                  live={liveEntry}
+                  liveActive={!viewing && liveStarted}
+                  onPickRun={(wf, runId) => setViewing({ wf, runId })}
+                  onClear={() => setViewing(null)}
+                />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
         <div className="flex min-w-0 flex-1 flex-col">
           {model.demo && (
             <div className="flex items-center justify-center gap-2 border-b border-amber/25 bg-amber/10 px-5 py-1 font-mono text-[10px] uppercase tracking-[0.15em] text-amber">
@@ -147,14 +314,20 @@ export function App() {
           )}
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            {liveStarted ? (
-              <WorkflowKanban model={model} notes={model.developerNotes} />
+            {boardStarted ? (
+              <WorkflowKanban
+                model={model}
+                notes={model.developerNotes}
+                elapsed={elapsed}
+              />
             ) : (
               <WaitingState model={model} statusPath={liveSnap.statusPath} />
             )}
           </div>
 
-          {liveModel &&
+          {!viewing &&
+            liveStarted &&
+            liveModel &&
             liveModel.overallStatus === "done" &&
             liveModel.nextUp &&
             (liveModel.nextUp.name || (liveModel.nextUp.remaining ?? 0) > 0) && (
@@ -178,21 +351,30 @@ export function App() {
               </div>
             )}
 
-          <RunCompleteBanner model={model} />
+          <RunCompleteBanner
+            model={model}
+            insightCount={freshInsightCount}
+            onOpenInsights={() => setShowInsights(true)}
+          />
 
           <HeartbeatMonitor
-            beats={agentLog}
-            arrival={arrival && !arrival.beat.system ? arrival : null}
+            beats={monitorBeats}
+            // A viewed past run is static — no live arrival, no heart pulse, settle as done.
+            arrival={viewingPast ? null : arrival && !arrival.beat.system ? arrival : null}
             order={order}
             mode={monitorMode}
             onMode={setMonitorMode}
-            lastBeatIso={globalLastBeat}
-            conn={conn}
+            lastBeatIso={viewingPast ? undefined : globalLastBeat}
+            conn={viewingPast ? undefined : conn}
             stallSeconds={stallSecondsFor(heartbeatInterval)}
-            done={liveModel.overallStatus === "done" || liveModel.overallStatus === "failed"}
-            knowledge={model.knowledge}
-            doneCount={model.done}
-            totalCount={model.total}
+            done={
+              viewingPast
+                ? true
+                : liveModel.overallStatus === "done" || liveModel.overallStatus === "failed"
+            }
+            knowledge={viewingPast ? (viewedModel as BoardModel).knowledge : liveModel.knowledge}
+            doneCount={viewingPast ? (viewedModel as BoardModel).done : liveModel.done}
+            totalCount={viewingPast ? (viewedModel as BoardModel).total : liveModel.total}
           />
         </div>
       </div>

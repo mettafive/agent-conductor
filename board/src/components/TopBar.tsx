@@ -1,68 +1,35 @@
-import { Led } from "./Led";
+import type { ReactNode } from "react";
 
 /**
- * The global header for the Kanban board: workflow identity, run state, elapsed
- * time and completion count. Navigation is intentionally parked in v3's main view.
+ * The permanent MASTHEAD: app identity only. Left→right it carries the Navigator
+ * hamburger (the `left` slot), a thin divider, the Conductor mark + wordmark, and
+ * the build-time injected version. Run-specific state lives in the run-header
+ * (CompletionHeader), never here.
  */
 export function TopBar({
-  workflow,
-  status,
-  elapsed,
-  done,
-  total,
-  insightCount = 0,
-  onOpenInsights,
+  left,
 }: {
-  workflow?: string;
-  status?: string;
-  elapsed?: string | null;
-  done?: number;
-  total?: number;
-  insightCount?: number;
-  onOpenInsights?: () => void;
+  /** A leading control (the Navigator hamburger) rendered before the identity cluster. */
+  left?: ReactNode;
 }) {
-  const shownStatus = status ?? "idle";
   return (
     <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line bg-panel/60 px-3 backdrop-blur">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <img src="./conductor.svg" alt="" className="h-4 w-4 shrink-0 opacity-70" />
-        <span className="shrink-0 font-mono text-[12px] tracking-wide text-mist">conductor</span>
-        {workflow && (
-          <>
-            <span className="shrink-0 text-dim">/</span>
-            <span className="min-w-0 truncate text-[14px] font-medium text-chalk">{workflow}</span>
-          </>
-        )}
+      {left}
+
+      {/* thin vertical divider between the hamburger and the identity cluster */}
+      <span className="h-5 w-px shrink-0 bg-line" aria-hidden />
+
+      {/* The Conductor mark + wordmark + version — the app's permanent identity. */}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span
+          className="h-2.5 w-2.5 shrink-0 rotate-45 rounded-[2px] bg-mint shadow-[0_0_10px_rgba(52,211,153,0.5)]"
+          aria-hidden
+        />
+        <span className="text-[13px] font-semibold tracking-tight text-chalk">Conductor</span>
+        <span className="font-mono text-[10px] tabular-nums text-dim">v{__APP_VERSION__}</span>
       </div>
 
-      <div className="ml-3 flex shrink-0 items-center gap-3 text-[12px] text-mist">
-        <span className="flex items-center gap-1.5">
-          <Led state={shownStatus} />
-          <span>{shownStatus}</span>
-        </span>
-        {elapsed && <span className="tabular-nums text-dim">{elapsed}</span>}
-        {typeof done === "number" && typeof total === "number" && (
-          <span className="rounded border border-line bg-panel px-2 py-0.5 font-mono text-[11px] text-mist">
-            {done}/{total} done
-          </span>
-        )}
-        {onOpenInsights && (
-          <button
-            type="button"
-            onClick={onOpenInsights}
-            className={`flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono text-[11px] transition-colors ${
-              insightCount > 0
-                ? "border-amber/35 bg-amber/[0.08] text-amber hover:bg-amber/[0.14]"
-                : "border-line bg-panel text-mist hover:border-line-2 hover:text-chalk"
-            }`}
-            title={insightCount > 0 ? `${insightCount} fresh insight${insightCount === 1 ? "" : "s"} this run` : "Open insights"}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${insightCount > 0 ? "bg-amber shadow-[0_0_8px_rgba(251,191,36,0.55)]" : "bg-dim"}`} />
-            <span>Insights</span>
-            <span className="rounded border border-current/25 px-1 text-[10px]">{insightCount}</span>
-          </button>
-        )}
-      </div>
+      {/* RIGHT: reserved — never put run-specific things here. */}
     </header>
   );
 }

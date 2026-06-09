@@ -40,11 +40,19 @@ export function loadMonitorMode(): MonitorMode {
 
 type Conn = "connecting" | "live" | "lost";
 
-function beatTextClass(b?: Pick<StreamBeat, "tone" | "note">): string {
+function beatTextClass(b?: Pick<StreamBeat, "tone" | "note" | "system" | "insight">): string {
   if (!b) return "text-mist";
+  // Insight beats keep their amber/insight treatment.
   if (b.tone === "feedback") return "text-amber";
-  if (b.tone === "insight") return "text-amber";
-  if (/^\s*(✓|passed|pass|checker passed|creating .* passed|workflow accepted)/i.test(plainNote(b.note))) return "text-mint";
+  if (b.tone === "insight" || b.insight) return "text-amber";
+  // System beats (Started / Checking / Passed / Failed) are status chatter — muted & lighter
+  // so they don't drown out the agent's own update notes. Passed still tints mint, quietly.
+  if (b.system) {
+    if (/^\s*(✓|passed|pass|checker passed|creating .* passed|workflow accepted)/i.test(plainNote(b.note)))
+      return "text-mint/60 font-normal";
+    return "text-dim font-normal";
+  }
+  // The agent's update notes are PRIMARY — normal weight & color (the agent's voice).
   return "text-mist";
 }
 
@@ -53,7 +61,7 @@ function ConnDot({ conn }: { conn?: Conn }) {
   if (!conn || conn === "live") return null;
   return (
     <span
-      title={conn === "lost" ? "connection lost — reconnecting" : "connecting…"}
+      title={conn === "lost" ? "Connection lost — reconnecting" : "Connecting…"}
       className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose"
     />
   );
@@ -217,7 +225,7 @@ export function HeartbeatMonitor({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: "easeOut" }}
-        className="flex min-h-9 shrink-0 items-center gap-2.5 border-t border-line bg-panel px-4 py-2"
+        className="flex min-h-11 shrink-0 items-center gap-2.5 border-t border-line bg-panel px-4 py-2.5"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={14} stallSeconds={stallSeconds} done={done} />
         <ConnDot conn={conn} />
@@ -228,7 +236,7 @@ export function HeartbeatMonitor({
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
           {latest ? (
-            <span className={`min-w-0 flex-1 whitespace-normal break-words font-mono text-[12px] leading-snug ${beatTextClass(latest)}`}>
+            <span className={`min-w-0 flex-1 whitespace-normal break-words font-mono text-[14px] leading-relaxed ${beatTextClass(latest)}`}>
               {latest.key === streamKey ? (
                 <TypewriterText text={plainNote(latest.note)} />
               ) : (
@@ -236,11 +244,11 @@ export function HeartbeatMonitor({
               )}
             </span>
           ) : (
-            <span className="flex-1 font-mono text-[12px] text-dim">
-              waiting for agent update…
+            <span className="flex-1 font-mono text-[14px] text-dim">
+              Waiting for agent update…
             </span>
           )}
-          <span className="shrink-0 font-mono text-[10px] text-dim">▲</span>
+          <span className="shrink-0 font-mono text-[12px] text-dim">▲</span>
         </button>
       </motion.div>
     );
@@ -263,7 +271,6 @@ export function HeartbeatMonitor({
 
 function ExpandedMonitor({
   beats,
-  order,
   streamKey,
   onMode,
   lastBeatIso,
@@ -282,7 +289,6 @@ function ExpandedMonitor({
   done?: boolean;
   knowledge?: KnowledgeEntry[];
 }) {
-  const [filter, setFilter] = useState<string>("all");
   const [modalInsight, setModalInsight] = useState<ShownInsight | null>(null);
   const [height, setHeight] = useState(280);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -292,9 +298,7 @@ function ExpandedMonitor({
   const [showJump, setShowJump] = useState(false);
   const [cursorOn, setCursorOn] = useState(false);
 
-  const shown = beats.filter((b) =>
-    filter === "all" ? true : b.workflow === filter,
-  );
+  const shown = beats;
 
   const stickToBottom = useCallback(() => {
     if (!pinned.current) return;
@@ -323,7 +327,7 @@ function ExpandedMonitor({
       stickToBottom();
       setShowJump(false);
     }
-  }, [shown.length, filter, stickToBottom]);
+  }, [shown.length, stickToBottom]);
 
   useEffect(() => {
     if (!streamKey) return;
@@ -383,8 +387,6 @@ function ExpandedMonitor({
     window.addEventListener("pointerup", up);
   };
 
-  const FILTERS = ["all", ...order];
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -402,59 +404,36 @@ function ExpandedMonitor({
       <div
         onClick={() => onMode("min")}
         title="Click to minimize (Ctrl+`)"
-        className="group/bar flex cursor-pointer items-center gap-2 border-b border-line/70 px-3 py-1.5 transition-colors hover:bg-panel/40"
+        className="group/bar flex cursor-pointer items-center gap-2 border-b border-line/70 px-3 py-2 transition-colors hover:bg-panel/40"
       >
         <AnimatedHeart lastBeatIso={lastBeatIso} size={13} stallSeconds={stallSeconds} done={done} />
         <ConnDot conn={conn} />
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-mist-2">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-mist-2">
           Updates
         </span>
-        <span className="text-[10px] text-dim">{beats.length}</span>
+        <span className="text-[12px] tabular-nums text-mist-2">{beats.length}</span>
         <span className="ml-auto flex items-center gap-1.5 text-dim">
-          <span aria-hidden title="Minimize" className="grid h-5 w-5 place-items-center rounded transition-colors group-hover/bar:text-chalk">
+          <span aria-hidden title="Minimize" className="grid h-6 w-6 place-items-center rounded text-[13px] transition-colors group-hover/bar:text-chalk">
             ▼
           </span>
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 overflow-x-auto border-b border-line/50 px-3 py-1.5">
-        {FILTERS.map((f) => {
-          const on = filter === f;
-          const label = f === "all" ? "All" : f;
-          return (
-            <button
-              key={f}
-              onClick={() => {
-                pinned.current = true;
-                setFilter(f);
-              }}
-              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                on
-                  ? "border-cyan/50 bg-cyan/15 text-chalk"
-                  : "border-line bg-panel/40 text-mist hover:text-chalk"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="board-scroll relative min-h-0 flex-1 overflow-y-auto px-3 pt-2 pb-4 text-[13px] leading-relaxed"
+        className="board-scroll relative min-h-0 flex-1 overflow-y-auto px-4 pt-3 pb-5 text-[15px] leading-relaxed"
       >
         {shown.length === 0 ? (
           <div className="grid h-full place-items-center text-[11px] text-dim">
-            no updates{filter === "all" ? " yet" : ` for “${filter}”`}
+            No updates yet
           </div>
         ) : (
           <div ref={contentRef}>
           {shown.map((b) => (
             <div
               key={b.key}
-              className={`flex items-start gap-2 rounded py-px ${
+              className={`flex items-start gap-2.5 rounded py-1 ${
                 b.tone === "feedback" || b.tone === "insight" || b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""
               }`}
             >
@@ -467,7 +446,7 @@ function ExpandedMonitor({
                 )}
               </span>
               {b.finalBeat && (
-                <span className="shrink-0 select-none text-dim" title="final beat — handoff to next step">
+                <span className="shrink-0 select-none text-dim" title="Final beat — handoff to next step">
                   →
                 </span>
               )}
@@ -478,7 +457,7 @@ function ExpandedMonitor({
                     setModalInsight(insightFor(b, knowledge));
                   }}
                   className="mt-px shrink-0 select-none rounded border border-amber/25 bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
-                  title="captured a learning — click to see it"
+                  title="Captured a learning — click to see it"
                 >
                   ◇ insight
                 </button>
