@@ -265,6 +265,11 @@ if (command === "learn-card") {
   process.exit((await runLearnCard(rest)) ? 0 : 1);
 }
 
+if (command === "fold-card") {
+  const { runFoldCard } = await import("../cli/learning.js");
+  process.exit((await runFoldCard(rest)) ? 0 : 1);
+}
+
 if (command === "backfill-summaries") {
   const { runBackfillSummaries } = await import("../cli/backfill.js");
   process.exit((await runBackfillSummaries(rest)) ? 0 : 1);

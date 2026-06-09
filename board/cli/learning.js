@@ -401,15 +401,127 @@ export async function runLearnCard(args) {
   return true;
 }
 
+// Idempotent recursive copy: a destination file that already exists with the
+// same size is treated as already-folded and skipped. This is what lets the
+// per-card background fold and the run-end fold share one consolidated dir
+// without re-copying — the run-end fold only touches what the background folder
+// has not absorbed yet. Returns the number of files actually copied.
 function copyDir(src, dest) {
-  if (!fs.existsSync(src)) return;
+  if (!fs.existsSync(src)) return 0;
   fs.mkdirSync(dest, { recursive: true });
+  let copied = 0;
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const from = path.join(src, entry.name);
     const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(from, to);
-    else if (entry.isFile()) fs.copyFileSync(from, to);
+    if (entry.isDirectory()) {
+      copied += copyDir(from, to);
+    } else if (entry.isFile()) {
+      try {
+        const dst = fs.statSync(to);
+        const srcStat = fs.statSync(from);
+        if (dst.isFile() && dst.size === srcStat.size) continue; // already folded
+      } catch {
+        /* dest missing → copy below */
+      }
+      fs.copyFileSync(from, to);
+      copied += 1;
+    }
   }
+  return copied;
+}
+
+// Fold ONE completed card's artifacts into the run dir as it finishes — off the
+// per-card critical path (spawned detached from `complete`). It touches ONLY this
+// finished card's own receipt + the files that receipt references, NEVER the whole
+// pile and NEVER an in-flight card's area, so it never widens the prune race. Copy
+// is idempotent (skip-existing), so a re-run or an overlap with the run-end fold is
+// safe. This is what makes each card's raw result durable in the run dir the instant
+// it's done, restoring per-card crash-safety without the per-card whole-pile cost.
+export function foldCardArtifacts(statusPath, stepId) {
+  const status = readJsonMaybe(statusPath);
+  if (!status) return null;
+  const root = conductorRootFromStatus(statusPath);
+  const runId = status.run_id || timestampRunId();
+  const runDir = path.join(root, "runs", runId);
+  const destArtifacts = path.join(runDir, "artifacts");
+
+  const entry =
+    status.steps?.[String(stepId)] ||
+    status.steps?.[stepId] ||
+    null;
+  // Only fold a card that is genuinely done — never an in-flight card's area.
+  if (!entry || entry.status !== "done") return null;
+
+  const srcArtifacts = path.join(root, "artifacts");
+  const srcOutputs = path.join(root, "outputs");
+  const srcDir = fs.existsSync(srcArtifacts) ? srcArtifacts : (fs.existsSync(srcOutputs) ? srcOutputs : null);
+  if (!srcDir) return null;
+
+  // This card's own files: its receipt + every artifact it referenced. Names are
+  // basenames within the artifacts dir (see complete.js — st.artifacts are
+  // `.conductor/artifacts/<name>` rel paths or absolute paths).
+  const rels = Array.isArray(entry.artifacts) && entry.artifacts.length
+    ? entry.artifacts
+    : [entry.artifact || entry.receipt].filter(Boolean);
+  const names = new Set(
+    rels
+      .map((r) => path.basename(String(r)))
+      .filter(Boolean),
+  );
+  if (!names.size) return null;
+
+  fs.mkdirSync(destArtifacts, { recursive: true });
+  let copied = 0;
+  for (const name of names) {
+    const from = path.join(srcDir, name);
+    const to = path.join(destArtifacts, name);
+    if (!fs.existsSync(from) || !fs.statSync(from).isFile()) continue;
+    try {
+      const dst = fs.statSync(to);
+      if (dst.isFile() && dst.size === fs.statSync(from).size) continue; // already folded
+    } catch {
+      /* dest missing → copy */
+    }
+    fs.copyFileSync(from, to);
+    copied += 1;
+  }
+  return { runDir, copied };
+}
+
+// Spawn a detached background fold of ONE done card's artifacts — mirrors
+// queuePostCardLearning. The `complete` worker returns immediately; the heavy
+// (potentially large) artifact copy runs out-of-process, off the gate→exit
+// teardown critical path. Best-effort: if the spawn fails, the run-end fold
+// (archiveRun) still copies everything, so nothing is ever lost.
+export function queueCardFold({ statusPath, stepId } = {}) {
+  try {
+    const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "cli.js");
+    const child = spawn(
+      process.execPath,
+      [cli, "fold-card", String(stepId), "--path", path.resolve(statusPath)],
+      {
+        cwd: process.cwd(),
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env, CONDUCTOR_FOLD_WORKER: "1" },
+      },
+    );
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function runFoldCard(args) {
+  const status = flag(args, ["--path", "-p"]);
+  const stepId = args.find((arg) => !arg.startsWith("-"));
+  if (!stepId || typeof status !== "string") {
+    console.error("usage: conductor-board fold-card <step> --path status.json");
+    return false;
+  }
+  foldCardArtifacts(path.resolve(process.cwd(), status), stepId);
+  return true;
 }
 
 export function archiveRun(statusPath, workflowPath) {

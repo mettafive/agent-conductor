@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
 import { appendAutoHeartbeat, firstEvidenceLine } from "./heartbeats.js";
-import { archiveRun, queuePostCardLearning } from "./learning.js";
+import { archiveRun, queuePostCardLearning, queueCardFold } from "./learning.js";
 import { sequentialOrderGuard } from "./writer.js";
 import {
   artifactRequirementMessage,
@@ -227,6 +227,16 @@ export async function runComplete(args) {
       }
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
       queuePostCardLearning({ statusPath, workflowPath: conductorPath, stepId });
+      // Per-card crash-safety + the overlap win: fold THIS done card's own
+      // artifacts into the run dir in a detached background process — off this
+      // worker's gate→exit teardown. By run-end every earlier card is already
+      // folded, so the run-end snapshot (archiveRun, idempotent skip-existing)
+      // only has the last card left to absorb. Touches finished cards only.
+      queueCardFold({ statusPath, stepId });
+      // The heavy whole-run consolidation runs ONCE, at run-end (last card), not
+      // per card. archiveRun's copy is now idempotent: cards the background folder
+      // already absorbed are skipped, so this is a cheap final fold, and it is
+      // re-runnable + safe after an interrupted run (nothing deferred is lost).
       if (status.status === "done") archiveRun(statusPath, conductorPath);
     } catch (e) {
       console.error(red(`✗ checker passed but could not update status.json: ${e.message}`));
