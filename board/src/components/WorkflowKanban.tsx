@@ -539,10 +539,23 @@ function CompletionHeader({
   settled: boolean;
   elapsed?: string | null;
 }) {
-  const failed = steps.filter((s) => s.column === "failed").length;
+  const failedCards = steps.filter((s) => s.column === "failed");
+  const failed = failedCards.length;
   const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
   const retries = totalRetries(steps);
   const shownStatus = model.overallStatus ?? "idle";
+  const [reasonOpen, setReasonOpen] = useState(false);
+
+  // The "why did it fail" payload: prefer the run-level failed_reason/failed_step
+  // (written by complete.js on terminal failure), fall back to the failed card's
+  // last_feedback heartbeat / dispatch note. Drives the failed-reason modal.
+  const failedCard =
+    (model.failedStep ? failedCards.find((s) => s.id === model.failedStep) : undefined) ?? failedCards[0];
+  const failedCardFeedback =
+    failedCard?.heartbeat?.filter((h) => h.tone === "feedback").at(-1)?.note ??
+    failedCard?.heartbeat?.at(-1)?.note;
+  const failureReason = model.failedReason || failedCardFeedback || null;
+  const canShowReason = (shownStatus === "failed" || failed > 0) && !!(failureReason || failedCard);
 
   return (
     <div className="shrink-0 border-b border-line bg-ink/95">
@@ -554,7 +567,9 @@ function CompletionHeader({
           </div>
           {/* status cluster — [status] · done/total · elapsed, lifted from the masthead */}
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[14px] text-mist-2">
-            <span className="capitalize">{shownStatus}</span>
+            <span className={`capitalize ${shownStatus === "paused" ? "text-[#9db8de]" : ""}`}>
+              {shownStatus === "paused" ? "Paused" : shownStatus}
+            </span>
             <span className="text-dim">·</span>
             <span className="tabular-nums">
               {model.done}/{model.total}
@@ -574,7 +589,18 @@ function CompletionHeader({
             {failed > 0 && (
               <>
                 <span className="text-dim">·</span>
-                <span className="text-rose">{failed} failed</span>
+                {canShowReason ? (
+                  <button
+                    type="button"
+                    onClick={() => setReasonOpen(true)}
+                    title="Show why it failed"
+                    className="text-rose underline decoration-rose/40 underline-offset-2 transition-colors hover:decoration-rose"
+                  >
+                    {failed} failed
+                  </button>
+                ) : (
+                  <span className="text-rose">{failed} failed</span>
+                )}
               </>
             )}
           </div>
@@ -601,6 +627,38 @@ function CompletionHeader({
           )}
         </div>
       </div>
+
+      {/* Failed-reason modal — clicking the failed badge opens WHY: the run-level
+          failed_reason + failed step, plus the failed card's last feedback. */}
+      <AnimatePresence>
+        {reasonOpen && (
+          <CardModal
+            eyebrow="Failed"
+            title={failedCard ? failedCard.title : "Run failed"}
+            onClose={() => setReasonOpen(false)}
+          >
+            <div className="space-y-4">
+              {model.failedStep && (
+                <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-dim">
+                  Failed at step {model.failedStep}
+                </div>
+              )}
+              {failureReason ? (
+                <div className="rounded-lg border border-rose/30 bg-rose/10 px-4 py-3">
+                  <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-rose/80">
+                    Reason
+                  </div>
+                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-mist-2">
+                    {failureReason}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[13px] text-mist-2">No failure detail was recorded.</p>
+              )}
+            </div>
+          </CardModal>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1829,6 +1887,11 @@ function WorkflowCard({
   const gateTotal = step.criteria.length;
   const canBrowseArtifacts = canOpenReceipt(step);
   const pendingVariant = variant === "pending";
+  // Derived "ready / next": a pending card whose deps are all done — unblocked,
+  // next to go. PURE DISPLAY: an adornment WITHIN pending, not a move/new column,
+  // and deliberately NOT a running state (no green motion that would fake progress
+  // or hide a real stall). Quiet mint edge + a small frontier dot.
+  const isReady = pendingVariant && step.ready;
   // The checker verdict (authored human-readable: SUMMARY/MADE/CHECKED + evidence) and the
   // failing criterion — folded into the timeline's Passed/Failed beat, never shown as a wall.
   const verdict = step.criteria.find((c) => c.summary || c.evidence || c.made_summary || c.checked_summary);
@@ -1882,9 +1945,11 @@ function WorkflowCard({
             setOpen((v) => !v);
           }
         }}
-        className={`mb-2 rounded-lg border border-line bg-panel-2/40 px-3.5 py-3 transition-colors duration-200 hover:border-line-2 hover:bg-panel-2/70 ${
-          pulse ? (open ? "beat-flash-faint" : "beat-flash") : ""
-        }`}
+        className={`mb-2 rounded-lg border bg-panel-2/40 px-3.5 py-3 transition-colors duration-200 hover:border-line-2 hover:bg-panel-2/70 ${
+          isReady
+            ? "border-line border-l-2 border-l-mint/70 ring-1 ring-inset ring-mint/15"
+            : "border-line"
+        } ${pulse ? (open ? "beat-flash-faint" : "beat-flash") : ""}`}
       >
         {/* The collapsed summary (header + meta + latest preview) toggles the
             card. The expanded body below does NOT toggle, so its text
@@ -1902,6 +1967,15 @@ function WorkflowCard({
         <div className="flex items-center gap-2.5">
           <Led state={step.column} />
           <span className="min-w-0 flex-1 truncate text-[16px] text-chalk">{step.title}</span>
+          {isReady && (
+            <span
+              title="next — dependencies met, queued to go"
+              className="flex shrink-0 items-center gap-1 rounded-full border border-mint/30 bg-mint/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-mint"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-mint shadow-[0_0_0_3px_rgba(52,211,153,0.18)]" />
+              next
+            </span>
+          )}
           {!pendingVariant && step.attempt > 1 && (
             <span title={`${step.attempt} attempts`} className="shrink-0 text-[13px] text-mist">
               attempt {step.attempt}

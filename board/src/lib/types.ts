@@ -196,6 +196,9 @@ export interface ImproveMeta {
 
 export interface BoardStep extends ConductorStep {
   column: Column;
+  /** Derived (pure display): pending AND every `requires` dependency is column==="done".
+   *  An unblocked, next-to-go card. Recomputed every buildModel call; never persisted. */
+  ready: boolean;
   rawStatus: string; // pending | running | done | failed | (unknown)
   gateState: string; // pending | checking | passed | failed
   attempt: number;
@@ -283,7 +286,18 @@ export interface BoardModel {
   maxAttempts: number;
   startedAt?: string;
   endedAt?: string;
-  overallStatus: string; // running | done | failed | idle
+  overallStatus: string; // running | paused | done | failed | idle
+  /** Paused-aware timer accumulator (ms of RUNNING time accrued). Undefined on legacy runs. */
+  elapsedBaseMs?: number;
+  /** ISO start of the current running interval; null when paused/done/failed. */
+  runningSince?: string | null;
+  /** Whether status.json carries the elapsed_ms/running_since accumulator fields. */
+  hasAccumulator?: boolean;
+  /** ISO timestamp when the run was paused (top-level status=paused). */
+  pausedAt?: string;
+  /** Final failure reason + the step that failed — drives the failed-reason modal. */
+  failedReason?: string;
+  failedStep?: string;
   currentStep?: string;
   steps: BoardStep[];
   done: number;

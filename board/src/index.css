@@ -134,6 +134,12 @@
   background: var(--color-amber);
   box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
 }
+/* Paused: a calm, STEADY cool-blue dot — no pulse, no glow. Reads "held on
+   purpose", distinct from done (dim green), pending (grey) and failed (rose). */
+.led-paused {
+  background: #7aa2d6;
+  opacity: 0.85;
+}
 
 /* ---- The heartbeat ---- */
 /* resting rhythm: a quick lub-dub, then a long rest — a real heartbeat */

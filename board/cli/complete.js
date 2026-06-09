@@ -11,6 +11,7 @@ import {
   findReceiptArtifact,
 } from "./artifacts.js";
 import { callModel, extractJson } from "./decompose.js";
+import { accumulateAndFreeze } from "./pause.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -221,6 +222,8 @@ export async function runComplete(args) {
         status.status = "done";
         status.current_step = null;
         status.endedAt = new Date().toISOString();
+        // Freeze the paused-aware timer: fold the live running interval into elapsed_ms.
+        accumulateAndFreeze(status);
       }
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
       queuePostCardLearning({ statusPath, workflowPath: conductorPath, stepId });
@@ -262,6 +265,8 @@ export async function runComplete(args) {
       status.status = "failed";
       status.failed_step = stepId;
       status.failed_reason = st.last_feedback;
+      // Freeze the paused-aware timer on terminal failure.
+      accumulateAndFreeze(status);
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
       archiveRun(statusPath, conductorPath);
       console.log(red(`  ✕ Checker failed on attempt ${maxAttempts}/${maxAttempts}. Card and run failed.`));

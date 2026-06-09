@@ -14,7 +14,7 @@ import {
 } from "./lib/sounds";
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
-import { clockSince } from "./lib/view";
+import { clockSince, fmtElapsedMs } from "./lib/view";
 import { TopBar } from "./components/TopBar";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import type { LiveEntry } from "./components/WorkflowSidebar";
@@ -236,12 +236,24 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [showSettings, showInsights, drawerOpen]);
 
-  const elapsed =
-    model.overallStatus === "running"
+  // Paused-aware elapsed. New runs carry an accumulator (elapsedBaseMs + runningSince); the live
+  // display adds (now - runningSince) ONLY while running, so the clock freezes on pause/done/failed
+  // and CONTINUES (not resets) on resume. Legacy runs (no accumulator) fall back to started_at→now/
+  // ended, preserving the old behaviour so existing runs still render.
+  const elapsed = model.hasAccumulator
+    ? fmtElapsedMs(
+        (model.elapsedBaseMs ?? 0) +
+          (model.overallStatus === "running" && model.runningSince
+            ? Math.max(0, now - new Date(model.runningSince).getTime())
+            : 0),
+      )
+    : model.overallStatus === "running"
       ? clockSince(model.startedAt, now)
       : model.overallStatus === "done" || model.overallStatus === "failed"
         ? clockSince(model.startedAt, now, model.endedAt)
-        : null;
+        : model.overallStatus === "paused"
+          ? clockSince(model.startedAt, now, model.pausedAt)
+          : null;
   const runCount = (activeWf && workflows[activeWf]?.history.length) || 0;
   const freshInsightCount = model.runId ? model.knowledge.filter((item) => item.source_run === model.runId).length : 0;
 

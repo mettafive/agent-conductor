@@ -255,6 +255,7 @@ function buildImproveSteps(statusSteps: Record<string, RawStepStatus>): BoardSte
       requires: [],
       isLoop: false,
       column: columnFor(rawStatus, gateState),
+      ready: false, // filled by the post-pass once every column is known
       rawStatus,
       gateState,
       attempt: st.attempt ?? 1,
@@ -329,6 +330,7 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     const wfStep: BoardStep = {
       ...s,
       column: columnFor(rawStatus, gateState),
+      ready: false, // filled by the post-pass once every column is known
       rawStatus,
       gateState,
       attempt: st.attempt ?? 1,
@@ -358,6 +360,25 @@ function buildModelImpl(snap: Snapshot): BoardModel {
 
   // The Phase 0 improvement cards lead, then the real workflow steps.
   const steps: BoardStep[] = [...improveSteps, ...workflowSteps];
+
+  // --- Derived "ready / next" state (PURE DISPLAY; no writes, no execution) ---
+  // `requires` holds card INDEXES (see parse.ts: ConductorStep.index === array
+  // position, id === String(index)); dependents are resolved the same way the
+  // kanban already does it (steps[idx] / unmetRequirementIndexes). Build byId on
+  // the WORKFLOW step's numeric index so dep lookups match the model's indexing.
+  // A pending card is `ready` (unblocked, next to go) iff every dependency is
+  // column==="done"; any non-done dep leaves it plain (blocked) pending. This
+  // runs on every buildModel call (every SSE tick) so the instant a dep flips to
+  // done, its dependents read ready on the next render — that immediacy is the
+  // point, so it is intentionally NOT memoized away.
+  const byId = new Map<number, BoardStep>();
+  for (const s of workflowSteps) byId.set(s.index, s);
+  for (const s of steps) {
+    s.ready =
+      s.column === "pending" &&
+      s.requires.every((depId) => byId.get(depId)?.column === "done");
+  }
+
   const visibleWorkflowSteps = workflowSteps.filter((s) => !s.retired);
 
   // Progress counts the WORKFLOW only — Phase 0 is a pre-flight, not the work.
@@ -403,8 +424,20 @@ function buildModelImpl(snap: Snapshot): BoardModel {
   // heart settles instead of "Running" ticking up forever.
   const rawStatus = (status.status as string) ?? (total ? "idle" : "idle");
   const allWorkflowDone = workflowSteps.length > 0 && workflowSteps.every((s) => s.column === "done");
-  const overall = rawStatus === "running" && allWorkflowDone ? "done" : rawStatus;
+  // `paused` is a top-level run state, distinct from running/done/failed: surface it as-is (never
+  // auto-complete a paused run even if all steps read done — pause is an explicit human hold).
+  const overall =
+    rawStatus === "paused" ? "paused" : rawStatus === "running" && allWorkflowDone ? "done" : rawStatus;
   const settled = overall === "done" || overall === "failed";
+
+  // --- Paused-aware timer accumulator (§run-state) -------------------------------------------
+  // elapsed_ms accumulates only RUNNING time; running_since marks the start of the current running
+  // interval (null when paused/done/failed). The live display adds (now - running_since) only while
+  // running. Backward-compat: when these fields are absent (old runs), fall back to started_at→now/
+  // ended so existing runs still render — the App resolves that fallback from startedAt/endedAt.
+  const elapsedBaseMs = typeof status.elapsed_ms === "number" ? status.elapsed_ms : undefined;
+  const runningSince = typeof status.running_since === "string" ? status.running_since : null;
+  const hasAccumulator = elapsedBaseMs !== undefined;
 
   const knowledge = dedupeKnowledge([...(parsed?.knowledge ?? []), ...fileKnowledge]);
 
@@ -429,6 +462,14 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     // heartbeat (when work actually stopped).
     endedAt: (status.completed_at as string | undefined) ?? (settled ? lastBeatAt : undefined),
     overallStatus: overall,
+    // Paused-aware timer accumulator (undefined on old runs => App falls back to started_at→now).
+    elapsedBaseMs,
+    runningSince,
+    hasAccumulator,
+    pausedAt: status.paused_at as string | undefined,
+    // Failed-reason payload for the modal (written by complete.js on terminal failure).
+    failedReason: status.failed_reason as string | undefined,
+    failedStep: status.failed_step as string | undefined,
     currentStep: status.current_step as string | undefined,
     steps,
     done,

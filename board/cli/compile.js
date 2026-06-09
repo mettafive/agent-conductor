@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { composeAndCheckSkill, compact, flag } from "./decompose.js";
-import { runInitBoard } from "./init-board.js";
+import { ensureBoard } from "./ensure-board.js";
 import {
   ensureKnowledge,
   migrationMetaPathForRoot,
@@ -162,10 +162,15 @@ function acquireCompileLock(outDir) {
 }
 
 async function initCompileBoard(outDir, name, port) {
+  // The compile workflow/status files still live in the skill-scoped outDir so
+  // progress notes have somewhere to write — but we do NOT start a board keyed
+  // to that subdir. PHASE A: identity = port. We attach to the canonical board
+  // on the main port (ensureBoard spawns one only if nothing is live there),
+  // never SIGTERM-and-respawn the main board, and never open our own tab.
   const workflowPath = path.join(outDir, "compile.workflow.json");
   const statusPath = path.join(outDir, "compile.status.json");
   writeJson(workflowPath, compileWorkflow(name));
-  await runInitBoard([workflowPath, "--path", statusPath, "--port", String(port)]);
+  await ensureBoard(port, { statusPath, workflowPath });
   return { workflowPath, statusPath };
 }
 

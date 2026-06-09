@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { integrateRoot } from "../cli/integration.js";
 import { ensureKnowledge, readJsonMaybe, timestampRunId } from "../cli/learning.js";
 import { validateConductor } from "../cli/validate.js";
+import { registeredRoots, registryFile, registerRoot, registerBoard, gcRegistry } from "../cli/registry.js";
 
 const readBody = (req) =>
   new Promise((resolve) => {
@@ -745,9 +746,44 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
   return found;
 }
 
+/**
+ * PHASE B: the ONE board spans every project. Discovery is the UNION of:
+ *   - the launch conductorDir (with its explicit --path / --workflow overrides), and
+ *   - every .conductor root registered in the machine-wide registry
+ *     (~/.conductor/board.json), each scanned with the normal discovery rules.
+ * Deduped by workflow name (first writer wins) so a newly-registered project's
+ * runs appear alongside the launch project's without a board restart.
+ */
+function discoverAllWorkflows(conductorDir, absStatus, explicitConductor) {
+  const byName = new Map();
+  const merge = (list) => {
+    for (const wf of list) if (!byName.has(wf.name)) byName.set(wf.name, wf);
+  };
+  // launch root keeps its explicit overrides
+  merge(discoverWorkflows(conductorDir, absStatus, explicitConductor));
+  // every registered root, scanned with default rules
+  let roots = [];
+  try {
+    roots = registeredRoots();
+  } catch {
+    /* registry unreadable — fall back to launch root only */
+  }
+  for (const root of roots) {
+    if (path.resolve(root) === path.resolve(conductorDir)) continue;
+    try {
+      merge(discoverWorkflows(root));
+    } catch {
+      /* a bad root must not break discovery of the others */
+    }
+  }
+  return [...byName.values()];
+}
+
 export function startServer({ statusPath, conductorPath: explicitConductor, port }) {
   const absStatus = path.resolve(process.cwd(), statusPath);
   const conductorDir = path.dirname(absStatus);
+  // PHASE B: the launch root is always a registered, watched root.
+  try { registerRoot(conductorDir); } catch { /* best effort */ }
 
   /** @type {Set<http.ServerResponse>} */
   const clients = new Set();
@@ -771,7 +807,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
   };
 
   const findWf = (name) =>
-    discoverWorkflows(conductorDir, absStatus, explicitConductor).find((w) => w.name === name);
+    discoverAllWorkflows(conductorDir, absStatus, explicitConductor).find((w) => w.name === name);
 
   const sendAll = (event, data) => {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -779,7 +815,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
   };
 
   const broadcast = () => {
-    for (const wf of discoverWorkflows(conductorDir, absStatus, explicitConductor)) {
+    for (const wf of discoverAllWorkflows(conductorDir, absStatus, explicitConductor)) {
       const snap = snapshotFor(wf);
       sendAll("update", snap);
       const rec = archiveIfDone(wf.historyDir, snap, archivedSetFor(wf));
@@ -797,19 +833,69 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     clearTimeout(timer);
     timer = setTimeout(broadcast, 80);
   };
-  try {
-    fs.mkdirSync(conductorDir, { recursive: true });
+
+  // PHASE B: the ONE board watches EVERY registered root, not just its launch
+  // root. We keep a set of already-watched roots and add watchers lazily; a
+  // change to the registry file (a newly-registered project) re-reads the roots
+  // and starts watching the new ones live — no board restart needed.
+  const watchedRoots = new Set();
+  const watchRoot = (root) => {
+    const abs = path.resolve(root);
+    if (watchedRoots.has(abs)) return;
     try {
-      fs.watch(conductorDir, { recursive: true }, schedule);
+      fs.mkdirSync(abs, { recursive: true });
+      try {
+        fs.watch(abs, { recursive: true }, schedule);
+      } catch {
+        fs.watch(abs, schedule); // platforms without recursive watch
+      }
+      watchedRoots.add(abs);
+    } catch (e) {
+      console.warn(`[conductor-board] watch failed for ${abs}: ${e.message}`);
+    }
+  };
+
+  const syncWatchedRoots = () => {
+    watchRoot(conductorDir); // launch root is always watched
+    let roots = [];
+    try {
+      roots = registeredRoots();
     } catch {
-      fs.watch(conductorDir, schedule); // platforms without recursive watch
+      /* registry unreadable — keep whatever we already watch */
+    }
+    let added = false;
+    for (const root of roots) {
+      if (!watchedRoots.has(path.resolve(root))) {
+        watchRoot(root);
+        added = true;
+      }
+    }
+    // A newly-registered root may already have status files — surface them now.
+    if (added) schedule();
+  };
+
+  syncWatchedRoots();
+
+  // Watch the registry file itself so newly-registered projects are picked up
+  // live (re-read roots, watch the new ones, re-discover + broadcast).
+  try {
+    const regFile = registryFile();
+    fs.mkdirSync(path.dirname(regFile), { recursive: true });
+    try {
+      fs.watch(path.dirname(regFile), (_ev, name) => {
+        if (!name || path.basename(regFile).startsWith(String(name)) || String(name).startsWith(path.basename(regFile))) {
+          syncWatchedRoots();
+        }
+      });
+    } catch (e) {
+      console.warn(`[conductor-board] registry watch failed: ${e.message}`);
     }
   } catch (e) {
-    console.warn(`[conductor-board] watch failed: ${e.message}`);
+    console.warn(`[conductor-board] registry watch setup failed: ${e.message}`);
   }
 
   const sendSnapshotsTo = (res) => {
-    for (const wf of discoverWorkflows(conductorDir, absStatus, explicitConductor)) {
+    for (const wf of discoverAllWorkflows(conductorDir, absStatus, explicitConductor)) {
       res.write(`event: update\ndata: ${JSON.stringify(snapshotFor(wf))}\n\n`);
       res.write(
         `event: history\ndata: ${JSON.stringify({
@@ -833,7 +919,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
 
   const server = http.createServer((req, res) => {
     const url = (req.url || "/").split("?")[0];
-    const wfs = () => discoverWorkflows(conductorDir, absStatus, explicitConductor);
+    const wfs = () => discoverAllWorkflows(conductorDir, absStatus, explicitConductor);
 
     if (url === "/health") {
       const workflows = {};
@@ -1366,7 +1452,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
     server.listen(port, () => {
       server.off("error", onError);
       const actualPort = server.address().port;
-      const discovered = discoverWorkflows(conductorDir, absStatus, explicitConductor);
+      const discovered = discoverAllWorkflows(conductorDir, absStatus, explicitConductor);
       try {
         fs.mkdirSync(conductorDir, { recursive: true });
         fs.writeFileSync(
@@ -1386,6 +1472,25 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       } catch (e) {
         console.warn(`[conductor-board] could not write server.json: ${e.message}`);
       }
+      // PHASE C: record THIS board (identity = port) and GC the registry so a
+      // stale/zombie record can never linger. GC runs once on start (after we
+      // register ourselves so we are never collected) and on a light 60s tick.
+      try {
+        registerBoard({ port: actualPort, pid: process.pid, url: `http://localhost:${actualPort}/` });
+      } catch (e) {
+        console.warn(`[conductor-board] could not register board: ${e.message}`);
+      }
+      const runGc = () => {
+        try {
+          gcRegistry();
+        } catch (e) {
+          console.warn(`[conductor-board] registry GC failed: ${e.message}`);
+        }
+      };
+      runGc();
+      const gcTimer = setInterval(runGc, 60_000);
+      gcTimer.unref(); // GC must never keep the process alive on its own
+      server.on("close", () => clearInterval(gcTimer));
       resolve({
         server,
         serverJsonPath,

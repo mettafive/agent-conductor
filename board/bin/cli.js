@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { startServer } from "../server/server.js";
+import { getHealth as ensureGetHealth, canonicalUrl as ensureCanonicalUrl, openBrowser as ensureOpenBrowser } from "../cli/ensure-board.js";
+import { registerRoot as registryRegisterRoot, registerBoard as registryRegisterBoard } from "../cli/registry.js";
 
 const argv = process.argv.slice(2);
 const command = argv[0] && !argv[0].startsWith("-") ? argv[0] : null;
@@ -58,6 +60,13 @@ const HELP = `
     init-board [workflow]    status-init, start/reuse board, open browser,
                              verify /health and current workflow
     check <step-id>          Print the instruction/output checker prompt
+    dispatch                 Opt-in fan-out loop: hand eligible cards to
+                             leashed run-card workers, refill, reclaim frozen
+                             ones. [--cap N]
+    pause                    Pause the run: top-level status=paused, freeze the
+                             timer; the dispatcher idles (hands no new cards).
+    resume                   Resume a paused run: status=running, timer continues,
+                             dispatcher resumes handing.
     ps                       List every conductor-board running on this machine
     stop [--all]             Stop this project's board (or every board)
     test --skill <path>      Run a clean structural E2E test in /tmp
@@ -175,6 +184,26 @@ if (command === "check") {
   process.exit((await runCheck(rest)) ? 0 : 1);
 }
 
+if (command === "run-card") {
+  const { runRunCard } = await import("../cli/run-card.js");
+  process.exit((await runRunCard(rest)) ? 0 : 1);
+}
+
+if (command === "dispatch") {
+  const { runDispatch } = await import("../cli/dispatch.js");
+  process.exit((await runDispatch(rest)) ? 0 : 1);
+}
+
+if (command === "pause") {
+  const { runPause } = await import("../cli/pause.js");
+  process.exit((await runPause(rest)) ? 0 : 1);
+}
+
+if (command === "resume") {
+  const { runResume } = await import("../cli/pause.js");
+  process.exit((await runResume(rest)) ? 0 : 1);
+}
+
 if (command === "ps") {
   const { runPs } = await import("../cli/ps.js");
   process.exit((await runPs()) ? 0 : 1);
@@ -248,6 +277,7 @@ if (command && command !== "board") {
 
 // ---- default: serve the board ----
 const statusPath = String(flag(["--path", "-p"], ".conductor/status.json"));
+const conductorRootForRegistry = path.dirname(path.resolve(process.cwd(), String(flag(["--path", "-p"], ".conductor/status.json"))));
 const conductorArg = flag(["--workflow", "--conductor", "-c"], null);
 const conductorPath = conductorArg ? path.resolve(process.cwd(), String(conductorArg)) : null;
 const wantedPort = Number(flag(["--port"], 3042)) || 3042;
@@ -256,20 +286,8 @@ const wantedPort = Number(flag(["--port"], 3042)) || 3042;
 // cron, cloud/no-display, or an explicit user request.
 const headless = argv.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
 
-function openBrowser(url) {
-  const cmd =
-    process.platform === "darwin"
-      ? "open"
-      : process.platform === "win32"
-        ? "cmd"
-        : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-  try {
-    spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
-  } catch {
-    /* opening the browser is best-effort */
-  }
-}
+// Consolidated: single shared openBrowser (stable canonical URL focuses the tab).
+const openBrowser = ensureOpenBrowser;
 
 function repoKey(cwd = process.cwd()) {
   return crypto.createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 24);
@@ -320,7 +338,12 @@ async function listenOnRequestedPort(port) {
     return await startServer({ statusPath, conductorPath, port });
   } catch (e) {
     if (e && e.code === "EADDRINUSE") {
-      throw new Error(`port ${port} is already in use; stop or reuse the existing board instead of starting another port`);
+      // PHASE A: identity = port. A healthy board already holds this port, so
+      // ATTACH to it instead of throwing — never spawn a second port, never
+      // SIGTERM the incumbent.
+      const health = await ensureGetHealth(port);
+      if (health) return { attached: true, health, port };
+      throw new Error(`port ${port} is in use by a process that is not a healthy board; stop it and retry`);
     }
     throw e;
   }
@@ -367,19 +390,16 @@ function pidAlive(pid) {
 
 // Probe a recorded board's /health endpoint — distinguishes a live, serving
 // board (reuse it) from a wedged pid that holds the port but isn't responding.
+// Consolidated: delegate to the single shared health check (identity = port).
 async function boardHealthy(url) {
   if (!url) return false;
+  let port;
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 1200);
-    const r = await fetch(`${url}/health`, { signal: ctrl.signal });
-    clearTimeout(t);
-    if (!r.ok) return false;
-    const body = await r.json().catch(() => null);
-    return !!body && body.status === "ok";
+    port = Number(new URL(url).port) || 80;
   } catch {
     return false;
   }
+  return !!(await ensureGetHealth(port));
 }
 
 /**
@@ -457,6 +477,29 @@ async function preflightStaleBoard(serverJsonPath) {
   return reuse;
 }
 
+// PHASE A: identity = port. Probe the wanted port first — a healthy board there
+// IS the board; attach (print + exit), never bind a second port, never SIGTERM it.
+{
+  const liveHealth = await ensureGetHealth(wantedPort);
+  if (liveHealth) {
+    const liveUrl = ensureCanonicalUrl(wantedPort);
+    // PHASE B: attaching from a new project must still register this root so the
+    // live board discovers + watches it (the whole point of one board per port).
+    registryRegisterRoot(conductorRootForRegistry);
+    registryRegisterBoard({ port: wantedPort, pid: liveHealth.pid, url: liveUrl });
+    console.log("");
+    console.log(`  ${iris("🎼 conductor-board")}`);
+    console.log(
+      `  ${bold("Already live at")} ${mint(liveUrl)} ${dim(
+        `— attaching (pid ${liveHealth.pid ?? "?"}, port ${wantedPort})`,
+      )}`,
+    );
+    console.log(`  ${dim("one persistent board per port — not opening another tab.")}`);
+    console.log("");
+    process.exit(0);
+  }
+}
+
 const preflightServerJson = path.join(
   path.dirname(path.resolve(process.cwd(), statusPath)),
   "server.json",
@@ -475,13 +518,31 @@ if (existing) {
   process.exit(0);
 }
 
-const { conductorPath: resolvedConductor, absStatus, server, serverJsonPath, workflows } =
-  await listenOnRequestedPort(wantedPort);
+const listened = await listenOnRequestedPort(wantedPort);
+if (listened && listened.attached) {
+  const liveUrl = ensureCanonicalUrl(wantedPort);
+  // PHASE B: same as the liveHealth attach — register this root machine-wide.
+  registryRegisterRoot(conductorRootForRegistry);
+  registryRegisterBoard({ port: wantedPort, pid: listened.health?.pid, url: liveUrl });
+  console.log("");
+  console.log(`  ${iris("🎼 conductor-board")}`);
+  console.log(
+    `  ${bold("Already live at")} ${mint(liveUrl)} ${dim(
+      `— attaching (pid ${listened.health?.pid ?? "?"}, port ${wantedPort})`,
+    )}`,
+  );
+  console.log(`  ${dim("one persistent board per port — not opening another tab.")}`);
+  console.log("");
+  process.exit(0);
+}
+const { conductorPath: resolvedConductor, absStatus, server, serverJsonPath, workflows } = listened;
 const port = server.address().port;
 const url = `http://localhost:${port}/`;
 const registry = registryPath();
 const firstWorkflow = (workflows && workflows[0]) || null;
-const browserUrl = boardBrowserUrl(url, firstWorkflow);
+// Stable canonical URL for the port — opening the same URL focuses the
+// existing tab instead of stacking a new one (single shared impl).
+const browserUrl = ensureCanonicalUrl(port, firstWorkflow);
 const rel = (p) => (p ? path.relative(process.cwd(), p) || p : null);
 
 syncRegistry(registry, readJsonMaybe(serverJsonPath) || { port, url, pid: process.pid }, {
@@ -490,6 +551,12 @@ syncRegistry(registry, readJsonMaybe(serverJsonPath) || { port, url, pid: proces
   status_path: absStatus,
   workflow_path: resolvedConductor,
 });
+
+// PHASE B: this bare-default door spawns its own board (it does not route
+// through ensureBoard), so register its root + board in the machine-wide
+// registry here. That lets THIS board span every project that later attaches.
+registryRegisterRoot(path.dirname(absStatus));
+registryRegisterBoard({ port, pid: process.pid, url });
 
 console.log("");
 console.log(`  ${iris("🎼 conductor-board")}`);

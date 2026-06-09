@@ -828,6 +828,11 @@ export async function runStatusInit(args) {
     goal: (doc.description || "").trim().replace(/\s+/g, " "),
     current_step: null,
     started_at: now(),
+    // Timer accumulator (paused-aware): elapsed_ms accumulates only RUNNING time;
+    // running_since marks when the current running interval began (null when paused/
+    // done/failed). At run start we are running from started_at with zero accrued.
+    elapsed_ms: 0,
+    running_since: now(),
     steps,
   };
   const root = conductorRootFromStatus(sp);

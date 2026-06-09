@@ -126,3 +126,15 @@ export function clockSince(start: string | undefined, now: number, end?: string)
   const s = secs % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+/**
+ * "m:ss" from a millisecond duration — the paused-aware timer accumulator's display
+ * (elapsed_ms + live running interval). Negative/NaN clamps to "0:00".
+ */
+export function fmtElapsedMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  const secs = Math.floor(ms / 1000);
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}

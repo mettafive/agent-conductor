@@ -8,6 +8,7 @@ const CLS: Record<string, string> = {
   checking: "led led-gate", // green↔amber — warning / checking
   done: "led led-done",
   failed: "led led-failed", // red↔green — something went wrong here
+  paused: "led led-paused", // calm steady blue — held on purpose, not failed
   stalled: "led led-stalled",
   pending: "led led-pending",
   idle: "led led-pending",
