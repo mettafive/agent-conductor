@@ -69,8 +69,10 @@ const HELP = `
     step <id> <state>        running | done | failed  (state)
     gate <id> <state>        checking | passed | failed
     update <id> "note"       Append a progress update. Alias: heartbeat.
-                             Use Codex-style concise context: what changed,
-                             what you learned, decided, or are handing off.
+                             Write each note as ONE present-tense status line a
+                             person can scan — what changed, what you learned, or
+                             what you're handing off. No preamble, no restating
+                             the card title.
     heartbeat <id> "note"    Back-compat alias for update (--iteration, --insight-type,
                              --insight-seed, --final, --to <step>)
     suggest "title" --scope SC    Append a learning to the conductor's knowledge:
@@ -81,6 +83,8 @@ const HELP = `
                              Record an independent checker verdict for a card
     complete <step>[::iter::sub]   Consume checker verdict and require an output receipt
     feedback <step>[::iter::sub]   Read latest checker failure and attempts left
+    backfill-summaries <status> [--dry-run]   One-shot: regenerate clean verdict
+                             summaries into a run's stored gate_detail (stored data only)
 
   Board options
     --path, -p <file>        Path to status.json   (default: .conductor/status.json)
@@ -230,6 +234,11 @@ if (command === "gate-result") {
 if (command === "learn-card") {
   const { runLearnCard } = await import("../cli/learning.js");
   process.exit((await runLearnCard(rest)) ? 0 : 1);
+}
+
+if (command === "backfill-summaries") {
+  const { runBackfillSummaries } = await import("../cli/backfill.js");
+  process.exit((await runBackfillSummaries(rest)) ? 0 : 1);
 }
 
 if (command && command !== "board") {

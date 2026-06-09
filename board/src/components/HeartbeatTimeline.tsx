@@ -25,9 +25,9 @@ interface Props {
   loop?: LoopState;
   /** parallel-agent overviews per card id — when present, the card defaults to its overview */
   cardOverviews?: Record<string, string>;
-  /** developer comments on this step's cards */
+  /** Accepted for backwards-compat with callers that still pass them, but no longer used here:
+   *  comments now live as ONE card-level thread in WorkflowCard, not per activity group. */
   notes?: DeveloperNote[];
-  /** workflow name + step id — needed to persist a comment to the server */
   workflow?: string;
   step?: string;
 }
@@ -36,7 +36,7 @@ interface Props {
  * The per-card heartbeat history as a vertical timeline — connected dots, with
  * finalBeats marked as handoffs. Loop steps get iteration filter tabs.
  */
-export function HeartbeatTimeline({ entries, learnings, now, running, loop, cardOverviews, notes, workflow, step }: Props) {
+export function HeartbeatTimeline({ entries, learnings, now, running, loop, cardOverviews }: Props) {
   const iterations = loop?.iterations.map((i) => i.item) ?? [];
   const [filter, setFilter] = useState<string>("all");
 
@@ -53,7 +53,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
   }, [shown.length, running]);
 
   return (
-    <div className="mt-2.5 border-t border-line pt-2 pl-7">
+    <div className="mt-2.5 -ml-7 border-t border-line pt-2 pl-0">
       {iterations.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-1">
           {["all", ...iterations].map((it) => {
@@ -110,11 +110,7 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
               <GroupBlock
                 key={g.id}
                 group={g}
-                number={gi + 1}
                 overview={cardOverviews?.[g.id]}
-                cardNotes={(notes ?? []).filter((n) => n.card === g.id && n.status !== "removed")}
-                workflow={workflow}
-                step={step}
                 active={gi === groups.length - 1 && running && !g.hasFinal}
                 running={running}
                 now={now}
@@ -133,25 +129,15 @@ export function HeartbeatTimeline({ entries, learnings, now, running, loop, card
  *  shows its SUMMARY instead — the overview replaces the stream), then COMMENTS at the bottom. */
 function GroupBlock({
   group,
-  number,
   overview,
-  cardNotes,
-  workflow,
-  step,
   active,
   running,
   now,
   showIter,
 }: {
   group: BeatGroup;
-  /** the block's position on the timeline spine (1-based) */
-  number: number;
   /** parallel-agent summary for this card — replaces the stream once the card closes */
   overview?: string;
-  /** the developer's comments pinned to this card (a thread) */
-  cardNotes?: DeveloperNote[];
-  workflow?: string;
-  step?: string;
   /** the live card — streams its rows; closed cards show their summary */
   active: boolean;
   running: boolean;
@@ -159,8 +145,6 @@ function GroupBlock({
   showIter: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const notes = cardNotes ?? [];
-  const canComment = !!workflow && !!step;
   const rows = detailBeats(group); // the heartbeats under the card name
   const iter = showIter ? group.beats[0]?.iteration : undefined;
   const handoff = group.beats.find((b) => b.finalBeat)?.handoff;
@@ -178,17 +162,19 @@ function GroupBlock({
         active ? "border-mint/30" : "border-line"
       }`}
     >
-      {/* numbered node sitting on the timeline spine */}
+      {/* heartbeat node sitting on the timeline spine — a white heart per beat, → for the handoff */}
       <span
-        className={`absolute -left-7 top-2.5 grid h-[22px] w-[22px] place-items-center rounded-full border bg-ink font-mono text-[9px] leading-none ${
+        className={`absolute -left-7 top-2.5 grid h-[22px] w-[22px] place-items-center rounded-full border bg-ink font-mono leading-none ${
+          group.hasFinal ? "text-[9px]" : "text-[11px]"
+        } ${
           active
             ? "border-mint/60 text-mint"
             : group.hasFinal
               ? "border-mint/40 text-mint/80"
-              : "border-line-2 text-mist"
+              : "border-line-2 text-chalk"
         }`}
       >
-        {group.hasFinal ? "→" : String(number).padStart(2, "0")}
+        {group.hasFinal ? "→" : "♥"}
       </span>
 
       {/* header — the title gets the room and wraps to as many lines as it needs (never truncates to
@@ -212,20 +198,22 @@ function GroupBlock({
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-2">{overview}</p>
       ) : rows.length > 0 ? (
         <div className="mt-2 space-y-1 border-l border-line pl-2.5">
-          {shownRows.map((h, i) => (
-            <div key={i}>
-              <span
-                className="inline-block rounded bg-line-2/40 px-1 font-mono text-[8.5px] leading-[1.5] text-dim"
-                title={h.at}
-              >
-                {absTime(h.at)}
-              </span>
-              <p className="mt-0.5 text-[11px] leading-snug text-mist-2">
-                {renderNote(h.note)}
-                {h.insight && <span className="mt-0.5 block text-[9.5px] italic text-amber/90">↳ {h.insight.seed}</span>}
-              </p>
-            </div>
-          ))}
+          {shownRows.map((h, i) => {
+            return (
+              <div key={i}>
+                <span
+                  className="inline-block rounded bg-line-2/40 px-1 font-mono text-[10px] leading-[1.5] text-mist"
+                  title={h.at}
+                >
+                  {absTime(h.at)}
+                </span>
+                <p className="mt-0.5 text-[12px] leading-snug text-mist-2">
+                  {renderNote(h.note)}
+                  {h.insight && <span className="mt-0.5 block text-[10px] italic text-amber/90">↳ {h.insight.seed}</span>}
+                </p>
+              </div>
+            );
+          })}
           {collapsible && (
             <button
               onClick={() => setExpanded((e) => !e)}
@@ -239,26 +227,13 @@ function GroupBlock({
 
       {/* handoff to the next step */}
       {handoff?.to && <p className="mt-1.5 font-mono text-[9px] text-mint/80">→ handoff to {handoff.to}</p>}
-
-      {/* comments — prominent, at the bottom: the flow manager's tweak point. The whole region
-          stops click/keydown from bubbling, so interacting with it never toggles the enclosing card
-          open/closed (the card's own onClick lives on an ancestor). */}
-      {canComment && (
-        <div
-          className="mt-2.5 border-t border-line pt-2"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <NoteThread notes={notes} workflow={workflow!} step={step!} card={group.id} cardTitle={group.title} />
-        </div>
-      )}
     </div>
   );
 }
 
 /** The thread of developer notes on one card. Every comment becomes a knowledge candidate
  *  when the run is archived; edits/removals append to the server-side audit. */
-function NoteThread({
+export function NoteThread({
   notes,
   workflow,
   step,

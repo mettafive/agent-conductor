@@ -4,10 +4,9 @@ import type { BoardModel, BoardStep, Column as Col, DeveloperNote } from "../lib
 import { fmtDur } from "../lib/format";
 import { clockSince } from "../lib/view";
 import { renderNote } from "../lib/heartbeat";
-import { postComment } from "../lib/groups";
 import { useNow } from "../lib/useNow";
 import { Led } from "./Led";
-import { HeartbeatTimeline } from "./HeartbeatTimeline";
+import { HeartbeatTimeline, NoteThread } from "./HeartbeatTimeline";
 
 const BASE_COLS: Col[] = ["pending", "running", "checking", "done"];
 const DWELL_MS = 1000;
@@ -49,31 +48,6 @@ const MOVE = {
   layout: { duration: 0.42, ease: [0.45, 0, 0.55, 1] },
   default: { duration: 0.18, ease: "easeOut" },
 } as const;
-
-function evidenceSummary(step: BoardStep): string | null {
-  const text = step.criteria.find((c) => c.evidence)?.evidence;
-  if (!text) return null;
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function usefulOneLine(text: unknown): string | null {
-  if (typeof text !== "string") return null;
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  return /[A-Za-z0-9ÅÄÖåäö]/.test(cleaned) ? cleaned : null;
-}
-
-function checkerSummary(step: BoardStep): string | null {
-  const summaryCandidate = step.criteria.find((c) => usefulOneLine(c.checked_summary) || usefulOneLine(c.summary));
-  const summary = usefulOneLine(summaryCandidate?.checked_summary) ?? usefulOneLine(summaryCandidate?.summary);
-  if (summary) return summary;
-  const text = evidenceSummary(step);
-  if (!text) return null;
-  const withoutInlineSummary = text.replace(/\bSUMMARY\s*:\s*.*$/i, "").trim();
-  const cleaned = withoutInlineSummary.replace(/^(PASS|FAIL)\s*(?:[.—:;-]\s*)?/i, "").trim();
-  if (!/[A-Za-z0-9ÅÄÖåäö]/.test(cleaned)) return null;
-  const firstFact = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned;
-  return firstFact.length > 120 ? `${firstFact.slice(0, 117)}...` : firstFact;
-}
 
 function requirementTitles(step: BoardStep, steps: BoardStep[]): string[] {
   return step.requires
@@ -162,10 +136,6 @@ function statusLine(step: BoardStep, steps: BoardStep[], maxAttempts: number): s
   if (step.column === "checking") return "checking";
   if (step.column === "failed") return `attempt ${step.attempt}/${maxAttempts} exhausted`;
   return "passed";
-}
-
-function shortEvidence(step: BoardStep): string | null {
-  return checkerSummary(step);
 }
 
 function primaryArtifactPath(step: BoardStep): string | undefined {
@@ -423,133 +393,6 @@ function MarkdownPreview({ text, workflow }: { text: string; workflow: string })
   );
 }
 
-function cleanOneLine(text: unknown, limit = 150): string | null {
-  if (text === undefined || text === null) return null;
-  const raw =
-    typeof text === "string"
-      ? text
-      : typeof text === "object"
-        ? JSON.stringify(text)
-        : String(text);
-  const cleaned = raw
-    .replace(/^\s*(PASS|FAIL|MADE|CHECKED|SUMMARY)\s*[—:-]?\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned) return null;
-  const first = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned;
-  return first.length > limit ? `${first.slice(0, limit - 3)}...` : first;
-}
-
-function madeSummary(step: BoardStep): string {
-  const criterionMade = step.criteria.find((c) => c.made_summary)?.made_summary;
-  const handoffProduced = step.heartbeat.find((h) => h.handoff?.produced)?.handoff?.produced;
-  const finalContext = step.heartbeat.find((h) => h.finalBeat)?.handoff?.context;
-  const output = step.output_value;
-  const latestAgent = step.heartbeat.filter((h) => !h.system).at(-1)?.note;
-  return (
-    cleanOneLine(criterionMade) ??
-    cleanOneLine(handoffProduced) ??
-    cleanOneLine(output) ??
-    cleanOneLine(finalContext) ??
-    cleanOneLine(latestAgent) ??
-    cleanOneLine(step.instruction) ??
-    "Completed the requested work for this card."
-  );
-}
-
-function checkedSummary(step: BoardStep): string {
-  return checkerSummary(step) ?? (step.column === "failed" ? "Checker did not record a passing summary." : "Checker verified the instruction was satisfied.");
-}
-
-function CardComments({
-  workflow,
-  step,
-  notes,
-}: {
-  workflow: string;
-  step: BoardStep;
-  notes: DeveloperNote[];
-}) {
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const visibleNotes = notes.filter((note) => note.status !== "removed");
-
-  async function submit() {
-    const value = text.trim();
-    if (!value || saving) return;
-    setSaving(true);
-    setError(null);
-    const ok = await postComment(workflow, {
-      step: step.id,
-      card: step.id,
-      cardTitle: step.title,
-      text: value,
-      directive: false,
-    });
-    setSaving(false);
-    if (!ok) {
-      setError("Could not save comment.");
-      return;
-    }
-    setText("");
-  }
-
-  return (
-    <div onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center gap-2">
-        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">Comments</div>
-        {visibleNotes.length > 0 && (
-          <span className="rounded-full border border-line px-1.5 py-0.5 font-mono text-[8px] text-dim">
-            {visibleNotes.length}
-          </span>
-        )}
-      </div>
-
-      {visibleNotes.length > 0 && (
-        <div className="mt-1.5 space-y-1.5">
-          {visibleNotes.map((note) => (
-            <div key={note.id} className="rounded border border-line/70 bg-ink/30 px-2 py-1.5 text-[11px] leading-snug text-mist">
-              <div className="mb-1 flex items-center gap-2 font-mono text-[8.5px] uppercase tracking-[0.12em]">
-                <span className="text-dim">comment</span>
-                <span className="text-dim">{new Date(note.updated_at ?? note.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-              </div>
-              <div>{note.text}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-2 rounded border border-line/70 bg-panel/30 p-2">
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-          placeholder="Leave a comment for this card..."
-          className="h-16 w-full resize-none rounded border border-line bg-ink/60 px-2 py-1.5 text-[11px] leading-snug text-mist outline-none placeholder:text-dim focus:border-mint/40"
-        />
-        <div className="mt-1.5 flex items-center gap-2">
-          {error && <span className="text-[10px] text-rose">{error}</span>}
-          <button
-            type="button"
-            disabled={!text.trim() || saving}
-            onClick={() => void submit()}
-            className="ml-auto rounded border border-mint/30 bg-mint/10 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-mint transition-colors hover:bg-mint/20 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
-          >
-            {saving ? "saving" : "comment"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function columnPath(from: Col, to: Col): Col[] {
   if (from === to) return [];
   if (to === "failed") return ["failed"];
@@ -696,9 +539,9 @@ function CompletionHeader({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <Led state={model.overallStatus} />
-            <h2 className="truncate text-[16px] font-semibold text-chalk">{model.workflow}</h2>
+            <h2 className="truncate text-[20px] font-semibold text-chalk">{model.workflow}</h2>
           </div>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-mist">
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[14px] text-mist-2">
             <span>{totalTime || "0s"} total</span>
             <span>{model.total} cards</span>
             {retries > 0 && <span>{retries} retries</span>}
@@ -706,7 +549,7 @@ function CompletionHeader({
             {failed > 0 && <span className="text-rose">{failed} failed</span>}
           </div>
         </div>
-        <div className="flex rounded-md border border-line bg-panel p-0.5 text-[12px]">
+        <div className="flex rounded-md border border-line bg-panel p-0.5 text-[15px]">
           <button
             className={`rounded px-3 py-1 ${view === "summary" ? "bg-panel-2 text-chalk" : "text-mist hover:text-chalk"}`}
             type="button"
@@ -727,6 +570,271 @@ function CompletionHeader({
   );
 }
 
+// One beat of the gloss: a spine node + a single quiet line; the full check
+// waits behind a click, the insight behind a tap on the amber marker.
+function GlossRow({
+  model,
+  step,
+  maxAttempts,
+  onArtifact,
+}: {
+  model: BoardModel;
+  step: BoardStep;
+  maxAttempts: number;
+  onArtifact: (step: BoardStep) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [drawer, setDrawer] = useState<"criteria" | "insights" | null>(null);
+
+  const tone = stepTone(step);
+  const cls = toneClasses(tone);
+  const failed = step.column === "failed";
+  const dur = fmtDur(step.started_at, step.completed_at);
+  // stat — only attempt · dur (no "passed" word); on fail the label carries "failed after N".
+  const statLine = `${attemptLabel(step, maxAttempts)}${dur ? ` · ${dur}` : ""}`;
+  const canBrowseArtifacts = canOpenReceipt(step);
+
+  // Insight marker: only when a knowledge entry was authored from this card.
+  const cardInsights = (model.knowledge || []).filter(
+    (k) => String(k.source_card ?? "") === String(step.id),
+  );
+  const hasInsight = cardInsights.length > 0;
+
+  // Summary resolution — best available, two clean sentences, authored at the
+  // source. If the card has a verdict, show the CHECKER summary (outcome);
+  // otherwise show the COMPOSER summary (intent) from the workflow step def.
+  // Nothing is generated here on the live path.
+  const verdictCriterion = step.criteria.find((c) => typeof c.passed === "boolean");
+  const checkerSummary = verdictCriterion?.summary ?? null;
+  const summaryCriterion = step.criteria.find((c) => c.summary || c.checked_summary || c.evidence);
+  const summaryLine = checkerSummary ?? summaryCriterion?.summary ?? step.summary ?? null;
+  const checkedLine = summaryCriterion?.checked_summary ?? null;
+  const evidence = step.criteria.find((c) => c.evidence)?.evidence ?? null;
+  const failingCriterion = step.criteria.find((c) => c.passed === false);
+
+  // Dedup logic: when the verdict has no real summary/checked_summary (facets
+  // collapsed — the hand-authored case where `summary` is just firstSentence of
+  // the evidence), the summary is a prefix of the evidence and would duplicate
+  // it. In that case show the full evidence once and skip the SUMMARY/CHECKED
+  // lines. Otherwise render clean SUMMARY + CHECKED, deduped against each other.
+  const normalize = (s: string | null) => (s ? s.replace(/\s+/g, " ").trim() : "");
+  const evNorm = normalize(evidence);
+  const sumNorm = normalize(summaryLine);
+  const chkNorm = normalize(checkedLine);
+  const isPrefixOfEvidence = (s: string) => !!s && !!evNorm && evNorm.startsWith(s.replace(/\.\.\.$/, ""));
+  const summaryDerivedFromEvidence =
+    (!summaryLine && !checkedLine && !!evidence) ||
+    (!checkedLine && isPrefixOfEvidence(sumNorm)) ||
+    (isPrefixOfEvidence(sumNorm) && isPrefixOfEvidence(chkNorm));
+  const summaryEqualsChecked = !!sumNorm && sumNorm === chkNorm;
+
+  return (
+    <motion.div
+      layout
+      variants={{
+        hidden: { opacity: 0, y: 12 },
+        show: { opacity: 1, y: 0 },
+      }}
+      transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+      className="relative"
+    >
+      {/* the gloss row — node · title · stat. lifted off the black. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+          setOpen((v) => !v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+        className={`flex cursor-pointer items-center gap-3.5 rounded-md border px-3 py-2.5 transition-colors hover:bg-panel-2/40 ${
+          failed ? "border-rose/30 bg-rose/5" : "border-line/60 bg-panel/30"
+        }`}
+      >
+        {/* spine node — smaller; colored by tone */}
+        <div className="relative z-10 grid h-5 w-5 shrink-0 place-items-center">
+          <div className={`grid h-4 w-4 place-items-center rounded-full border border-line bg-ink font-mono text-[10px] ${cls.meta} ${cls.dot}`}>
+            {cls.icon}
+          </div>
+        </div>
+
+        {/* title — the story, given the room */}
+        <h3 className={`min-w-0 flex-1 truncate text-[16px] font-medium leading-snug ${failed ? "text-rose" : "text-chalk"}`}>
+          {step.title}
+        </h3>
+
+        {/* stat — one quiet line: try · dur (no "passed" word) */}
+        <span className={`shrink-0 font-mono text-[13px] ${failed ? "text-rose" : "text-mist-2"}`}>
+          {statLine}
+        </span>
+      </div>
+
+      {/* the click — inquiry: the full check beneath the beat */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="overflow-hidden"
+          >
+            <div className="ml-[42px] mt-1.5 space-y-3 border-l border-line pl-4">
+              {/* failing criterion — loud, only on failure */}
+              {failed && failingCriterion && (
+                <div className="rounded-md border border-rose/40 bg-rose/10 px-3 py-2">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-rose">Failed check</div>
+                  <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-mist-2">
+                    {failingCriterion.summary || failingCriterion.evidence || failingCriterion.name || failingCriterion.text}
+                  </p>
+                </div>
+              )}
+
+              {/* one verdict — clean & full, deduped. When the verdict has no
+                  real summary/checked_summary (facets collapsed), show the full
+                  evidence once instead of a summary that duplicates it. */}
+              {summaryDerivedFromEvidence ? (
+                evidence && (
+                  <p className={`whitespace-pre-wrap text-[15px] leading-snug ${failed ? "text-rose" : "text-mist-2"}`}>
+                    {evidence}
+                  </p>
+                )
+              ) : (
+                <>
+                  {summaryLine && (
+                    <div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-mist-2">Summary</div>
+                      <p className={`mt-1 whitespace-pre-wrap text-[15px] leading-snug ${failed ? "text-rose" : "text-mist-2"}`}>
+                        {summaryLine}
+                      </p>
+                    </div>
+                  )}
+                  {checkedLine && !summaryEqualsChecked && (
+                    <div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-mist-2">Checked</div>
+                      <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-mist-2">{checkedLine}</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* button row — Artifact · Criteria · Insights, each its own surface */}
+              <div className="flex flex-wrap gap-2">
+                {canBrowseArtifacts && (
+                  <button
+                    type="button"
+                    onClick={() => onArtifact(step)}
+                    className="rounded-md border border-mint/30 bg-mint/10 px-2.5 py-1 font-mono text-[12px] text-mint transition-colors hover:bg-mint/20"
+                  >
+                    Artifact
+                  </button>
+                )}
+                {step.criteria.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDrawer((d) => (d === "criteria" ? null : "criteria"))}
+                    className={`rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${
+                      drawer === "criteria"
+                        ? "border-line-2 bg-panel-2/60 text-chalk"
+                        : "border-line text-mist-2 hover:bg-panel-2/40"
+                    }`}
+                  >
+                    Criteria
+                  </button>
+                )}
+                {hasInsight && (
+                  <button
+                    type="button"
+                    onClick={() => setDrawer((d) => (d === "insights" ? null : "insights"))}
+                    className={`rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${
+                      drawer === "insights"
+                        ? "border-amber/40 bg-amber/[0.12] text-amber"
+                        : "border-amber/25 text-amber hover:bg-amber/10"
+                    }`}
+                  >
+                    Insights
+                  </button>
+                )}
+              </div>
+
+              {/* Criteria drawer — ✓/✕/· list + full raw evidence behind it */}
+              <AnimatePresence initial={false}>
+                {drawer === "criteria" && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-3">
+                      <ul className="space-y-1">
+                        {step.criteria.map((c, i) => (
+                          <li key={i} className="flex items-start gap-2 text-[14px] leading-snug text-mist-2">
+                            <span
+                              className={`mt-0.5 shrink-0 font-mono ${
+                                c.passed === false ? "text-rose" : c.passed === true ? "text-mint" : "text-mist"
+                              }`}
+                            >
+                              {c.passed === false ? "✕" : c.passed === true ? "✓" : "·"}
+                            </span>
+                            <span className="min-w-0">{c.name || c.text || c.summary}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {evidence && (
+                        <div className="rounded-md border border-line/60 bg-panel/30 px-3 py-2">
+                          <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-mist">Evidence</div>
+                          <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-mist">{evidence}</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Insights drawer — title · detail · tag chip · K-id */}
+              <AnimatePresence initial={false}>
+                {drawer === "insights" && hasInsight && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-1.5">
+                      {cardInsights.map((k, i) => (
+                        <div key={k.id ?? i} className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono text-[13px] text-chalk">{k.title}</span>
+                            {k.id && <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{k.id}</span>}
+                            {k.tag && (
+                              <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{k.tag}</span>
+                            )}
+                          </div>
+                          {(k.detail || k.note) && (
+                            <p className="mt-1.5 text-[13px] leading-relaxed text-mist-2">{k.detail || k.note}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 function CompletionTimeline({
   model,
   steps,
@@ -742,86 +850,29 @@ function CompletionTimeline({
   return (
     <>
       <div className="px-5 py-5">
-        <div className="mx-auto max-w-[1180px]">
+        <div className="mx-auto max-w-[820px]">
           <motion.div
             initial="hidden"
             animate="show"
             variants={{
               hidden: {},
-              show: { transition: { staggerChildren: 0.09, delayChildren: 0.04 } },
+              show: { transition: { staggerChildren: 0.06, delayChildren: 0.04 } },
             }}
-            className="relative space-y-3.5"
+            className="relative"
           >
-            <div className="pointer-events-none absolute left-1/2 top-0 hidden h-full w-px -translate-x-1/2 bg-line md:block" />
-            {rows.map((step) => {
-              const tone = stepTone(step);
-              const cls = toneClasses(tone);
-              const made = madeSummary(step);
-              const checked = checkedSummary(step);
-              const dur = fmtDur(step.started_at, step.completed_at);
-              const elapsed = fmtDur(model.startedAt, step.completed_at || step.started_at);
-              const meta = `${attemptLabel(step, maxAttempts)}${dur ? ` · ${dur}` : ""}`;
-              const proofLabel = step.column === "failed" ? "Failed check" : "Passed check";
-              const canBrowseArtifacts = canOpenReceipt(step);
-
-              return (
-                <motion.div
+            {/* the spine — a vertical thread the nodes ride */}
+            <div className="pointer-events-none absolute bottom-3 left-[27px] top-3 w-px bg-line" />
+            <div className="relative space-y-1">
+              {rows.map((step) => (
+                <GlossRow
                   key={step.id}
-                  layout
-                  variants={{
-                    hidden: { opacity: 0, y: 12, scale: 0.985 },
-                    show: { opacity: 1, y: 0, scale: 1 },
-                  }}
-                  transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-                  className="relative grid gap-2.5 md:grid-cols-[minmax(0,1fr)_76px_minmax(0,1fr)] md:items-stretch md:gap-4"
-                >
-                  <div className={`rounded-md border border-line bg-panel px-4 py-3 ${tone === "red" ? "border-l-2 border-l-rose bg-rose/5" : ""}`}>
-                    <div className="flex items-start gap-2.5">
-                      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${tone === "red" ? "bg-rose" : tone === "amber" ? "bg-amber" : "bg-mint"}`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start gap-2">
-                          <h3 className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-chalk">{step.title}</h3>
-                          {canBrowseArtifacts && (
-                            <button
-                              type="button"
-                              onClick={() => setArtifactStep(step)}
-                              className="shrink-0 rounded border border-mint/30 bg-mint/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-mint transition-colors hover:bg-mint/20"
-                              title="Open this card's artifact"
-                            >
-                              artifact
-                            </button>
-                          )}
-                        </div>
-                        <p className="mt-1.5 text-[12px] leading-snug text-mist">{made}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="relative hidden min-h-[92px] md:flex md:items-center md:justify-center">
-                    <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-line" />
-                    <div className={`relative grid h-9 w-9 place-items-center rounded-full border border-line bg-ink font-mono text-[13px] ${cls.meta} ${cls.dot}`}>
-                      {cls.icon}
-                    </div>
-                    <div className="absolute top-[calc(50%+25px)] whitespace-nowrap rounded bg-ink px-1 font-mono text-[10px] text-dim">
-                      {elapsed || "0s"}
-                    </div>
-                  </div>
-
-                  <div className={`rounded-md border border-line bg-panel px-4 py-3 ${cls.border}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-dim">{proofLabel}</div>
-                        <p className={`mt-1.5 text-[12px] leading-snug ${tone === "red" ? "text-rose" : "text-mist"}`}>{checked}</p>
-                      </div>
-                      <div className={`shrink-0 font-mono text-[10px] leading-snug ${cls.meta}`}>
-                        <div>{meta}</div>
-                        <div className="mt-0.5 text-right text-dim md:hidden">{elapsed || "0s"}</div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
+                  model={model}
+                  step={step}
+                  maxAttempts={maxAttempts}
+                  onArtifact={setArtifactStep}
+                />
+              ))}
+            </div>
           </motion.div>
         </div>
       </div>
@@ -1138,28 +1189,28 @@ function CompileCompletePanel({
   );
 }
 
-function ExecutionCompletePanel({
-  model,
-  steps,
-  notes,
-}: {
-  model: BoardModel;
-  steps: BoardStep[];
-  notes?: DeveloperNote[];
-}) {
+/** Thin, sticky run-complete banner — mounted above the heartbeat terminal in App,
+ *  so the outcome + Improve & Run stay reachable from BOTH the summary and board
+ *  views. Animates in when the run settles; self-guards to normal execution runs
+ *  (not the compile / integration lifecycle workflows). */
+export function RunCompleteBanner({ model }: { model: BoardModel }) {
   const [integration, setIntegration] = useState<IntegrationSummary | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const visibleNotes = (notes || []).filter((note) => note.status !== "removed");
+
+  const settled = model.overallStatus === "done" || model.overallStatus === "failed";
+  const steps = model.steps.filter((s) => s.phase === "workflow");
+  const show =
+    settled && steps.length > 0 && !isCompileLifecycle(model, steps) && !isIntegrationLifecycle(model, steps);
+
   const knowledge = model.knowledge || [];
-  const agentInsights = knowledge.filter((item) => (item.source || "agent") !== "human");
-  const humanInsights = knowledge.filter((item) => item.source === "human");
-  const agentOpen = agentInsights.filter((item) => item.status === "open" || item.status === "emerging");
-  const humanOpen = humanInsights.filter((item) => item.status === "open" || item.status === "emerging");
-  const appliedCount = knowledge.filter((item) => item.status === "applied").length;
-  const openKnowledge = (model.knowledge || []).filter((item) => item.status === "open");
-  const passed = steps.filter((step) => step.column === "done").length;
-  const failed = steps.filter((step) => step.column === "failed").length;
+  const agentOpen = knowledge.filter(
+    (k) => (k.source || "agent") !== "human" && (k.status === "open" || k.status === "emerging"),
+  );
+  const appliedCount = knowledge.filter((k) => k.status === "applied").length;
+  const openKnowledge = knowledge.filter((k) => k.status === "open");
+  const passed = steps.filter((s) => s.column === "done").length;
+  const failedCount = steps.filter((s) => s.column === "failed").length;
   const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
   const buttonLabel = openKnowledge.length > 0 ? "Improve & Run" : "Run Again";
 
@@ -1187,136 +1238,60 @@ function ExecutionCompletePanel({
   }
 
   return (
-    <div className="border-b border-line bg-panel/40 px-5 py-4">
-      <div className="mx-auto max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
-        <div className="flex flex-wrap items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mint">Run complete</div>
-            <h3 className="mt-1 text-[15px] font-medium text-chalk">
-              {model.workflow} finished{totalTime ? ` in ${totalTime}` : ""}
-            </h3>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-mist">
-              <span>{passed}/{steps.length} passed</span>
-              {failed > 0 && <span className="text-rose">{failed} failed</span>}
-              {agentOpen.length > 0 && <span>{agentOpen.length} agent insight{agentOpen.length === 1 ? "" : "s"} open</span>}
-              {humanOpen.length > 0 && <span>{humanOpen.length} comment insight{humanOpen.length === 1 ? "" : "s"} open</span>}
-              {appliedCount > 0 && <span>{appliedCount} applied</span>}
-            </div>
-
-            {(knowledge.length > 0 || visibleNotes.length > 0) && (
-              <div className="mt-4 grid gap-3 border-t border-line pt-3 md:grid-cols-2">
-                <KnowledgePreview
-                  title="Agent insights"
-                  empty="No agent insights yet."
-                  items={agentInsights}
-                  preferred={["open", "emerging", "proven", "applied"]}
-                />
-                <KnowledgePreview
-                  title="Your comments"
-                  empty="No comment insights yet."
-                  items={humanInsights}
-                  preferred={["open", "emerging", "applied"]}
-                  fallbackNotes={visibleNotes}
-                />
-              </div>
-            )}
-
-            {integration && (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 16 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className="shrink-0 border-t border-line bg-panel/80 backdrop-blur"
+        >
+          {integration ? (
+            <div className="px-5 py-3">
               <IntegrationSummaryPanel
                 summary={integration}
                 starting={starting}
                 error={error}
                 onStart={() => void startRun(true, integration.run_id)}
               />
-            )}
-            {!integration && error && <div className="mt-2 text-[11px] text-rose">{error}</div>}
-          </div>
-
-          {!integration && (
-            <button
-              type="button"
-              disabled={starting}
-              onClick={() => void startRun()}
-              className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
-            >
-              {starting ? "Starting..." : buttonLabel}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function KnowledgePreview({
-  title,
-  empty,
-  items,
-  preferred,
-  fallbackNotes,
-}: {
-  title: string;
-  empty: string;
-  items: BoardModel["knowledge"];
-  preferred: string[];
-  fallbackNotes?: DeveloperNote[];
-}) {
-  const ordered = [...items].sort((a, b) => {
-    const ai = preferred.indexOf(a.status);
-    const bi = preferred.indexOf(b.status);
-    const ar = ai === -1 ? 99 : ai;
-    const br = bi === -1 ? 99 : bi;
-    if (ar !== br) return ar - br;
-    return String(b.id || b.title).localeCompare(String(a.id || a.title));
-  });
-  const counts = ordered.reduce<Record<string, number>>((acc, item) => {
-    acc[item.status] = (acc[item.status] || 0) + 1;
-    return acc;
-  }, {});
-  const shown = ordered.slice(0, 5);
-
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">{title}</div>
-        {preferred.map((status) =>
-          counts[status] ? (
-            <span key={status} className="rounded border border-line/70 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-mist">
-              {status} {counts[status]}
-            </span>
-          ) : null,
-        )}
-      </div>
-      <div className="mt-1.5 space-y-1.5">
-        {shown.map((item, index) => (
-          <div key={`${item.id || item.title}-${index}`} className="rounded border border-line/70 bg-panel/40 px-2 py-1.5 text-[11px] leading-snug text-mist">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className={`font-mono text-[9px] uppercase tracking-[0.1em] ${item.status === "open" ? "text-amber" : item.status === "applied" ? "text-mint" : "text-mist"}`}>
-                {item.status}
-              </span>
-              {item.tag && <span className="rounded bg-amber/[0.08] px-1 font-mono text-[9px] text-amber">{item.tag}</span>}
-              {item.source_card_title && <span className="text-dim">{item.source_card_title}</span>}
             </div>
-            <div className="mt-0.5 text-chalk">{item.title}</div>
-            {(item.detail || item.note) && <div className="mt-1 text-dim">{item.detail || item.note}</div>}
-          </div>
-        ))}
-        {shown.length === 0 &&
-          (fallbackNotes?.length ? (
-            fallbackNotes.slice(0, 5).map((note) => (
-              <div key={note.id} className="rounded border border-line/70 bg-panel/40 px-2 py-1.5 text-[11px] leading-snug text-mist">
-                <span className="text-chalk">{note.card_title || `Card ${note.card || note.step}`}</span>
-                <div className="mt-1 text-dim">{note.text}</div>
-              </div>
-            ))
           ) : (
-            <div className="rounded border border-line/60 bg-panel/20 px-2 py-2 font-mono text-[10px] text-dim">{empty}</div>
-          ))}
-        {ordered.length > shown.length && (
-          <div className="font-mono text-[10px] text-dim">+{ordered.length - shown.length} more</div>
-        )}
-      </div>
-    </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-mint">
+                  {failedCount > 0 ? "Run finished" : "Run complete"}
+                </div>
+                <div className="mt-0.5 truncate text-[14px] font-medium text-chalk">
+                  {model.workflow} finished{totalTime ? ` in ${totalTime}` : ""}
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[10.5px] text-mist">
+                  <span>
+                    {passed}/{steps.length} passed
+                  </span>
+                  {failedCount > 0 && <span className="text-rose">{failedCount} failed</span>}
+                  {agentOpen.length > 0 && (
+                    <span>
+                      {agentOpen.length} agent insight{agentOpen.length === 1 ? "" : "s"} open
+                    </span>
+                  )}
+                  {appliedCount > 0 && <span>{appliedCount} applied</span>}
+                </div>
+                {error && <div className="mt-1 text-[10.5px] text-rose">{error}</div>}
+              </div>
+              <button
+                type="button"
+                disabled={starting}
+                onClick={() => void startRun()}
+                className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
+              >
+                {starting ? "Starting..." : buttonLabel}
+              </button>
+            </div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1681,7 +1656,7 @@ function PendingColumnCards({
     <div className="space-y-3">
       {bands.map((band) => (
         <div key={band.key}>
-          <div className="mb-1.5 flex items-center gap-2 px-2 font-mono text-[9px] uppercase tracking-[0.14em] text-dim">
+          <div className="mb-1.5 flex items-center gap-2 px-2 font-mono text-[11px] uppercase tracking-[0.14em] text-mist">
             <span className={`h-1.5 w-1.5 rounded-full ${band.key === "ready" ? "bg-mint/70" : "bg-dim/70"}`} />
             <span>{band.title}</span>
           </div>
@@ -1721,10 +1696,10 @@ function WorkflowCard({
 }) {
   const [open, setOpen] = useState(false);
   const [artifactOpen, setArtifactOpen] = useState(false);
+  const [insightOpen, setInsightOpen] = useState(false);
+  const [conditionOpen, setConditionOpen] = useState(false);
   const now = useNow(5000);
-  const evidence = shortEvidence(step);
   const dur = fmtDur(step.started_at, step.completed_at);
-  const fullEvidence = step.criteria.find((c) => c.evidence)?.evidence;
   const latest = step.heartbeat.filter((h) => !h.system).at(-1) ?? step.heartbeat.at(-1);
   const finalBeat = step.heartbeat.find((h) => h.finalBeat);
   const cardNotes = (notes || []).filter(
@@ -1733,8 +1708,24 @@ function WorkflowCard({
   const passed = step.criteria.filter((c) => c.passed === true).length;
   const gateTotal = step.criteria.length;
   const canBrowseArtifacts = canOpenReceipt(step);
-  const hasDetail = true;
   const pendingVariant = variant === "pending";
+  // The checker verdict (authored human-readable: SUMMARY/MADE/CHECKED + evidence) and the
+  // failing criterion — folded into the timeline's Passed/Failed beat, never shown as a wall.
+  const verdict = step.criteria.find((c) => c.summary || c.evidence || c.made_summary || c.checked_summary);
+  const failingCriterion = step.criteria.find((c) => c.passed === false);
+  // Insight for this card: the knowledge entry(ies) authored from this card, plus the live beat.
+  const cardInsights = (model.knowledge || []).filter((k) => String(k.source_card ?? "") === String(step.id));
+  const beatInsight = step.heartbeat.find((h) => h.insight)?.insight;
+  const hasInsight = cardInsights.length > 0 || !!beatInsight;
+  const isRunning = step.column === "running" || step.column === "checking";
+  // One summary line, best available: live heartbeat while running; once the card
+  // has a verdict, the CHECKER summary (outcome); otherwise the COMPOSER summary
+  // (intent) from the workflow step def. Authored at the source, never generated.
+  const verdictCriterion = step.criteria.find((c) => typeof c.passed === "boolean");
+  const checkerSummary = verdictCriterion?.summary ?? null;
+  const summaryLine = isRunning
+    ? latest?.note
+    : checkerSummary || verdict?.summary || verdict?.evidence || step.summary;
   const [pulse, setPulse] = useState(false);
   const prevAt = useRef<string | undefined>(undefined);
   const seeded = useRef(false);
@@ -1763,7 +1754,6 @@ function WorkflowCard({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={MOVE}
-        onClick={() => setOpen((v) => !v)}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -1772,71 +1762,48 @@ function WorkflowCard({
             setOpen((v) => !v);
           }
         }}
-        className={`cursor-pointer rounded-md border-b border-line px-2.5 py-2.5 transition-colors duration-200 hover:bg-panel-2/50 ${
+        className={`mb-2 rounded-lg border border-line bg-panel-2/40 px-3.5 py-3 transition-colors duration-200 hover:border-line-2 hover:bg-panel-2/70 ${
           pulse ? (open ? "beat-flash-faint" : "beat-flash") : ""
         }`}
       >
+        {/* The collapsed summary (header + meta + latest preview) toggles the
+            card. The expanded body below does NOT toggle, so its text
+            (instruction, checker verdict, comments) can be selected and copied.
+            We also bail when there's an active text selection so a drag that
+            ends here doesn't collapse the card. */}
+        <div
+          className="cursor-pointer"
+          onClick={() => {
+            if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+            setOpen((v) => !v);
+          }}
+        >
+        {/* line 1 — dot · title · attempt · comment count · insight marker */}
         <div className="flex items-center gap-2.5">
           <Led state={step.column} />
-          <span className="min-w-0 flex-1 truncate text-[13px] text-chalk">{step.title}</span>
-          {!pendingVariant && cardNotes.length > 0 && (
-            <span
-              className="shrink-0 rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-mist"
-              title={`${cardNotes.length} comment${cardNotes.length === 1 ? "" : "s"}`}
-            >
-              {cardNotes.length} comment{cardNotes.length === 1 ? "" : "s"}
-            </span>
-          )}
-          {!pendingVariant && canBrowseArtifacts && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setArtifactOpen(true);
-              }}
-              className="shrink-0 rounded border border-mint/30 bg-mint/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-mint transition-colors hover:bg-mint/20"
-              title="Open this card's artifact"
-            >
-              artifact
-            </button>
-          )}
+          <span className="min-w-0 flex-1 truncate text-[16px] text-chalk">{step.title}</span>
           {!pendingVariant && step.attempt > 1 && (
-            <span title={`${step.attempt} attempts`} className="shrink-0 text-[11px] text-dim">
+            <span title={`${step.attempt} attempts`} className="shrink-0 text-[13px] text-mist">
               attempt {step.attempt}
             </span>
           )}
-        </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-[18px] text-[11px] text-dim">
-        <span className={pendingVariant ? "text-dim" : step.column === "pending" ? "text-mist" : ""}>
-          {pendingVariant ? (unmetRequirementIndexes(step, allSteps).length ? "pending" : "ready") : statusLine(step, allSteps, maxAttempts)}
-        </span>
-        {!pendingVariant && gateTotal > 0 && (
-          <span className="tabular-nums">
-            {passed}/{gateTotal} checks
-          </span>
-        )}
-        {!pendingVariant && dur && <span className="tabular-nums">{dur}</span>}
-        {!pendingVariant && finalBeat && <span title="handed off">→ {finalBeat.handoff?.to ?? "handed off"}</span>}
-        </div>
-        {!pendingVariant && latest && (
-        <div
-          title={latest.note}
-          className="mt-2 flex items-start gap-2 pl-[18px] text-[12px] leading-snug text-mist"
-        >
-          {latest.insight && (
+          {!pendingVariant && cardNotes.length > 0 && (
             <span
-              className="mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-amber"
-              title="carries an insight"
-            />
+              className="shrink-0 rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-mist-2"
+              title={`${cardNotes.length} comment${cardNotes.length === 1 ? "" : "s"}`}
+            >
+              {cardNotes.length}
+            </span>
           )}
-          <span className="whitespace-pre-wrap break-words">{renderNote(latest.note)}</span>
+          {!pendingVariant && step.column === "done" && (
+            <span className="shrink-0 text-[15px] leading-none text-mint" title="done">✓</span>
+          )}
         </div>
-        )}
-        {step.column === "done" && evidence && (
-          <div className="mt-2 line-clamp-2 pl-[18px] text-[11px] leading-snug text-mist">{evidence}</div>
-        )}
+        {/* Collapsed shows the title only. Status, checks, duration and the
+            summary all move into the open view below. */}
+        </div>
         <AnimatePresence initial={false}>
-          {open && hasDetail && (
+          {open && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -1844,44 +1811,204 @@ function WorkflowCard({
             transition={{ duration: 0.22 }}
             className="overflow-hidden"
           >
-            <div className="mt-2.5 space-y-2 border-t border-line pt-2 pl-7">
-              {gateTotal > 0 && (
-                <div className="space-y-1">
-                  {step.criteria.map((c, i) => (
-                    <div key={i} className="text-[11px] leading-snug text-mist">
-                      <span className={c.passed === true ? "text-mint" : c.passed === false ? "text-rose" : "text-dim"}>
-                        {c.passed === true ? "✓" : c.passed === false ? "×" : "·"}
-                      </span>{" "}
-                      {c.summary || c.name || c.text}
-                    </div>
-                  ))}
+            <div className="mt-2.5 space-y-2.5 border-t border-line pt-2.5 pl-7">
+              {/* status meta — moved out of the collapsed view: status · checks · duration · handoff */}
+              <div className="flex flex-wrap items-center gap-2 text-[14px] text-mist">
+                <span className={pendingVariant ? "text-mist" : step.column === "pending" ? "text-mist" : ""}>
+                  {pendingVariant ? (unmetRequirementIndexes(step, allSteps).length ? "pending" : "ready") : statusLine(step, allSteps, maxAttempts)}
+                </span>
+                {!pendingVariant && gateTotal > 0 && (
+                  <span className="tabular-nums">
+                    {passed}/{gateTotal} checks
+                  </span>
+                )}
+                {!pendingVariant && dur && <span className="tabular-nums">{dur}</span>}
+                {!pendingVariant && finalBeat && <span title="handed off">→ {finalBeat.handoff?.to ?? "handed off"}</span>}
+              </div>
+
+              {/* summary — moved out of the collapsed view; full text in the open view */}
+              {!pendingVariant && summaryLine && (
+                <p className="text-[15px] leading-snug text-mist-2">{renderNote(summaryLine)}</p>
+              )}
+
+              {/* failing criterion — loud, only on failure */}
+              {step.column === "failed" && failingCriterion && (
+                <div className="rounded-md border border-rose/40 bg-rose/10 px-2.5 py-2">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-rose">Failed check</div>
+                  <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-mist-2">
+                    {failingCriterion.summary || failingCriterion.evidence || failingCriterion.name || failingCriterion.text}
+                  </p>
                 </div>
               )}
-              <div>
-                <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">Instruction</div>
-                <p className="mt-1 text-[11px] leading-snug text-mist">{step.instruction}</p>
-              </div>
+
+              {/* activity timeline — the single history; the checker verdict now lives in the Condition drawer below */}
               {step.heartbeat.length > 0 && (
                 <HeartbeatTimeline
                   entries={step.heartbeat}
                   learnings={step.learnings}
                   now={now}
-                  running={step.column === "running" || step.column === "checking"}
+                  running={isRunning}
                   loop={step.loop}
                   cardOverviews={step.cardOverviews}
-                  notes={notes}
-                  step={step.id}
                 />
               )}
-              {fullEvidence && (
-                <div>
-                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-dim">Checker</div>
-                  <p className="mt-1 whitespace-pre-wrap rounded border border-line/70 bg-ink/30 px-2 py-1.5 text-[11px] leading-snug text-mist">
-                    {fullEvidence}
-                  </p>
+
+              {/* footer drawers — Artifact (always) · Insight (if present) · Condition (check + verdict) */}
+              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                {canBrowseArtifacts && (
+                  <button
+                    type="button"
+                    onClick={() => setArtifactOpen(true)}
+                    className="rounded-md border border-mint/30 bg-mint/10 px-2.5 py-1 font-mono text-[12px] text-mint transition-colors hover:bg-mint/20"
+                  >
+                    Artifact
+                  </button>
+                )}
+                {hasInsight && (
+                  <button
+                    type="button"
+                    onClick={() => setInsightOpen((v) => !v)}
+                    className="rounded-md border border-amber/30 bg-amber/10 px-2.5 py-1 font-mono text-[12px] text-amber transition-colors hover:bg-amber/20"
+                  >
+                    Insight
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setConditionOpen((v) => !v)}
+                  className="rounded-md border border-line px-2.5 py-1 font-mono text-[12px] text-mist-2 transition-colors hover:border-line-2 hover:text-chalk"
+                >
+                  Condition
+                </button>
+              </div>
+
+              {/* insight popover — title · sentence · tag · K-id, reusing the insights-item styling */}
+              <AnimatePresence initial={false}>
+                {insightOpen && hasInsight && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: 0.16, ease: "easeOut" }}
+                    className="space-y-1.5"
+                  >
+                    {cardInsights.length > 0
+                      ? cardInsights.map((k, i) => (
+                          <div key={k.id ?? i} className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-[13px] text-chalk">{k.title}</span>
+                              {k.id && <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{k.id}</span>}
+                              {k.tag && (
+                                <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{k.tag}</span>
+                              )}
+                            </div>
+                            {(k.detail || k.note) && (
+                              <p className="mt-1.5 text-[13px] leading-relaxed text-mist-2">{k.detail || k.note}</p>
+                            )}
+                          </div>
+                        ))
+                      : beatInsight && (
+                          <div className="rounded-lg border border-line bg-panel/40 px-3 py-2.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-[13px] text-chalk">{beatInsight.title || beatInsight.seed}</span>
+                              {beatInsight.id && (
+                                <span className="rounded border border-line-2 px-1 font-mono text-[10px] text-mist">{beatInsight.id}</span>
+                              )}
+                              {beatInsight.type && (
+                                <span className="rounded border border-amber/25 bg-amber/[0.08] px-1 font-mono text-[10px] text-amber">{beatInsight.type}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* condition drawer — the check's criteria + the checker verdict (moved out of the timeline) */}
+              <AnimatePresence initial={false}>
+                {conditionOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: 0.16, ease: "easeOut" }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="space-y-2"
+                  >
+                    {/* on a failure, lead loud with the failing criterion */}
+                    {step.column === "failed" && failingCriterion && (
+                      <div className="rounded-md border border-rose/40 bg-rose/10 px-2.5 py-2">
+                        <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-rose">Failed check</div>
+                        <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-mist-2">
+                          {failingCriterion.summary || failingCriterion.evidence || failingCriterion.name || failingCriterion.text}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* criteria / condition list */}
+                    {step.criteria.length > 0 && (
+                      <ul className="space-y-0.5">
+                        {step.criteria.map((c, i) => (
+                          <li key={i} className="flex gap-1.5 text-[13px] leading-snug text-mist-2">
+                            <span
+                              className={
+                                c.passed === true ? "text-mint" : c.passed === false ? "text-rose" : "text-mist"
+                              }
+                            >
+                              {c.passed === true ? "✓" : c.passed === false ? "✕" : "·"}
+                            </span>
+                            <span>{c.name || c.text || c.summary}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* the checker verdict — made/checked summaries + the full evidence */}
+                    {verdict && (
+                      <div className="space-y-1.5">
+                        {verdict.made_summary && (
+                          <p className="text-[13px] leading-snug text-mist-2">
+                            <span className="text-mist">made · </span>
+                            {verdict.made_summary}
+                          </p>
+                        )}
+                        {verdict.checked_summary && (
+                          <p className="text-[13px] leading-snug text-mist-2">
+                            <span className="text-mist">checked · </span>
+                            {verdict.checked_summary}
+                          </p>
+                        )}
+                        {verdict.evidence && (
+                          <div className="border border-line/70 bg-ink/30 px-2 py-1.5 rounded text-[12px] text-mist-2 whitespace-pre-wrap">
+                            {verdict.evidence}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* comments — exactly ONE section, at the very bottom of the card. A comment attaches to
+                  the CARD (the step), not an activity beat: it posts with card = step.id, so the exact
+                  heartbeat it was left on never matters. cardNotes surfaces every note scoped to this
+                  step (by step id, card id, or title), so older per-activity notes still appear here.
+                  stopPropagation keeps clicks/keys inside from toggling the card. */}
+              {!pendingVariant && (
+                <div
+                  className="mt-2.5 border-t border-line pt-2.5"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <NoteThread
+                    notes={cardNotes}
+                    workflow={model.workflow}
+                    step={step.id}
+                    card={step.id}
+                    cardTitle={step.title}
+                  />
                 </div>
               )}
-              <CardComments workflow={model.workflow} step={step} notes={cardNotes} />
             </div>
           </motion.div>
           )}
@@ -1951,65 +2078,77 @@ export function WorkflowKanban({
   if ((settled || latchedSettled) && displaySteps.length > 0) {
     return (
       <LayoutGroup>
-        <div className="board-scroll h-full overflow-y-auto">
+        {/* scrollbar-gutter:stable reserves the scrollbar lane in BOTH views, so
+            the centered header/title never shifts horizontally when one view
+            scrolls and the other doesn't (that was the "title leaps" jump). */}
+        <div className="board-scroll h-full overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
           <CompletionHeader model={displayModel} steps={displaySteps} view={settledView} onView={setSettledView} />
-          {settledView === "summary" && compileLifecycle && (
-            <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} />
-          )}
-          {settledView === "summary" && integrationLifecycle && (
-            <IntegrationCompletePanel model={displayModel} />
-          )}
-          {settledView === "summary" && !compileLifecycle && !integrationLifecycle && (
-            <ExecutionCompletePanel
-              model={displayModel}
-              steps={displaySteps}
-              notes={displayNotes}
-            />
-          )}
-          {settledView === "summary" ? (
-            <CompletionTimeline model={displayModel} steps={displaySteps} maxAttempts={maxAttempts} />
-          ) : (
-            <div>
-              <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
-                {cols.map((col) => {
-                  const inCol = displaySteps.filter((s) => s.column === col);
-                  return (
-                    <section key={col} className="min-w-0">
-                      <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
-                        <Led state={col} />
-                        <h2 className="text-[11px] text-mist">{LABEL[col]}</h2>
-                        <span className="ml-auto text-[11px] tabular-nums text-dim">{inCol.length}</span>
-                      </div>
-                      {col === "pending" ? (
-                        <PendingColumnCards
-                          steps={inCol}
-                          allSteps={displayAllSteps}
-                          model={displayModel}
-                          notes={displayNotes}
-                          maxAttempts={maxAttempts}
-                        />
-                      ) : (
-                        <div>
-                          <AnimatePresence mode="popLayout" initial={false}>
-                            {inCol.map((step) => (
-                              <WorkflowCard
-                                key={step.id}
-                                step={step}
-                                allSteps={displayAllSteps}
-                                model={displayModel}
-                                notes={displayNotes}
-                                maxAttempts={maxAttempts}
-                              />
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      )}
-                    </section>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Execution run-complete banner moved to a sticky bar above the heartbeat
+              terminal (App → RunCompleteBanner), so it stays visible in both views. */}
+          {/* Eased crossfade on the Summary ↔ Board swap. mode="wait" lets the
+              outgoing view fade out before the incoming one fades in; the keyed
+              motion.div drives a clean opacity (+tiny y) transition. Height is not
+              animated, so the swap can't re-introduce the layout jump. */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={settledView}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+            >
+              {settledView === "summary" ? (
+                <>
+                  {compileLifecycle && (
+                    <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} />
+                  )}
+                  {integrationLifecycle && <IntegrationCompletePanel model={displayModel} />}
+                  <CompletionTimeline model={displayModel} steps={displaySteps} maxAttempts={maxAttempts} />
+                </>
+              ) : (
+                <div>
+                  <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+                    {cols.map((col) => {
+                      const inCol = displaySteps.filter((s) => s.column === col);
+                      return (
+                        <section key={col} className="min-w-0">
+                          <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
+                            <Led state={col} />
+                            <h2 className="text-[14px] text-mist-2">{LABEL[col]}</h2>
+                            <span className="ml-auto text-[14px] tabular-nums text-mist">{inCol.length}</span>
+                          </div>
+                          {col === "pending" ? (
+                            <PendingColumnCards
+                              steps={inCol}
+                              allSteps={displayAllSteps}
+                              model={displayModel}
+                              notes={displayNotes}
+                              maxAttempts={maxAttempts}
+                            />
+                          ) : (
+                            <div>
+                              <AnimatePresence mode="popLayout" initial={false}>
+                                {inCol.map((step) => (
+                                  <WorkflowCard
+                                    key={step.id}
+                                    step={step}
+                                    allSteps={displayAllSteps}
+                                    model={displayModel}
+                                    notes={displayNotes}
+                                    maxAttempts={maxAttempts}
+                                  />
+                                ))}
+                              </AnimatePresence>
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
           <AnimatePresence>
             {compileArtifactStep && (
               <ArtifactModal
@@ -2034,8 +2173,8 @@ export function WorkflowKanban({
               <section key={col} className="min-w-0">
                 <div className="mb-1 flex items-center gap-2 border-b border-line px-2 pb-1.5">
                   <Led state={col} />
-                  <h2 className="text-[11px] text-mist">{LABEL[col]}</h2>
-                  <span className="ml-auto text-[11px] tabular-nums text-dim">{inCol.length}</span>
+                  <h2 className="text-[14px] text-mist-2">{LABEL[col]}</h2>
+                  <span className="ml-auto text-[14px] tabular-nums text-mist">{inCol.length}</span>
                 </div>
                 {col === "pending" ? (
                   <PendingColumnCards

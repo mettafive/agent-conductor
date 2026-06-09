@@ -17,6 +17,8 @@ export interface ConductorStep {
   title: string;
   index: number;
   instruction: string;
+  /** composer "intent" summary authored at card creation, from the workflow step def */
+  summary?: string;
   firstLine: string;
   isCondition: boolean;
   retired?: boolean;

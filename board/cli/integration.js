@@ -1996,7 +1996,7 @@ async function composeCheckIntegration({ skill, cards, workflow, openItems, summ
   };
 }
 
-function applyInstructionPatches({ cards, workflow, changes, openItems }) {
+async function applyInstructionPatches({ cards, workflow, changes, openItems }) {
   const nextCards = cards.map((card) => ({ ...card }));
   const nextWorkflow = {
     ...workflow,
@@ -2037,8 +2037,47 @@ function applyInstructionPatches({ cards, workflow, changes, openItems }) {
     nextWorkflow.steps[change.card].instruction = change.new_instruction;
   }
 
+  // Authoring, not record-time generation: when a card's instruction is folded
+  // with new knowledge, its composer summary (the board's intent line) is now
+  // stale. Regenerate that two-sentence summary for ONLY the patched cards so it
+  // matches the updated instruction. One callModel per patched card; on failure,
+  // keep the existing summary rather than leaving a mismatch unguarded.
+  for (const change of byCard.values()) {
+    const idx = change.card;
+    const refreshed = await regenerateCardSummary({
+      title: nextCards[idx].title,
+      instruction: nextCards[idx].instruction,
+      previousSummary: cards[idx]?.summary,
+    });
+    if (refreshed) {
+      nextCards[idx].summary = refreshed;
+      if (nextWorkflow.steps[idx]) nextWorkflow.steps[idx].summary = refreshed;
+    }
+  }
+
   assertOnlyInstructionChanges({ beforeCards: cards, beforeWorkflow: workflow, afterCards: nextCards, afterWorkflow: nextWorkflow, changes });
   return { cards: nextCards, workflow: nextWorkflow };
+}
+
+// Regenerate a card's two-sentence composer summary to match an updated
+// instruction. Returns a clean string, or undefined on any failure so the
+// caller keeps the existing summary.
+async function regenerateCardSummary({ title, instruction, previousSummary }) {
+  const prompt =
+    "Write a clear, complete TWO-SENTENCE summary of what this Agent Conductor card will do, " +
+    "for a non-technical user watching the board. State the intent and the concrete outcome " +
+    "the card produces. Exactly two full sentences, no ellipsis, never cut off mid-word. " +
+    "Return JSON only as {\"summary\": \"...\"}.\n\n" +
+    `CARD TITLE: ${title}\n\nCARD INSTRUCTION:\n${instruction}` +
+    (previousSummary ? `\n\nPREVIOUS SUMMARY (now possibly stale):\n${previousSummary}` : "");
+  try {
+    const raw = await callModel(prompt, { role: "integration-summary", attempt: 1 });
+    const gen = extractJson(raw) || {};
+    const summary = compact(gen.summary || gen.text);
+    return summary || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function assertLedgerConsistency({ cards, workflow, changes, knowledge }) {
@@ -2160,6 +2199,10 @@ function assertOnlyInstructionChanges({ beforeCards, beforeWorkflow, afterCards,
     }
     if (!allowedInstructionIndexes.has(index) && afterWorkflow.steps[index].instruction !== beforeWorkflow.steps[index].instruction) {
       throw new Error(`integration changed workflow step ${index} instruction without a declared patch`);
+    }
+    // Summary may only be refreshed for cards that received a declared instruction patch.
+    if (!allowedInstructionIndexes.has(index) && afterCards[index].summary !== beforeCards[index].summary) {
+      throw new Error(`integration changed card ${index} summary without a declared patch`);
     }
   }
 }
@@ -2298,7 +2341,7 @@ export async function runIntegration(args) {
 
   let applied;
   try {
-    applied = applyInstructionPatches({ cards, workflow, changes: result.changes, openItems });
+    applied = await applyInstructionPatches({ cards, workflow, changes: result.changes, openItems });
     assertLedgerConsistency({ cards: applied.cards, changes: result.changes, knowledge });
   } catch (e) {
     console.error(red(`✗ integration rejected by guard: ${e.message}`));
@@ -2347,7 +2390,7 @@ export async function runIntegration(args) {
       filteredChanges.push(change);
     }
     if (filteredChanges.length !== (result.changes || []).length) {
-      applied = applyInstructionPatches({ cards, workflow, changes: filteredChanges, openItems });
+      applied = await applyInstructionPatches({ cards, workflow, changes: filteredChanges, openItems });
       result = { ...result, changes: filteredChanges };
       nextCards = applied.cards;
       nextWorkflow = applied.workflow;
@@ -2403,7 +2446,7 @@ export async function runIntegration(args) {
       filteredInstructionChanges.length !== (result.changes || []).length ||
       filteredOrderChanges.length !== (orderLoop.result.changes || []).length
     ) {
-      applied = applyInstructionPatches({ cards, workflow, changes: filteredInstructionChanges, openItems });
+      applied = await applyInstructionPatches({ cards, workflow, changes: filteredInstructionChanges, openItems });
       result = { ...result, changes: filteredInstructionChanges };
       nextCards = applied.cards;
       nextWorkflow = applied.workflow;
@@ -2458,7 +2501,7 @@ export async function runIntegration(args) {
       filteredOrderChanges.length !== (orderLoop.result.changes || []).length ||
       filteredAddChanges.length !== (addLoop.result.changes || []).length
     ) {
-      applied = applyInstructionPatches({ cards, workflow, changes: filteredInstructionChanges, openItems });
+      applied = await applyInstructionPatches({ cards, workflow, changes: filteredInstructionChanges, openItems });
       result = { ...result, changes: filteredInstructionChanges };
       nextCards = applied.cards;
       nextWorkflow = applied.workflow;

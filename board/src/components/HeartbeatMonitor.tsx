@@ -7,7 +7,7 @@ import { plainNote } from "../lib/heartbeat";
 import { AnimatedHeart } from "./AnimatedHeart";
 import { TypewriterText } from "./TypewriterText";
 
-export type MonitorMode = "min" | "expanded" | "hidden";
+export type MonitorMode = "min" | "expanded";
 
 const MODE_KEY = "cb-monitor";
 
@@ -25,13 +25,13 @@ function clock(iso: string): string {
 export function loadMonitorMode(): MonitorMode {
   try {
     const q = new URLSearchParams(window.location.search).get("monitor");
-    if (q === "min" || q === "expanded" || q === "hidden") return q;
+    if (q === "min" || q === "expanded") return q;
   } catch {
     /* ignore */
   }
   try {
     const v = localStorage.getItem(MODE_KEY);
-    if (v === "min" || v === "expanded" || v === "hidden") return v;
+    if (v === "min" || v === "expanded") return v;
   } catch {
     /* ignore */
   }
@@ -210,22 +210,6 @@ export function HeartbeatMonitor({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [mode, onMode]);
-
-  if (mode === "hidden") {
-    return (
-      <motion.button
-        initial={{ opacity: 0, scale: 0.85 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.22, ease: "easeOut" }}
-        onClick={() => onMode("min")}
-          title="Show updates"
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-ink-2/90 px-3 py-2 shadow-lg backdrop-blur transition-colors hover:border-line-2"
-      >
-        <AnimatedHeart lastBeatIso={lastBeatIso} size={15} stallSeconds={stallSeconds} done={done} />
-        <ConnDot conn={conn} />
-      </motion.button>
-    );
-  }
 
   if (mode === "min") {
     return (
@@ -430,17 +414,6 @@ function ExpandedMonitor({
           <span aria-hidden title="Minimize" className="grid h-5 w-5 place-items-center rounded transition-colors group-hover/bar:text-chalk">
             ▼
           </span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMode("hidden");
-            }}
-            title="Hide"
-            className="grid h-5 w-5 place-items-center rounded text-[13px] transition-colors hover:bg-panel hover:text-chalk"
-          >
-            ─
-          </button>
         </span>
       </div>
 

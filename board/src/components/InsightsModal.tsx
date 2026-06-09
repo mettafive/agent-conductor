@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { KnowledgeEntry } from "../lib/types";
-import { InsightsDashboard } from "./InsightsDashboard";
+import { InsightsDashboard, insightsClipboardText } from "./InsightsDashboard";
 
 export function InsightsModal({
   open,
@@ -17,6 +18,22 @@ export function InsightsModal({
   runCount: number;
   currentRunId?: string;
 }) {
+  const [copied, setCopied] = useState(false);
+  // Insights from this run (fall back to everything if no run id is known).
+  const runInsights = currentRunId ? knowledge.filter((k) => k.source_run === currentRunId) : knowledge;
+
+  async function copyRun() {
+    const text = insightsClipboardText(runInsights);
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard blocked — leave the button state unchanged
+    }
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -34,13 +51,23 @@ export function InsightsModal({
             exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[88vh] w-[min(1040px,94vw)] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
+            className="flex h-[85vh] w-[min(1040px,94vw)] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
           >
             <div className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3.5">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-dim">Insights</div>
                 <div className="mt-1 truncate text-[15px] font-medium text-chalk">{workflow}</div>
               </div>
+              {runInsights.length > 0 && (
+                <button
+                  type="button"
+                  onClick={copyRun}
+                  title="Copy this run's insights"
+                  className="rounded-md border border-line px-3 py-1.5 font-mono text-[12px] text-mist transition-colors hover:border-line-2 hover:text-chalk"
+                >
+                  {copied ? "Copied" : `Copy ${runInsights.length}`}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
@@ -50,7 +77,7 @@ export function InsightsModal({
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <InsightsDashboard workflow={workflow} knowledge={knowledge} runCount={runCount} currentRunId={currentRunId} />
+              <InsightsDashboard knowledge={knowledge} runCount={runCount} currentRunId={currentRunId} />
             </div>
           </motion.div>
         </motion.div>

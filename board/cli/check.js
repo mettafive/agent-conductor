@@ -119,10 +119,9 @@ function checkerPrompt(instruction, output, receiptName) {
     `The output must be the card's primary markdown receipt at .conductor/artifacts/${receiptName} (format: <card-index>-<slugified-card-title>.md): the actual work product or a verifiable action record. Content/code/data cards should show the actual content, code, data, diff, or report in that markdown receipt. Action cards may pass with the markdown receipt only when it includes concrete proof such as command run, timestamp, inputs, return value, changed resource, affected rows/files/URLs, and verification query/curl/test result. If the receipt merely describes what was done without proof, FAIL immediately.\n` +
     "Supporting files such as images, screenshots, PDFs, JSON, CSV, HTML, or logs are not standalone primary artifacts. Evaluate them only as files referenced from the markdown receipt. For image work, the receipt should embed every produced image inline with markdown image syntax.\n" +
     "Does it satisfy the instruction? List what's done and what's missing. PASS or FAIL.\n" +
-    "Also write two dashboard lines:\n" +
-    "MADE: one line summarizing what the agent produced.\n" +
-    "CHECKED: one line summarizing how you verified it passed or why it failed.\n" +
-    "Then write a one-line summary starting with SUMMARY: that a non-technical person could scan in a dashboard."
+    "Then write SUMMARY: the canonical two-sentence verdict summary the dashboard displays for this card. It must be a clear, complete TWO-SENTENCE summary, for a non-technical user, of WHAT was done AND HOW you verified it (or, on FAIL, what is missing and how you checked). Two full sentences, no trailing ellipsis, never cut off mid-word.\n" +
+    "SUMMARY: <two complete sentences describing what was done and how it was verified>\n" +
+    "This summary is presentation only - it must not alter the PASS/FAIL verdict or the evidence above."
   );
 }
 

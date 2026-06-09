@@ -33,6 +33,7 @@ function normalizeWorkflow(payload, cards, { name, description, maxAttempts }) {
     return {
       title: cards[index].title,
       instruction: cards[index].instruction,
+      summary: cards[index].summary,
       requires: normalizedRequires,
     };
   });

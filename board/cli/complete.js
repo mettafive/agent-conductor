@@ -10,6 +10,7 @@ import {
   findArtifactsReferencedInReceipt,
   findReceiptArtifact,
 } from "./artifacts.js";
+import { callModel, extractJson } from "./decompose.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -287,9 +288,13 @@ export async function runComplete(args) {
 export async function runGateResult(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "usage: conductor-board gate-result <step-id>[::iter::sub] --passed|--failed [--evidence \"...\"]\n\n" +
+      "usage: conductor-board gate-result <step-id>[::iter::sub] --passed|--failed [--evidence \"...\"]\n" +
+        "       [--summary \"...\"] [--made \"...\"] [--checked \"...\"]\n\n" +
         "  Records an independent checker verdict for a card instruction. `complete` consumes\n" +
-        "  this result before moving the card to done.",
+        "  this result before moving the card to done.\n\n" +
+        "  --summary / --made / --checked set the three human display lines (one complete\n" +
+        "  sentence each). Any line you omit is generated from --evidence so the stored\n" +
+        "  verdict always carries three distinct, bounded lines.",
     );
     return true;
   }
@@ -300,6 +305,9 @@ export async function runGateResult(args) {
   const passed = args.includes("--passed");
   const failed = args.includes("--failed");
   const evidence = flag(args, ["--evidence", "-e"]);
+  const summaryFlag = flag(args, ["--summary"]);
+  const madeFlag = flag(args, ["--made"]);
+  const checkedFlag = flag(args, ["--checked"]);
 
   if (!stepId || passed === failed) {
     console.error(red("usage: conductor-board gate-result <step-id>[::iter::sub] --passed|--failed [--evidence \"...\"]"));
@@ -335,7 +343,11 @@ export async function runGateResult(args) {
   }
 
   const parsedEvidence = parseCheckerEvidence(typeof evidence === "string" ? evidence : undefined);
-  recordCheckerResult(status, resolved, stepId, passed, typeof evidence === "string" ? evidence : undefined);
+  recordCheckerResult(status, resolved, stepId, passed, typeof evidence === "string" ? evidence : undefined, {
+    summary: typeof summaryFlag === "string" ? summaryFlag : undefined,
+    made_summary: typeof madeFlag === "string" ? madeFlag : undefined,
+    checked_summary: typeof checkedFlag === "string" ? checkedFlag : undefined,
+  });
   fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
   console.log("");
@@ -442,10 +454,33 @@ function readRecordedCheckerResult(statusPath, loopPath, stepId) {
   }
 }
 
+/**
+ * Record a checker verdict. ZERO model calls on this live path: clean display
+ * lines come from AUTHORING. The summary is, in order of preference:
+ *   1. the checker's authored SUMMARY (parsed from evidence) or the --summary flag,
+ *   2. the card's COMPOSER summary (the intent line on the workflow step def).
+ * It is NEVER regenerated inline. `normalizeVerdictLines` is retained only as the
+ * one-shot backfill tool (see `backfill-summaries`).
+ */
 export function recordCheckerResult(status, resolved, stepId, passed, evidence, extra = {}) {
   const st = statusEntry(status, resolved.loopPath, stepId);
   const checkedAt = new Date().toISOString();
   const parsed = parseCheckerEvidence(evidence);
+
+  const authoredSummary = boundDisplayLine(
+    extra.summary !== undefined ? extra.summary : parsed.summary,
+  );
+  // Composer fallback: a hand-authored gate-result with no summary borrows the
+  // card's intent line from the compiled workflow step def.
+  const composerSummary = boundDisplayLine(resolved.step?.summary);
+  const summary = authoredSummary || composerSummary;
+  const made_summary = boundDisplayLine(
+    extra.made_summary !== undefined ? extra.made_summary : parsed.made_summary,
+  );
+  const checked_summary = boundDisplayLine(
+    extra.checked_summary !== undefined ? extra.checked_summary : parsed.checked_summary,
+  );
+
   st.gate = passed ? "passed" : "failed";
   st.gate_detail = [{
     criterion: resolved.step.instruction || resolved.step.title || stepId,
@@ -453,9 +488,9 @@ export function recordCheckerResult(status, resolved, stepId, passed, evidence, 
     checker: extra.checker || "instruction",
     passed,
     evidence: parsed.evidence,
-    summary: parsed.summary,
-    made_summary: parsed.made_summary,
-    checked_summary: parsed.checked_summary,
+    summary,
+    made_summary,
+    checked_summary,
     checked_at: checkedAt,
     check_id: `${checkedAt}-${Math.random().toString(36).slice(2, 8)}`,
     output_sources: extra.output_sources,
@@ -465,17 +500,30 @@ export function recordCheckerResult(status, resolved, stepId, passed, evidence, 
   }];
 }
 
+// Lightweight, model-free clean-up for an authored display line: collapse
+// whitespace, strip leading PASS/FAIL/label noise and trailing ellipsis. Does
+// NOT truncate or fabricate — authored text stands as written.
+function boundDisplayLine(value) {
+  if (value === undefined || value === null) return undefined;
+  let s = String(value).replace(/\s+/g, " ").trim();
+  s = s.replace(/^(PASS|FAIL)\s*(?:[.\u2014:;-]\s*)?/i, "").trim();
+  s = s.replace(/^(SUMMARY|MADE|CHECKED)\s*:\s*/i, "").trim();
+  s = s.replace(/(?:\.\.\.|\u2026)\s*$/, "").trim();
+  if (!s || !/[A-Za-z0-9\u00c5\u00c4\u00d6\u00e5\u00e4\u00f6]/.test(s)) return undefined;
+  return s;
+}
+
 export function parseCheckerEvidence(raw) {
   const text = typeof raw === "string" ? raw.trim() : "";
   if (!text) return { evidence: undefined, summary: undefined };
 
   const labels = extractCheckerLabels(text);
-  let summary = labels.summary;
-  let made_summary = labels.made_summary;
-  let checked_summary = labels.checked_summary;
+  const summary = labels.summary;
+  const made_summary = labels.made_summary;
+  const checked_summary = labels.checked_summary;
   const evidence = labels.evidence || text;
-  if (!summary) summary = firstSentence(evidence);
-  if (!checked_summary) checked_summary = summary;
+  // No first-sentence/duplicate fallback here: normalizeVerdictLines is the
+  // single authority for deriving the three display lines from evidence.
   return { evidence, summary, made_summary, checked_summary };
 }
 
@@ -518,6 +566,119 @@ function extractCheckerLabels(text) {
   };
 }
 
+const VERDICT_LINE_MAX = 200;
+const VERDICT_LINE_TARGET = 160;
+
+// Bound a candidate display line to one complete sentence, <= ~160 chars, no
+// trailing ellipsis, never cut mid-word. Returns undefined if nothing usable.
+function boundVerdictLine(value) {
+  if (value === undefined || value === null) return undefined;
+  let s = String(value).replace(/\s+/g, " ").trim();
+  // Strip any leading PASS/FAIL prefix and label noise.
+  s = s.replace(/^(PASS|FAIL)\s*(?:[.\u2014:;-]\s*)?/i, "").trim();
+  s = s.replace(/^(SUMMARY|MADE|CHECKED)\s*:\s*/i, "").trim();
+  // Drop any trailing ellipsis the source may have added.
+  s = s.replace(/(?:\.\.\.|\u2026)\s*$/, "").trim();
+  if (!s || !/[A-Za-z0-9\u00c5\u00c4\u00d6\u00e5\u00e4\u00f6]/.test(s)) return undefined;
+  // Keep only the first complete sentence.
+  const firstSent = s.split(/(?<=[.!?])\s+/)[0] || s;
+  s = firstSent.trim();
+  if (s.length > VERDICT_LINE_MAX) {
+    // Trim to the target length on a word boundary, then end the sentence cleanly.
+    let cut = s.slice(0, VERDICT_LINE_TARGET);
+    const lastSpace = cut.lastIndexOf(" ");
+    if (lastSpace > 40) cut = cut.slice(0, lastSpace);
+    cut = cut.replace(/[\s,;:.\u2014-]+$/, "").trim();
+    s = cut.endsWith(".") ? cut : cut + ".";
+  }
+  return s || undefined;
+}
+
+function isCompleteSentence(s) {
+  return typeof s === "string" && /[.!?]$/.test(s.trim());
+}
+
+// A line is VALID when present, complete, bounded, ellipsis-free and distinct
+// from the other two (case-insensitive).
+function verdictLineIsValid(line, others) {
+  const v = boundVerdictLine(line);
+  if (!v) return false;
+  if (v.length > VERDICT_LINE_MAX) return false;
+  if (/(?:\.\.\.|\u2026)\s*$/.test(String(line || ""))) return false;
+  if (!isCompleteSentence(v)) return false;
+  const norm = v.toLowerCase();
+  for (const o of others) {
+    if (o && boundVerdictLine(o) && boundVerdictLine(o).toLowerCase() === norm) return false;
+  }
+  return true;
+}
+
+function verdictGenerationPrompt(evidence) {
+  return (
+    "You normalize a verdict's evidence into exactly three short human display lines.\n" +
+    "Read the EVIDENCE once and return a JSON object with three keys: \"summary\", \"made\", \"checked\".\n" +
+    "- summary: one full sentence a non-technical person can scan, the gist of the result.\n" +
+    "- made: one full sentence describing what the card produced.\n" +
+    "- checked: one full sentence describing how it was verified (or why it failed).\n" +
+    "Each value must be ONE complete self-contained sentence, roughly 120-160 characters, " +
+    "no trailing ellipsis, never cut off mid-word, and the three must be DISTINCT from each other. " +
+    "If the evidence only describes output, write the most honest distinct verification line for \"checked\" " +
+    "rather than repeating the summary. Return JSON only.\n\n" +
+    "EVIDENCE:\n" + String(evidence || "")
+  );
+}
+
+/**
+ * Single authority for a verdict's three display lines (summary/made/checked).
+ * Keeps any provided line that is already valid (present, complete, bounded,
+ * ellipsis-free, distinct). If any line is missing/malformed/duplicate, makes
+ * ONE model call over `evidence` to mint distinct bounded sentences and uses the
+ * generated values only for the invalid lines. Degrades gracefully: on a model
+ * failure it stores whatever valid lines exist plus the full evidence, never an
+ * old-style mid-word clamp.
+ */
+export async function normalizeVerdictLines({ summary, made_summary, checked_summary, evidence } = {}) {
+  let s = boundVerdictLine(summary);
+  let m = boundVerdictLine(made_summary);
+  let c = boundVerdictLine(checked_summary);
+
+  const sOk = verdictLineIsValid(s, [m, c]);
+  const mOk = verdictLineIsValid(m, [s, c]);
+  const cOk = verdictLineIsValid(c, [s, m]);
+
+  if (sOk && mOk && cOk) {
+    return { summary: s, made_summary: m, checked_summary: c };
+  }
+
+  const ev = typeof evidence === "string" ? evidence.trim() : "";
+  if (ev) {
+    try {
+      const raw = await callModel(verdictGenerationPrompt(ev), { role: "verdict-normalizer", attempt: 1 });
+      const gen = extractJson(raw) || {};
+      const gs = boundVerdictLine(gen.summary);
+      const gm = boundVerdictLine(gen.made);
+      const gc = boundVerdictLine(gen.checked);
+      if (!sOk && gs) s = gs;
+      if (!mOk && gm) m = gm;
+      if (!cOk && gc) c = gc;
+    } catch {
+      // Graceful degrade: keep whatever valid lines we have; never clamp.
+    }
+  }
+
+  // Final pass: ensure mutual distinctness; drop a line that still duplicates
+  // an earlier one so we never show one string three times.
+  const norm = (x) => (x ? x.toLowerCase() : "");
+  if (m && norm(m) === norm(s)) m = undefined;
+  if (c && (norm(c) === norm(s) || norm(c) === norm(m))) c = undefined;
+
+  return {
+    summary: s || undefined,
+    made_summary: m || undefined,
+    checked_summary: c || undefined,
+  };
+}
+
 function cleanCheckerLabelValue(value) {
   if (!value) return undefined;
   const cleaned = String(value).replace(/\s+/g, " ").trim();
@@ -531,7 +692,7 @@ function firstSentence(text) {
   const first = withoutVerdict.split(/(?<=[.!?])\s+/)[0] || withoutVerdict;
   const normalized = first.trim();
   if (!/[A-Za-z0-9ÅÄÖåäö]/.test(normalized)) return undefined;
-  return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
+  return normalized;
 }
 
 function maxAttemptsFor(doc) {

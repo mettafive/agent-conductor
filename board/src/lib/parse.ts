@@ -4,6 +4,7 @@ interface RawStep {
   id?: string;
   title?: string;
   instruction?: string;
+  summary?: string;
   type?: string;
   retired?: boolean;
   retired_by?: string;
@@ -30,6 +31,7 @@ function toStep(s: RawStep, index: number): ConductorStep {
     title,
     index,
     instruction,
+    summary: typeof s.summary === "string" && s.summary.trim() ? s.summary.trim() : undefined,
     firstLine: firstLineOf(instruction),
     isCondition: false,
     retired: s.retired === true,

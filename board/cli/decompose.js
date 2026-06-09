@@ -49,16 +49,18 @@ function normalizeCards(payload) {
     if (!card || typeof card !== "object" || Array.isArray(card)) {
       throw new Error(`card ${index} must be an object`);
     }
-    const allowed = new Set(["title", "instruction"]);
+    const allowed = new Set(["title", "instruction", "summary"]);
     const unknown = Object.keys(card).filter((k) => !allowed.has(k));
     if (unknown.length) {
       throw new Error(`card ${index} has unsupported field(s): ${unknown.join(", ")}`);
     }
     const title = compact(card.title);
     const instruction = compact(card.instruction);
+    const summary = compact(card.summary);
     if (!title) throw new Error(`card ${index} is missing title`);
     if (!instruction) throw new Error(`card ${index} is missing instruction`);
-    return { title, instruction };
+    if (!summary) throw new Error(`card ${index} is missing summary`);
+    return { title, instruction, summary };
   });
 }
 
@@ -160,6 +162,7 @@ function composerPrompt({ skill, previousCards, checkerFeedback, passedCards = [
 Card model:
 - title: clear human-readable action label, up to 40 characters
 - instruction: detailed, concrete work instruction
+- summary: a clear, complete TWO-SENTENCE summary of what this card WILL do, written for a non-technical user watching the board. State the intent and the concrete outcome the card aims to produce. Two full sentences, no ellipsis, never cut off mid-word.
 
 Do not use condition fields. Conditionality belongs inside instruction text.
 
@@ -214,7 +217,7 @@ ${pressure ? `\n${pressure}\n` : ""}
 Return JSON only as:
 {
   "cards": [
-    { "title": "Clear action under 40 chars", "instruction": "Concrete verifiable instruction. If situational, say how to evaluate the situation and what artifact proves either action taken or no action needed." }
+    { "title": "Clear action under 40 chars", "instruction": "Concrete verifiable instruction. If situational, say how to evaluate the situation and what artifact proves either action taken or no action needed.", "summary": "Two complete sentences describing what this card will do and the outcome it produces, for a user watching the board." }
   ]
 }
 

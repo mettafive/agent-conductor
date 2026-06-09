@@ -15,7 +15,7 @@ import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
 import { clockSince } from "./lib/view";
 import { TopBar } from "./components/TopBar";
-import { WorkflowKanban } from "./components/WorkflowKanban";
+import { WorkflowKanban, RunCompleteBanner } from "./components/WorkflowKanban";
 import { Settings } from "./components/Settings";
 import { InsightsModal } from "./components/InsightsModal";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
@@ -177,6 +177,8 @@ export function App() {
                 </button>
               </div>
             )}
+
+          <RunCompleteBanner model={model} />
 
           <HeartbeatMonitor
             beats={agentLog}
