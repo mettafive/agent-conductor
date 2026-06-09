@@ -152,6 +152,57 @@ Attempt 5/5. No attempts remaining. Final checker failure: [reasons]
 On the fifth failed attempt, the card status becomes `failed`, the overall run
 status becomes `failed`, and `complete` refuses further retries for that card.
 
+## Autonomous Execution (opt-in)
+
+The manual runtime above is always available. Alongside it, an opt-in execution
+plane can drive the same cards through the same verbs. It does not skip checking:
+every card still produces an artifact and is gated by its own checker before it
+can reach done.
+
+- `run-card <card-index>` spawns one bounded, non-interactive worker for one
+  eligible card (the card is `pending`/`running` and all `requires` are `done`).
+  The worker gets only that card's instruction plus its dependency artifacts as
+  isolated inputs, does the work, writes the receipt, and reports its own honest
+  verdict via `check` → `gate-result` → `complete`. It runs under a restricted
+  tool set (no delegation/sub-spawn), a wall-clock timeout, and a descendant
+  process cap.
+- `dispatch` is a model-free loop: it hands eligible cards to `run-card` workers
+  up to a concurrency cap (`--cap`, default `max_concurrency` /
+  `CONDUCTOR_MAX_CONCURRENCY` / 6), refills as workers finish, and reclaims dead
+  workers by watching the worker process (not the heartbeat). A worker that exits
+  without completing its card resets it to `pending`; a card past `max_attempts`
+  trips the breaker and is marked `failed`. `status.json` stays the source of
+  truth.
+- `fold-card <card-index>` copies a finished card's receipt and referenced files
+  into the run directory the moment the card is done.
+
+```bash
+npx conductor-board run-card 0
+npx conductor-board dispatch --cap 4
+```
+
+### Run states and the work-timer
+
+The top-level run is **running**, **paused**, **failed**, or **done**:
+
+- `pause` sets the run to `paused` (distinct from failed): the dispatcher idles
+  and hands out no new cards. `resume` returns it to `running`.
+- A card that exhausts its attempts sets the run to `failed`; the board shows a
+  failed-reason modal with the failure reason and the failed step.
+
+A work-timer accumulates only running time. `elapsed_ms` is the frozen total and
+`running_since` marks the current running interval; the timer freezes on
+pause/done/failed and continues on resume.
+
+### Timekeeper (`--timing`)
+
+The Timekeeper is opt-in pure instrumentation: enabled only with `--timing` AND
+`CONDUCTOR_TIMING=1`. Off by default = byte-identical behavior, no extra writes.
+When on, `dispatch`/`run-card` stamp per-card phase boundaries and write a
+run-level aggregate (per-card timing table + totals) to a timing file. It never
+changes dispatch, reclaim, breaker, or claim behavior.
+
+
 ## Board Discipline
 
 Using the board is not optional.

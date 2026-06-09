@@ -1,6 +1,6 @@
 # Conductor Spec
 
-Version: 3.0.0
+Version: 3.1.0
 
 Agent Conductor turns a skill into cards on a Kanban board. Every card is
 independently verified against its own instruction. Write better instructions,
@@ -157,6 +157,73 @@ npx conductor-board validate .conductor/workflow.json
 When `.conductor/cards.json` is present next to the conductor file, `validate`
 also confirms every card from `cards.json` exists at the same array index in
 `workflow.json`.
+
+## Manual vs. Autonomous Execution
+
+There is no required automatic runner. The manual flow stands on its own: an
+agent keeps `.conductor/status.json` live with `step`, `check`,
+`gate-result`, and `complete` as it works through the cards itself.
+
+On top of that, an **opt-in autonomous execution plane** can drive the same
+cards through the same verbs. It does not replace or weaken checking — every card
+still produces an artifact and is gated by its own checker before it can reach
+done.
+
+### `run-card` — one bounded worker for one card
+
+`conductor-board run-card <card-index>` spawns exactly one non-interactive
+worker for one eligible card. A card is eligible when it is `pending` (or
+already `running`, claimed by the dispatcher) and every `requires` dependency
+is `done`. The worker receives only that card's instruction plus the
+dependency artifacts it needs as isolated inputs, does the work, writes the
+receipt artifact, then reports its own honest verdict through the normal verbs
+(`check` → `gate-result` → `complete`). The worker is bounded: a restricted
+tool set, no delegation/sub-spawn, a wall-clock timeout, and a descendant-process
+cap enforced by killing the worker process group.
+
+### `dispatch` — the model-free fan-out loop
+
+`conductor-board dispatch` is a dumb, model-free loop. It reads
+`status.json` (the source of truth), hands each eligible card to a `run-card`
+worker up to a concurrency cap (`--cap`, default `max_concurrency` /
+`CONDUCTOR_MAX_CONCURRENCY` / 6), refills slots as workers finish, and reclaims
+dead workers by watching the worker **process** (not the heartbeat): a worker
+that exits without completing its card resets that card to `pending` for a
+re-hand, and a card that crashes past `max_attempts` trips a breaker and is
+marked `failed`. The dispatcher claims a card by writing `running` to disk
+before spawning the worker, so it is the single writer.
+
+### `fold-card` — durable per-card artifacts
+
+`conductor-board fold-card <card-index>` copies one finished card's receipt and
+referenced files into the run directory the instant the card is done, off the
+critical path, so per-card results are crash-safe without folding the whole pile.
+
+## Run States
+
+The top-level run carries a status:
+
+- **running** — work is in progress (or eligible to start).
+- **paused** — a manual pause (`pause`); distinct from failed. The dispatcher
+  idles and hands out no new cards until `resume`.
+- **failed** — a card exhausted its attempts; the run stops. The board exposes a
+  failed-reason modal with the failure reason and the failed step.
+- **done** — every card is terminal and the work is complete.
+
+A **work-timer** accumulates only running time. `elapsed_ms` holds the frozen
+total and `running_since` marks the start of the current running interval; the
+timer freezes on pause/done/failed (`running_since` cleared) and continues on
+resume.
+
+## Timekeeper (`--timing`)
+
+The Timekeeper is opt-in, pure instrumentation. It is enabled only when
+`--timing` is passed **and** `CONDUCTOR_TIMING=1` is set; with it off (the
+default) behavior is byte-identical and nothing extra is written. When on,
+`dispatch` and `run-card` stamp per-card phase boundaries and write a
+run-level aggregate (a per-card timing table plus totals) to a timing file
+(`.conductor/timing-<run_id>.md` and `.json`). It never changes dispatch,
+reclaim, breaker, or claim behavior.
 
 ## Learning Across Runs
 

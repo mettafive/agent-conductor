@@ -115,6 +115,40 @@ Headless is opt-in:
 npx conductor-board init-board .conductor/workflow.json --headless
 ```
 
+## Autonomous Execution
+
+The manual flow above (`step` / `check` / `gate-result` / `complete`) is
+always available. On top of it there is an **opt-in autonomous execution plane**
+that drives the same cards through the same verbs and the same checker — it does
+not bypass verification.
+
+- `run-card <card-index>` runs one bounded worker for one eligible card. The
+  worker gets the card instruction plus its dependency artifacts, does the work,
+  writes the receipt, and reports its own honest verdict via
+  `check`/`gate-result`/`complete`. It runs under a restricted tool set, a
+  timeout, and a descendant-process cap.
+- `dispatch` is a dumb, model-free loop: it hands eligible cards to `run-card`
+  workers up to a concurrency cap (`--cap`), refills slots as workers finish,
+  and reclaims dead workers by watching the worker process. `status.json` stays
+  the source of truth.
+- `fold-card <card-index>` copies a finished card's receipt and referenced files
+  into the run directory the moment it is done.
+
+```bash
+npx conductor-board run-card 0
+npx conductor-board dispatch --cap 4
+```
+
+A run is **running**, **paused** (a manual `pause`, distinct from failed; the
+dispatcher idles), **failed** (a card exhausted its attempts; the board shows a
+failed-reason modal), or **done**. A work-timer accumulates only running time and
+freezes on pause/done/failed, continuing on resume.
+
+The `--timing` Timekeeper is opt-in (needs `--timing` and `CONDUCTOR_TIMING=1`)
+and off by default — default behavior is byte-identical. When on, it records
+per-card phase timing and writes a run-level aggregate to a timing file.
+
+
 ## Quick Start
 
 ```bash
