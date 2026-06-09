@@ -197,7 +197,13 @@ export function HeartbeatMonitor({
   knowledge,
 }: Props) {
   const streamKey = arrival?.beat.key;
-  const latest = beats[beats.length - 1];
+  // The prominent single line is the agent's "what's happening" sentence — its own
+  // update notes are PRIMARY (the agent's voice), so the collapsed monitor surfaces the
+  // latest NON-system beat, falling back to the latest beat of any kind when the agent
+  // hasn't spoken yet. (The expanded view still shows every beat with the muted-system
+  // hierarchy.) Without this, system status chatter — "Started…/Checking…/Passed" —
+  // eclipses the explanatory sentence here, which is the regression we're restoring.
+  const latest = [...beats].reverse().find((b) => !b.system) ?? beats[beats.length - 1];
 
   useEffect(() => {
     try {
