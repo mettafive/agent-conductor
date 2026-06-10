@@ -185,12 +185,41 @@ function pidAlive(pid) {
   }
 }
 
+// SIGKILL a worker's whole subtree: its process GROUP plus every descendant pid
+// found by a pgrep -P walk. The group kill ALONE misses a worker that re-spawned
+// a grandchild in its OWN detached group — run-card spawns `claude -p`/`codex`
+// DETACHED, so the real worker leads a different group and a `kill -runcardgroup`
+// never reaches it (that orphan is what left ~3-minute zombie `claude -p`
+// processes after a real run). The worker is still a DESCENDANT of run-card by
+// pid, so the walk reaches it. Detached+unref'd background helpers
+// (learn-card / fold) reparent to init the moment `complete` exits — by the time
+// a card is gate-accepted they are no longer in this subtree, so the learning
+// loop is not touched.
 function killGroup(pgid) {
-  try {
-    process.kill(-pgid, "SIGKILL");
-  } catch {
-    /* group may be gone */
+  const seen = new Set();
+  const descendants = [];
+  const stack = [pgid];
+  while (stack.length) {
+    const p = stack.pop();
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const r = spawnSync("pgrep", ["-P", String(p)], { encoding: "utf8" });
+    if (r.status !== 0 || !r.stdout) continue;
+    for (const line of r.stdout.split(/\s+/)) {
+      const c = Number(line.trim());
+      if (Number.isInteger(c) && c > 0 && !seen.has(c)) {
+        descendants.push(c);
+        stack.push(c);
+      }
+    }
   }
+  // descendants first (incl. the detached worker group), then run-card's group.
+  for (const d of descendants) {
+    try { process.kill(-d, "SIGKILL"); } catch { /* group may be gone */ }
+    try { process.kill(d, "SIGKILL"); } catch { /* already dead */ }
+  }
+  try { process.kill(-pgid, "SIGKILL"); } catch { /* group may be gone */ }
+  try { process.kill(pgid, "SIGKILL"); } catch { /* already dead */ }
 }
 
 // Hard wall-clock backstop: longer than run-card's own ~20-min worker timeout.
