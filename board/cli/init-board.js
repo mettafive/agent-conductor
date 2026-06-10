@@ -257,9 +257,11 @@ export async function openRunBoard(statusPath, workflowPath, { headless = false,
     workflow_path: workflowPath,
   });
 
-  // If WE spawned the board it must serve our workflow; an ATTACH to another
-  // root's board legitimately may not (cross-root attach is not an error).
-  const health = await waitForWorkflow(ensured.url, workflow, conductorDir);
+  // Wait for the SERVED baton: poll /health until THIS feed is discovered + renderable.
+  // The board re-discovers per request (registered roots included), so this also proves
+  // an ATTACHED board saw our newly-registered root — not assumed it. Generous timeout
+  // so registry propagation never trips a false "unserved" on a slow machine.
+  const health = await waitForWorkflow(ensured.url, workflow, conductorDir, 10000);
   const served = healthHasWorkflow(health, workflow);
   if (ensured.spawned && !served) {
     return { ok: false, healthy: true, served: false, spawned: true, url: ensured.url, browserUrl: null, workflow, health, workflows: health?.workflows || {} };

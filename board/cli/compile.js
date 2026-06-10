@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { composeAndCheckSkill, compact, flag } from "./decompose.js";
-import { ensureBoard } from "./ensure-board.js";
+import { ensureBoard, getHealth } from "./ensure-board.js";
 import {
   ensureKnowledge,
   migrationMetaPathForRoot,
@@ -171,7 +171,26 @@ async function initCompileBoard(outDir, name, port) {
   const statusPath = path.join(outDir, "compile.status.json");
   writeJson(workflowPath, compileWorkflow(name));
   await ensureBoard(port, { statusPath, workflowPath });
-  return { workflowPath, statusPath };
+  // BATON A — confirm the handoff: the compile feed is ready only when it's SERVED
+  // (discovered + renderable), not merely when the server is healthy. Wait until
+  // /health.workflows includes this compile feed before declaring the board live, so
+  // the board never surfaces a feed it can't yet render. The feed's canonical key is
+  // the namespaced compile variant (the 3.3.5 binding); during compile the dir name is
+  // the base, so it reads "<dir> (compile)".
+  const served = await waitCompileServed(port, `${path.basename(outDir)} (compile)`);
+  return { workflowPath, statusPath, served };
+}
+
+// Poll /health until THIS compile feed is served (discovered). Bounded; returns
+// whether it was confirmed in time (the board re-discovers per request).
+async function waitCompileServed(port, key, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const h = await getHealth(port);
+    if (h?.workflows && Object.prototype.hasOwnProperty.call(h.workflows, key)) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
 }
 
 function progressNote(evt) {
@@ -724,7 +743,7 @@ export async function runCompile(args) {
     if (!args.includes("--no-compile-board")) {
       try {
         compileBoard = await initCompileBoard(outDir, "Migrating skill to conductor", compilePort);
-        console.log(dim(`  compile board: ${path.relative(process.cwd(), compileBoard.statusPath)}`));
+        console.log(dim(`  compile board: ${path.relative(process.cwd(), compileBoard.statusPath)}${compileBoard.served ? " (served)" : ""}`));
       } catch (e) {
         console.error(red(`✗ could not initialize compile board: ${e.message}`));
         return false;

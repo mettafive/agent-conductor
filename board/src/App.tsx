@@ -347,11 +347,24 @@ export function App() {
     return () => clearTimeout(t);
   }, [relaunch?.phase, reduceMotion]);
 
-  // The fresh loop is live once a new run_id appears or an integration feed is running.
+  // BATON C — advance on a SERVED signal, not a heuristic. The fresh loop is live once
+  // its feed is actually SERVED: present in the broadcast `workflows` map (the server
+  // only broadcasts feeds it discovered + can render). We require the served feed itself
+  // — a running integration feed, or a run feed bearing a NEW run_id — rather than the
+  // resolved liveModel.runId, which can change before the new feed is renderable. The
+  // overlay never advances on a feed that doesn't yet exist.
   const freshRunLive =
     !!relaunch &&
-    ((!!liveModel.runId && liveModel.runId !== relaunch.fromRunId) ||
-      order.some((n) => workflows[n]?.snap?.variant === "integration" && statusOf(workflows[n]) === "running"));
+    order.some((n) => {
+      const e = workflows[n]; // absent ⇒ not served (not in the broadcast) ⇒ never advances
+      if (!e) return false;
+      if (e.snap?.variant === "integration" && statusOf(e) === "running") return true;
+      if (isRunFeed(n)) {
+        const rid = (e.snap.status as { run_id?: string } | null)?.run_id;
+        return !!rid && rid !== relaunch.fromRunId;
+      }
+      return false;
+    });
 
   // Phase 2 → hand off: dismiss when the fresh run is live AND the readability floor
   // (~700ms) has elapsed — so the line reads, but never lingers past the real work.

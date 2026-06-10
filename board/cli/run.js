@@ -356,7 +356,17 @@ export async function runRun(args) {
     console.error(red(`  ✗ board did not become healthy on port ${port} — not dispatching.`));
     return false;
   }
-  console.log(`  ${green("board:")} ${board.browserUrl || board.url} ${dim(`(workflow: ${board.workflow})`)}`);
+  // THE BATON: a feed is ready only when it's SERVED (discovered + renderable), not
+  // merely when the server is healthy. Never dispatch the run before the board confirms
+  // it serves the run feed — attach mode included (an attached board must prove it
+  // discovered our root, not assume it). openRunBoard waited; if it's still unserved,
+  // halt rather than dispatch into a board that can't show the run.
+  if (!board.served) {
+    console.error(red(`  ✗ board is healthy but has not served the run feed "${board.workflow}" — not dispatching.`));
+    console.error(dim(`  served feeds: ${Object.keys(board.workflows || {}).join(", ") || "(none)"}`));
+    return false;
+  }
+  console.log(`  ${green("board:")} ${board.browserUrl || board.url} ${dim(`(workflow: ${board.workflow}, served)`)}`);
   if (headless) console.log(dim("  (headless — not opening a browser.)"));
 
   // 4. DISPATCH — the live run, scoped. runDispatch runs its loop and exits the
