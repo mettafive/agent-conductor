@@ -41,5 +41,31 @@ const work = model.steps.find((s) => s.title === "Do the work");
 assert(!!shape && shape.phase === "shaping", `shaping card has phase "shaping" in the board model (got ${shape?.phase})`);
 assert(!!work && work.phase === "workflow", `work card has phase "workflow" (got ${work?.phase})`);
 
+// 3. No checking→running→done flicker: a card whose gate has PASSED but isn't
+//    done yet (the state between gate-result and complete) must stay in Checking,
+//    never revert to Running.
+const colSnap: Snapshot = {
+  status: {
+    steps: {
+      "0": { status: "running", gate: "checking" }, // mid-check
+      "1": { status: "running", gate: "passed" },   // gate accepted, complete pending
+    },
+  },
+  workflowJson: JSON.stringify({
+    conductor: "3.0.0", name: "colflow", description: "column test.",
+    steps: [
+      { title: "Checking card", instruction: "x", requires: [] },
+      { title: "Finalizing card", instruction: "y", requires: [] },
+    ],
+  }),
+  statusPath: ".conductor/status.json",
+  conductorPath: null,
+};
+const colModel = buildModel(colSnap);
+const checking = colModel.steps.find((s) => s.title === "Checking card");
+const finalizing = colModel.steps.find((s) => s.title === "Finalizing card");
+assert(!!checking && checking.column === "checking", `gate=checking card → "checking" column (got ${checking?.column})`);
+assert(!!finalizing && finalizing.column === "checking", `gate=passed (pre-done) card must stay "checking", NOT revert to "running" (got ${finalizing?.column})`);
+
 console.log(`\n  ${failed ? `\x1b[31m${failed} failed\x1b[0m` : "\x1b[32mall passed\x1b[0m"}\n`);
 process.exit(failed ? 1 : 0);

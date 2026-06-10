@@ -176,7 +176,12 @@ function buildLoop(step: ConductorStep, st: RawStepStatus): LoopState | undefine
 function columnFor(rawStatus: string, gate: string): Column {
   if (rawStatus === "failed" || gate === "failed") return "failed";
   if (rawStatus === "done") return "done";
-  if (gate === "checking") return "checking";
+  // "passed" = the checker accepted; the card is finalizing (gate-result has
+  // landed, `complete` is about to flip status→done). Keep it in Checking until
+  // it lands in Done — without this it briefly reverts to Running (status is
+  // still "running" between the gate-result and complete writes), a visible
+  // checking → running → done flicker on every card.
+  if (gate === "checking" || gate === "passed") return "checking";
   if (rawStatus === "running") return "running";
   return "pending";
 }
