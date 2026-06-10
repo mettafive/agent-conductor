@@ -33,12 +33,21 @@ const HEARTBEATS = `[14:22:01]  Research  3/5 sources found via sitemap. Nav-cra
 [14:25:12]  Review    Final pass done: 2 weak transitions fixed, every
                       claim now cited. Handing off.`;
 
-// Real applied-insight closing beat (the buildAppliedSummary shape from integration.js).
-const INSIGHTS = `Applied 2 insights.
-- K-001: Folded the sitemap path into Research so the next run finds
-  sources without nav-crawling.
-- K-002: Required inline citations in the Write card so Review has
-  less to fix.`;
+// Insight modules — the real applied-insight shape (knowledge id, the plain-English
+// note, the current→proposed change) rendered as the board's amber insight cards
+// rather than a code block.
+function InsightModule({ id, note, was, now }: { id: string; note: string; was: string; now: string }) {
+  return (
+    <div className="rounded-2xl border border-amber/30 bg-amber/[0.06] p-5">
+      <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-amber">◇ insight · {id}</div>
+      <p className="mt-2 text-[14px] leading-snug text-mist-2">{note}</p>
+      <div className="mt-3 space-y-0.5 rounded-lg border border-line bg-ink/50 px-3 py-2.5 font-mono text-[11px] leading-snug">
+        <div className="text-rose/90">− {was}</div>
+        <div className="text-mint/90">+ {now}</div>
+      </div>
+    </div>
+  );
+}
 
 function Claim({ title, children, extra }: { title: string; children: ReactNode; extra?: ReactNode }) {
   return (
@@ -132,7 +141,27 @@ export function SpecPage() {
 
         <Claim
           title="It learns from every run."
-          extra={<CodeBlock code={INSIGHTS} lang="text" />}
+          extra={
+            <div>
+              <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.14em] text-mist">
+                Applied 2 insights — folded in before the next run
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <InsightModule
+                  id="K-001"
+                  note="Folded the sitemap path into Research so the next run finds sources without nav-crawling."
+                  was="crawl the nav to find sources"
+                  now="fetch /sitemap.xml first"
+                />
+                <InsightModule
+                  id="K-002"
+                  note="Required inline citations in the Write card so Review has less to fix."
+                  was="cite sources at the end"
+                  now="cite inline as you write"
+                />
+              </div>
+            </div>
+          }
         >
           <p>
             When a card passes, Conductor records any insight — a faster path, a cleaner input, a redundant

@@ -18,10 +18,14 @@ export function Nav({ active }: { active?: string }) {
     <header className="sticky top-0 z-50 border-b border-line bg-ink/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between px-5">
         <a href={`${BASE}#/`} className="flex items-center gap-2.5">
-          <img src={`${BASE}conductor.svg`} alt="" className="h-6 w-6 opacity-90" />
+          {/* The app's signature mark: the green diamond from the board's masthead. */}
+          <span
+            aria-hidden
+            className="h-2.5 w-2.5 shrink-0 rotate-45 rounded-[2px] bg-mint shadow-[0_0_10px_rgba(74,222,128,0.55)]"
+          />
           <span className="font-mono text-sm font-medium tracking-tight text-chalk">agent-conductor</span>
           <span className="rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono text-[10px] text-mist">
-            v2.4.1
+            v{__APP_VERSION__}
           </span>
         </a>
 
