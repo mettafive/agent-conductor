@@ -300,20 +300,19 @@ function ExpandedMonitor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const driftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stickRaf = useRef<number | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [cursorOn, setCursorOn] = useState(false);
 
   const shown = beats;
 
+  // Glue to the bottom SYNCHRONOUSLY (before paint): both the new-beat layout
+  // effect and the typing ResizeObserver call this, so the bottom edge stays
+  // pinned frame-by-frame as a beat streams in. Doing it in a rAF (next frame)
+  // painted the new content at the old scroll first, then snapped — the jump.
   const stickToBottom = useCallback(() => {
     if (!pinned.current) return;
-    if (stickRaf.current != null) return;
-    stickRaf.current = requestAnimationFrame(() => {
-      stickRaf.current = null;
-      const el = scrollRef.current;
-      if (el && pinned.current) el.scrollTop = el.scrollHeight;
-    });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, []);
 
   const scrollToBottom = useCallback((smooth: boolean) => {
@@ -346,7 +345,6 @@ function ExpandedMonitor({
     scrollToBottom(false);
     return () => {
       if (driftTimer.current) clearTimeout(driftTimer.current);
-      if (stickRaf.current != null) cancelAnimationFrame(stickRaf.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -462,7 +460,7 @@ function ExpandedMonitor({
                     e.stopPropagation();
                     setModalInsight(insightFor(b, knowledge));
                   }}
-                  className="mt-px shrink-0 select-none rounded border border-amber/25 bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
+                  className="shrink-0 self-center select-none rounded border border-amber/25 bg-amber/15 px-1 py-px text-[8px] font-medium uppercase tracking-wide text-amber transition-colors hover:bg-amber/25"
                   title="Captured a learning — click to see it"
                 >
                   ◇ insight
