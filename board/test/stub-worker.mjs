@@ -74,6 +74,14 @@ const run = (extra) =>
     stdio: "inherit",
   });
 
+// STUB_BEATS=1: narrate the card with PROSE heartbeats — start, during, end — via
+// the same `update` verb a real worker uses (exercises the per-card prose channel).
+if (process.env.STUB_BEATS === "1") {
+  run(["update", idx, "Starting the card: reading the inputs and planning the work."]);
+  run(["update", idx, "Halfway — wrote the receipt; verifying it against the rubric next."]);
+  run(["update", idx, "Done: receipt written and verified. Handing off."]);
+}
+
 run(["gate-result", idx, passed, "--evidence", evidence, "--summary", summary]);
 
 // STUB_LAND_NO_COMPLETE: the work + gate LANDED (receipt written, gate passed),

@@ -146,6 +146,18 @@ Write your primary markdown receipt to EXACTLY this path (relative to the workin
 
 The receipt must contain the actual work product (content/data/code/report) or, for an action card, a verifiable action record (command run, return value, changed resource, verification result). A receipt that merely *describes* what was done without proof will fail the rubric.
 
+# Narrate your work as you go — heartbeats (in your own voice, IN PARALLEL with the work)
+While you work this card, post short prose progress notes so the board narrates live, right inside this card. Post one with:
+   ${verb(`update ${cardIndex} "<your one- or two-sentence progress note>"`)}
+Post a note when you START (what you're about to do), at least once a minute while you work — and at any real boundary (a sub-task finished, a blocker, a strategy change, an artifact produced) — and a final note when you FINISH (what you produced, what's next). These are FIRE-AND-FORGET narration that runs alongside the work: never block the work waiting on one, and they are NOT the work product (the receipt is). When a note contains a meaningful URL (a PR, a discovered page), write it as a markdown link so the board renders it clickable.
+
+How to write a good note:
+Treat each update like a Codex preamble: concise, grouped, and useful for bringing the user along while work is happening.
+Do not write one update for every tiny read, command, or edit. Group related actions. Keep updates to 1-2 sentences; for quick updates, aim for 8-12 words.
+Build on prior context: say what you learned so far and what it implies for the next action. Avoid trivial updates unless they are part of a larger grouped action. Never write status-log updates like "drafting hero", "checking", "running tests", or "checker passed" — the board already shows system status.
+Good update: "README still describes explicit gates, so I am rewriting the quick start around instruction-based checking."
+Good update: "Choosing verified cards over gates because v3 no longer has gate fields."
+
 # Reporting protocol - report ONLY through these shell commands (run them, in order)
 All commands use the SAME local conductor-board CLI binary and the SAME status/workflow paths. The environment variable CONDUCTOR_HEADLESS=1 is already set for you, so these run non-interactively. The card has ALREADY been marked running for you — proceed straight to the work.
 

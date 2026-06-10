@@ -1834,6 +1834,11 @@ function WorkflowCard({
   const [conditionModalOpen, setConditionModalOpen] = useState(false);
   const dur = fmtDur(step.started_at, step.completed_at);
   const latest = step.heartbeat.filter((h) => !h.system).at(-1) ?? step.heartbeat.at(-1);
+  // Short rolling history of the agent's PROSE beats (not mechanical system pings),
+  // restored into the card alongside the latest-beat summary — the in-card
+  // narration the terminal consolidation moved out. Newest last; capped.
+  const proseBeats = step.heartbeat.filter((h) => !h.system && typeof h.note === "string" && h.note.trim());
+  const recentBeats = proseBeats.slice(-5);
   const finalBeat = step.heartbeat.find((h) => h.finalBeat);
   const cardNotes = (notes || []).filter(
     (n) => n.status !== "removed" && (n.step === step.id || n.card === step.id || n.card_title === step.title),
@@ -1986,6 +1991,17 @@ function WorkflowCard({
               {/* summary — moved out of the collapsed view; full text in the open view */}
               {!pendingVariant && summaryLine && (
                 <p className="text-[15px] leading-snug text-mist-2">{renderNote(summaryLine)}</p>
+              )}
+
+              {/* in-card narration: the agent's recent prose heartbeats, newest last */}
+              {recentBeats.length > 1 && (
+                <div className="space-y-1 border-l border-line pl-3">
+                  {recentBeats.map((b, i) => (
+                    <p key={`${b.at}-${i}`} className="text-[13px] leading-snug text-mist">
+                      {renderNote(b.note)}
+                    </p>
+                  ))}
+                </div>
               )}
 
               {/* failing criterion — loud, only on failure */}
