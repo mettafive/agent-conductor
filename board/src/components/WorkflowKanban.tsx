@@ -1712,12 +1712,16 @@ function PendingColumnCards({
   model,
   notes,
   maxAttempts,
+  openCards,
+  onToggle,
 }: {
   steps: BoardStep[];
   allSteps: BoardStep[];
   model: BoardModel;
   notes?: DeveloperNote[];
   maxAttempts: number;
+  openCards: Set<string>;
+  onToggle: (id: string) => void;
 }) {
   const bands = useMemo(() => pendingBands(steps, allSteps), [steps, allSteps]);
 
@@ -1739,6 +1743,8 @@ function PendingColumnCards({
                 notes={notes}
                 maxAttempts={maxAttempts}
                 variant="pending"
+                open={openCards.has(step.id)}
+                onToggle={() => onToggle(step.id)}
               />
             ))}
           </AnimatePresence>
@@ -1820,6 +1826,8 @@ function WorkflowCard({
   notes,
   maxAttempts,
   variant = "default",
+  open = false,
+  onToggle,
 }: {
   step: BoardStep;
   allSteps: BoardStep[];
@@ -1827,8 +1835,14 @@ function WorkflowCard({
   notes?: DeveloperNote[];
   maxAttempts: number;
   variant?: "default" | "pending";
+  // open/closed is owned by the board (keyed by step.id) so it SURVIVES the card
+  // moving columns — moving rows used to remount the card and reset it to closed.
+  open?: boolean;
+  onToggle?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // shim so the existing `setOpen((v) => !v)` call sites keep working; the actual
+  // toggle is owned by the board (the arg is ignored — it just flips this card).
+  const setOpen = (_next?: boolean | ((v: boolean) => boolean)) => onToggle?.();
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [insightModalOpen, setInsightModalOpen] = useState(false);
   const [conditionModalOpen, setConditionModalOpen] = useState(false);
@@ -2224,6 +2238,17 @@ export function WorkflowKanban({
     return () => clearTimeout(t);
   }, [allSettledNow]);
   const [compileArtifactStep, setCompileArtifactStep] = useState<BoardStep | null>(null);
+  // Per-card open/closed lives HERE (keyed by step.id), not in each card, so a
+  // card keeps its open/closed state when it moves columns — moving rows used to
+  // remount the card and snap it shut.
+  const [openCards, setOpenCards] = useState<Set<string>>(() => new Set());
+  const toggleCard = (id: string) =>
+    setOpenCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   useEffect(() => {
     if (settled && steps.length > 0) {
@@ -2316,6 +2341,8 @@ export function WorkflowKanban({
                               model={displayModel}
                               notes={displayNotes}
                               maxAttempts={maxAttempts}
+                              openCards={openCards}
+                              onToggle={toggleCard}
                             />
                           ) : (
                             <div>
@@ -2328,6 +2355,8 @@ export function WorkflowKanban({
                                     model={displayModel}
                                     notes={displayNotes}
                                     maxAttempts={maxAttempts}
+                                    open={openCards.has(step.id)}
+                                    onToggle={() => toggleCard(step.id)}
                                   />
                                 ))}
                               </AnimatePresence>
@@ -2387,6 +2416,8 @@ export function WorkflowKanban({
                     model={model}
                     notes={notes}
                     maxAttempts={maxAttempts}
+                    openCards={openCards}
+                    onToggle={toggleCard}
                   />
                 ) : (
                   <div>
@@ -2399,6 +2430,8 @@ export function WorkflowKanban({
                           model={model}
                           notes={notes}
                           maxAttempts={maxAttempts}
+                          open={openCards.has(step.id)}
+                          onToggle={() => toggleCard(step.id)}
                         />
                       ))}
                     </AnimatePresence>
