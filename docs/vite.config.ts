@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 // The version badge in the masthead. Keep in sync with board/package.json on release
 // (the cross-workspace JSON import doesn't inline cleanly in vite's config bundler).
-const APP_VERSION = "3.3.5";
+const APP_VERSION = "3.3.6";
 
 // GitHub Pages serves the project site under /agent-conductor/.
 export default defineConfig({
