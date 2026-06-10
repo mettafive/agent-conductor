@@ -13,10 +13,35 @@ conductor-board
 Board live at http://localhost:3042 — watching .conductor/status.json
 ```
 
+## Run a skill in one command
+
+```bash
+npx conductor-board run SKILL.md
+```
+
+`run` takes a skill from any state to a finished run with a visible board —
+compile-if-needed → (integration, if the skill carries open insights) → open the
+board → dispatch — by one rule: **run everything that isn't done; if everything's
+done, rerun fresh.** A re-run reuses the compiled workflow and skips done cards,
+so only a new or edited skill pays the first compile. See
+[START.md](START.md) for prerequisites and gotchas.
+
+- **Worker, auto-chosen and printed.** `CONDUCTOR_WORKER_CMD` → `claude` →
+  `codex` → loud error. The chosen runtime and its descendant cap are printed
+  (`worker: claude (cap 5)`), so a fallback is never silent. Each runtime owns
+  its own safe cap (Claude 5, Codex larger), so Codex no longer trips a
+  Claude-tuned cap.
+- **Integration leads, on the same board.** If the skill carries open insights,
+  the integration ("shaping") cards run first — rewriting the plan — then the
+  work cards flow, in one continuous run with no second confirm. A failed
+  integration is a visible failed shaping card that halts the run cleanly; work
+  never runs on a half-integrated plan.
+
 ## Commands
 
 ```bash
 npx conductor-board                         # serve the live board
+npx conductor-board run SKILL.md            # ONE command: compile-if-needed → integrate → board → dispatch
 npx conductor-board init                    # scaffold .conductor/workflow.json
 npx conductor-board compile --skill SKILL.md
 npx conductor-board decompose --skill SKILL.md
@@ -52,18 +77,28 @@ or disable Codex with `CONDUCTOR_DECOMPOSE_CODEX=0` and use `OPENAI_API_KEY`.
 There is no heuristic fallback.
 
 Conductor learns across runs: agents post insights with `suggest`, which (with
-human directives and comments) accumulate in `knowledge.json`; `integrate`
-applies the open items to the cards before a repeat run.
+human directives and comments) accumulate in `knowledge.json`. `run` applies the
+open items automatically — the integration ("shaping") cards lead the next run on
+the same board, then the work cards follow — so there is no separate confirm
+step. (`integrate` still exists to apply them by hand.) Applying is crash-safe: a
+write-ahead `pending-apply.json` marker makes the cards + workflow + knowledge
+commit atomic, so a crash mid-apply can never re-apply the same insights.
 
 ## Autonomous execution (opt-in)
 
 Beyond driving cards by hand (`step` / `check` / `gate-result` / `complete`), the
-board ships a model-free execution plane that runs cards for you:
+board ships a model-free execution plane that runs cards for you. `run SKILL.md`
+orchestrates the whole thing (compile → integrate → board → dispatch); the verbs
+below are what it drives, available individually for one-phase-at-a-time use:
 
-- `run-card <id>` runs one eligible card in a single bounded worker process.
-- `dispatch` is a dumb loop that hands eligible cards to `run-card` workers up to a
-  concurrency cap, refills as they finish, and reclaims a worker that dies. It is
-  not a model — quality is still gated by each card's own checker.
+- `run-card <id>` runs one eligible card in a single bounded worker, chosen by a
+  worker adapter (`claude` / `codex` / `CONDUCTOR_WORKER_CMD`) with a per-runtime
+  descendant cap. The chosen worker line is always printed.
+- `dispatch` is a dumb loop that hands eligible cards to `run-card` workers. On
+  teardown it SIGKILLs each worker's whole descendant subtree, so a worker that
+  re-spawned a detached child (e.g. `claude -p`) leaves no orphan. It refills as
+  workers finish and reclaims a worker that dies. It is not a model — quality is
+  still gated by each card's own checker.
 - `fold-card` folds a finished card's artifacts into the run snapshot off the
   critical path; the run-end consolidation is idempotent.
 
@@ -187,7 +222,10 @@ npx conductor-board --path ./run/status.json --workflow ./run/workflow.json --po
 ```bash
 npm install
 npm run build
-npm run test:features
+npm run test:features      # 50+ scenarios across every main verb
+npm run test:run           # the `run` command: state model, worker adapter, board
+npm run test:integration   # crash-safe apply + open detection
+npm run test:shaping       # the shaping/work card label survives the parser
 npm run test:loops
 npm start
 ```

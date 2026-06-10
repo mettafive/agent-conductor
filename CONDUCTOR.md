@@ -302,9 +302,14 @@ npx conductor-board knowledge --min 1
 ```
 
 Suggestions (plus human directives and card comments) accumulate in
-`knowledge.json`. Archiving a run appends its open notes. Before a repeat run,
-`integrate` applies the open knowledge items to `cards.json` (the "Improve & Run"
-path):
+`knowledge.json`. Archiving a run appends its open notes. On the next `run`, the
+open items are applied automatically as the **integration ("shaping") cards** —
+they lead the run on the same board, rewriting the plan, and the work cards flow
+after, in one continuous run with no separate confirm. A failed integration is a
+visible failed shaping card that halts the run cleanly (work never runs on a
+half-integrated plan), and applying is crash-safe (a write-ahead
+`pending-apply.json` marker makes the commit atomic, so a crash can never
+re-apply the same insights). To apply them by hand instead:
 
 ```bash
 npx conductor-board integrate --dir .conductor/<workflow-name>

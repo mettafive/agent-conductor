@@ -16,9 +16,13 @@ npx conductor-board run SKILL.md
    compile. (Force a recompile with `--force`.)
 2. **Pick the worker** — chosen automatically and **printed** as one line, e.g.
    `worker: claude (cap 5)`. No guessing which runtime ran.
-3. **Open the board** — a visible Kanban board opens (or attaches) on the run's
+3. **Integrate (if there are open insights)** — the integration ("shaping") cards
+   lead the run on the same board, rewriting the plan from accumulated insights,
+   then the work flows after. One continuous run, no second confirm. A failed
+   integration halts cleanly (work never runs on a half-integrated plan).
+4. **Open the board** — a visible Kanban board opens (or attaches) on the run's
    own workflow. Use `--headless` for CI/cron/no-display.
-4. **Dispatch** — fans the cards out to bounded workers, refills as they finish,
+5. **Dispatch** — fans the cards out to bounded workers, refills as they finish,
    reclaims any that crash, and exits when every card is terminal.
 
 That's it. There is no separate `init-board` + `dispatch` to stitch by hand.

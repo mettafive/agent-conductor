@@ -234,8 +234,12 @@ Conductor improves a workflow over repeated runs. The loop:
    are captured the same way.
 2. **Accumulate.** Open items collect in `knowledge.json`. When a run is
    archived, its open notes are appended there.
-3. **Integrate.** Before a repeat run, `integrate` (the "Improve & Run" path)
-   applies the open knowledge items to `cards.json`.
+3. **Integrate.** The next `run` applies the open knowledge items automatically:
+   the integration ("shaping") cards lead the run on the same board, rewriting
+   `cards.json`/`workflow.json`, then the work cards follow — one continuous run.
+   Applying is crash-safe (a write-ahead `pending-apply.json` marker makes the
+   commit atomic), and a failed integration halts the run cleanly rather than
+   running work on a half-integrated plan. `integrate` applies them by hand.
 4. **Learn per card.** `learn-card` is the post-card efficiency learner: after a
    card completes it derives an efficiency insight about how the card ran (it
    never changes what the card does).
