@@ -20,7 +20,7 @@ const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-function normalizeIntegration(payload) {
+export function normalizeIntegration(payload) {
   const idsFrom = (change) => {
     const raw = Array.isArray(change?.knowledge_ids)
       ? change.knowledge_ids
@@ -68,10 +68,18 @@ function normalizeIntegration(payload) {
         reason: compact(item?.reason || item?.why),
       })).filter((item) => item.id)
     : [];
-  return { changes, dismissed };
+  // Per-insight plain-English what/why — a near-free byproduct of the composer's
+  // existing call (no extra round-trip). Used for the loop's closing heartbeat.
+  const applied_notes = Array.isArray(payload?.applied_notes)
+    ? payload.applied_notes.map((item) => ({
+        knowledge_id: compact(item?.knowledge_id || item?.id),
+        note: compact(item?.note || item?.what || item?.change),
+      })).filter((item) => item.note)
+    : [];
+  return { changes, dismissed, applied_notes };
 }
 
-function mergeLocked(result, locked) {
+export function mergeLocked(result, locked) {
   const changes = [];
   const dismissed = [];
   const seenChanges = new Set();
@@ -95,7 +103,9 @@ function mergeLocked(result, locked) {
     if (seenDismissed.has(item.id) || seenChanges.has(item.id)) continue;
     dismissed.push(item);
   }
-  return { changes, dismissed };
+  // Carry the composer's per-insight notes through unchanged (the closing-beat
+  // byproduct; not part of the lock machinery).
+  return { changes, dismissed, applied_notes: result.applied_notes || [] };
 }
 
 function handledIds(result) {
@@ -269,18 +279,46 @@ function initIntegrationBoard(root, openItems) {
   return { workflowPath, statusPath, phaseToStep };
 }
 
-function integrationProgressNote(evt) {
+// The loop's closing summary — ONE multi-line note (never one beat per insight):
+// a lead line, then one plain-English what/why per applied insight. Prefers the
+// composer's per-insight applied_notes; falls back to the per-edit change summaries
+// (also real applications, not stock text). Returns null when nothing was applied,
+// so the beat stays the quiet generic "passed." rather than a bare "Applied 0".
+export function buildAppliedSummary(result) {
+  const notes = Array.isArray(result?.applied_notes)
+    ? result.applied_notes.filter((n) => n && n.note && n.note.trim())
+    : [];
+  const lines = notes.length
+    ? notes.map((n) => `- ${n.knowledge_id ? `${n.knowledge_id}: ` : ""}${n.note.trim()}`)
+    : (result?.changes || [])
+        .filter((c) => c && c.change && c.change.trim())
+        .map((c) => {
+          const ids = (c.knowledge_ids || []).join(", ");
+          return `- ${ids ? `${ids}: ` : ""}${c.change.trim()}`;
+        });
+  if (!lines.length) return null;
+  const count =
+    notes.length || new Set((result?.changes || []).flatMap((c) => c.knowledge_ids || [])).size || lines.length;
+  return `Applied ${count} insight${count === 1 ? "" : "s"}.\n${lines.join("\n")}`;
+}
+
+export function integrationProgressNote(evt) {
   const label = evt.maxAttempts ? `${evt.attempt}/${evt.maxAttempts}` : "";
   const phase = INTEGRATION_PHASES.find((item) => item.key === evt.phase)?.title || evt.phase;
   if (evt.event === "phase-start") return `${phase}: started.`;
-  if (evt.event === "phase-end") return evt.passed ? `${phase}: passed.` : `${phase}: failed. ${compact(evt.feedback)}`;
+  if (evt.event === "phase-end") {
+    // The closing beat: the multi-line applied summary rides the phase-end note
+    // (one beat, marks the card done) when the pass applied something.
+    if (evt.passed && evt.summaryNote) return evt.summaryNote;
+    return evt.passed ? `${phase}: passed.` : `${phase}: failed. ${compact(evt.feedback)}`;
+  }
   if (evt.event === "attempt-start") return `${phase}: attempt ${label} started.`;
   if (evt.event === "check-start") return `${phase}: checker attempt ${label} started.`;
   if (evt.event === "check-end") return evt.passed ? `${phase}: checker attempt ${label} passed.` : `${phase} feedback: ${compact(evt.feedback)}`;
   return `${phase}: ${evt.event}`;
 }
 
-function makeIntegrationProgress({ statusPath, phaseToStep }) {
+export function makeIntegrationProgress({ statusPath, phaseToStep }) {
   return (evt) => {
     const step = phaseToStep.get(evt.phase);
     if (!Number.isInteger(step)) return;
@@ -332,6 +370,8 @@ You are returning patches only. Do not return a full cards array or workflow.
 Allowed change type for this version: "edit_instruction" only.
 Do not add cards. Do not remove cards. Do not rename cards. Do not reorder cards. Do not change dependencies.
 
+For each knowledge item you apply, also emit a one-sentence plain-English note of what you changed and why — the concrete application to THIS workflow, not a restatement of the insight's own text. Example: "Added synonym expansion to the research card so the next run won't miss keyword variants." Return these as applied_notes: a list of { knowledge_id, note }, one entry per applied insight.
+
 Return JSON only:
 {
   "changes": [
@@ -346,6 +386,9 @@ Return JSON only:
   ],
   "dismissed": [
     { "id": "K-003", "reason": "Observational, not actionable." }
+  ],
+  "applied_notes": [
+    { "knowledge_id": "K-001", "note": "Added canonical HTTPS verification to the validate card so the next run proves the redirect, not just the page." }
   ]
 }
 
@@ -2374,7 +2417,16 @@ export async function runIntegration(args) {
         strict: args.includes("--strict"),
         progress,
       });
-      progress({ phase: "instruction", event: "phase-end", passed: loop.report.ok, feedback: repairFeedback(loop.report.final || {}) });
+      // The loop narrates what it just taught itself: ONE multi-line closing beat
+      // on the instruction card (where the work happened), built from the composer's
+      // existing output — no extra model call.
+      progress({
+        phase: "instruction",
+        event: "phase-end",
+        passed: loop.report.ok,
+        feedback: repairFeedback(loop.report.final || {}),
+        summaryNote: loop.report.ok ? buildAppliedSummary(loop.result) : null,
+      });
     }
   } catch (e) {
     progress({ phase: "instruction", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
