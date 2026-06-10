@@ -196,6 +196,38 @@ function killGroup(pgid) {
 // Hard wall-clock backstop: longer than run-card's own ~20-min worker timeout.
 const HARD_MAX_WALL_MS = 25 * 60 * 1000;
 
+/**
+ * Install the status-dir fs.watch "completion bell", resilient to faults (audit
+ * §4a). Two failure modes are handled:
+ *   - synchronous throw from fs.watch (e.g. EMFILE at setup) => degrade now.
+ *   - ASYNC 'error' event on an already-created watcher (the common EMFILE shape
+ *     under fd pressure) => WITHOUT a handler this is an unhandled EventEmitter
+ *     'error' => uncaught exception => the dispatcher dies. We catch it, drop the
+ *     watcher, and degrade — the patrol interval runs the SAME idempotent pass,
+ *     so the run still advances (just on the slower cadence).
+ * Returns { watcher } (null once degraded) so the caller can close it on exit.
+ * Exported for direct testing of the degrade-not-crash behavior.
+ */
+export function installStatusWatcher(dir, { onChange, onDegrade }) {
+  const state = { watcher: null };
+  try {
+    const w = fs.watch(dir, { persistent: true }, (_evt, fname) => {
+      if (!fname || /status\.json$/.test(fname) || /artifacts/.test(String(fname))) {
+        onChange();
+      }
+    });
+    state.watcher = w;
+    w.on("error", (e) => {
+      onDegrade(`fs.watch error (${e.message})`);
+      try { w.close(); } catch { /* already gone */ }
+      state.watcher = null;
+    });
+  } catch (e) {
+    onDegrade(`fs.watch unavailable (${e.message})`);
+  }
+  return state;
+}
+
 export async function runDispatch(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(HELP);
@@ -573,7 +605,7 @@ export async function runDispatch(args) {
 
   function cleanupAndExit(code) {
     try {
-      if (watcher) watcher.close();
+      if (watchState && watchState.watcher) watchState.watcher.close();
     } catch {
       /* ignore */
     }
@@ -595,16 +627,10 @@ export async function runDispatch(args) {
     }, 250);
   }
 
-  let watcher = null;
-  try {
-    watcher = fs.watch(path.dirname(statusPath), { persistent: true }, (_evt, fname) => {
-      if (!fname || /status\.json$/.test(fname) || /artifacts/.test(String(fname))) {
-        scheduleDispatch("fs.watch");
-      }
-    });
-  } catch (e) {
-    console.log(amber(`  fs.watch unavailable (${e.message}) — relying on the patrol interval.`));
-  }
+  const watchState = installStatusWatcher(path.dirname(statusPath), {
+    onChange: () => scheduleDispatch("fs.watch"),
+    onDegrade: (msg) => console.log(amber(`  ${msg} — relying on the patrol interval.`)),
+  });
 
   // slow patrol — same dispatch() code; catches missed bells + wall-clock reclaim.
   const patrol = setInterval(() => {

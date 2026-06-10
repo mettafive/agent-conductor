@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dependencyBlockers, dependencyBlockerMessage, resolveTopLevelIndex } from "./dependencies.js";
 import { receiptArtifactName, artifactsDir, findReceiptArtifact } from "./artifacts.js";
 import { timingEnabled, writeWorkerSidecar } from "./timing.js";
+import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -170,39 +171,28 @@ Begin now. End after step 5.`;
 
 /**
  * THE SEAM - launch exactly ONE non-interactive agent, BOUNDED, scoped to cwd,
- * fed the brief, awaited with a timeout. Wired as a single swappable function.
+ * fed the brief, awaited with a timeout. WHICH runtime runs is declared by the
+ * per-adapter registry (./worker-adapters.js), not inline here.
  *
  * Bounding (belt + braces):
- *   1. Tool scope (the leash): the worker gets ONLY the tools a card needs -
- *      Bash, Read, Write, Edit, Glob, Grep - via --allowedTools, with the
- *      delegation tool explicitly denied via --disallowedTools "Task". Under
- *      --permission-mode dontAsk, allowed tools run non-interactively without
- *      prompts and ANY other tool (Task/Agent/Workflow/sub-spawn) is DENIED
- *      without prompting (confirmed against the installed claude --help: choices
- *      include "dontAsk"). The blanket --permission-mode bypassPermissions is
- *      gone - that was what let the worker freely use its own Task tool and
- *      balloon to 43 processes.
+ *   1. Tool/permission leash: declared by the chosen adapter. e.g. claude gets
+ *      ONLY Bash/Read/Write/Edit/Glob/Grep via --allowedTools with the delegation
+ *      tool denied via --disallowedTools "Task" under --permission-mode dontAsk;
+ *      codex runs --sandbox workspace-write with approval_policy="never". The
+ *      blanket bypassPermissions is gone - that was what let a worker balloon to
+ *      43 processes.
  *   2. Process-group seatbelt: the worker runs DETACHED in its own process group;
  *      a poller counts its descendant subtree (pgrep -P, recursively). If the
- *      descendant count exceeds DESCENDANT_CAP (5) OR the timeout elapses, the
- *      ENTIRE process group is SIGKILLed (process.kill(-pgid, "SIGKILL")). The
- *      max descendant count observed is recorded and returned. This caps any
- *      runaway even if the tool-restriction flags somehow fail.
+ *      descendant count exceeds the ADAPTER'S cap (per-runtime: claude 5, codex
+ *      larger - audit §4c) OR the timeout elapses, the ENTIRE process group is
+ *      SIGKILLed (process.kill(-pgid, "SIGKILL")). The max descendant count
+ *      observed is recorded and returned. This caps any runaway even if the
+ *      tool-restriction flags somehow fail.
  *
- * Codex fallback: scoped to --sandbox workspace-write with -c
- * approval_policy="never" (no bypass, no subagent path), --add-dir for the
- * status/workflow dir so it can write the receipt + run node, run detached under
- * the same process-group guard.
- *
- * Override with CONDUCTOR_WORKER_CMD (a shell command; brief on stdin) to swap
- * the runtime without touching this file. The bounded invocation is the default.
+ * Selection is detect-and-tier (CONDUCTOR_WORKER_CMD → claude → codex → loud
+ * error) and the chosen worker line is always printed, so the runtime is never
+ * a silent mystery (audit §4b).
  */
-const DESCENDANT_CAP = 5;
-
-// Allow-list: only what a card needs to do its own work + report through the CLI
-// verbs (node bin/cli.js ...). NOT Task/Agent/Workflow - no delegation path.
-const WORKER_ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"];
-const WORKER_DISALLOWED_TOOLS = ["Task"];
 
 /** Count the live descendant subtree of a pid via pgrep -P (recursive). */
 function countDescendants(rootPid) {
@@ -231,7 +221,7 @@ function countDescendants(rootPid) {
  * poll its descendant subtree, and SIGKILL the whole group on cap-breach or
  * timeout. Returns a summarizeRun-shaped object plus maxDescendants/killedReason.
  */
-function spawnBounded(cmd, argv, { cwd, env, timeoutMs, input, onStreamLine }) {
+function spawnBounded(cmd, argv, { cwd, env, timeoutMs, input, onStreamLine, descendantCap = 5 }) {
   return new Promise((resolve) => {
     const child = spawn(cmd, argv, {
       cwd,
@@ -284,7 +274,7 @@ function spawnBounded(cmd, argv, { cwd, env, timeoutMs, input, onStreamLine }) {
     const poll = setInterval(() => {
       const n = countDescendants(pgid);
       if (n > maxDescendants) maxDescendants = n;
-      if (n > DESCENDANT_CAP) killGroup(`descendant cap exceeded (${n} > ${DESCENDANT_CAP})`);
+      if (n > descendantCap) killGroup(`descendant cap exceeded (${n} > ${descendantCap})`);
     }, 1000);
 
     const timer = setTimeout(() => killGroup("timeout"), timeoutMs);
@@ -366,59 +356,41 @@ function makeStreamParser() {
 async function spawnWorker(brief, cwd, { timeoutMs, extraDir, timing }) {
   const env = { ...process.env, CONDUCTOR_HEADLESS: "1" };
 
-  if (process.env.CONDUCTOR_WORKER_CMD) {
-    // CONDUCTOR_WORKER_CMD is a shell command; run it via sh -c with brief on stdin,
-    // bounded by the same detached-process-group + descendant-cap guard.
-    const rr = await spawnBounded("/bin/sh", ["-c", process.env.CONDUCTOR_WORKER_CMD], { cwd, env, timeoutMs, input: brief });
-    return { runtime: "CONDUCTOR_WORKER_CMD", ...rr };
-  }
-
-  const has = (cmd) => spawnSync(cmd, ["--version"], { encoding: "utf8", stdio: "ignore" }).status === 0;
-
-  if (has("claude")) {
-    const args = [
-      "-p", brief,
-      "--permission-mode", "dontAsk",
-      "--allowedTools", WORKER_ALLOWED_TOOLS.join(" "),
-      "--disallowedTools", WORKER_DISALLOWED_TOOLS.join(" "),
-    ];
-    // TIMEKEEPER: only when --timing is on, run the worker in stream/verbose mode
-    // so tool-use events surface for the worker-side boundary parse. Default OFF
-    // means today\x27s plain `claude -p` invocation is byte-identical.
-    let parser = null;
-    if (timing) {
-      args.push("--output-format", "stream-json", "--verbose");
-      parser = makeStreamParser();
-    }
-    if (extraDir) { args.push("--add-dir", extraDir); }
-    const r = await spawnBounded("claude", args, {
-      cwd,
-      env,
-      timeoutMs,
-      onStreamLine: parser ? parser.onLine : undefined,
-    });
+  // Detect-and-tier: CONDUCTOR_WORKER_CMD → claude → codex → loud error.
+  const adapter = selectAdapter();
+  if (!adapter) {
+    console.error(red(`  ${workerLine(null)}`));
     return {
-      runtime: `claude -p --permission-mode dontAsk --allowedTools "${WORKER_ALLOWED_TOOLS.join(" ")}" --disallowedTools "Task"`
-        + (timing ? " --output-format stream-json --verbose" : ""),
-      workerStamps: parser ? parser.stamps : null,
-      ...r,
+      runtime: "none",
+      status: null,
+      error: "no worker runtime found (need claude or codex on PATH, or set CONDUCTOR_WORKER_CMD)",
+      maxDescendants: 0,
     };
   }
 
-  if (has("codex")) {
-    const args = [
-      "exec", "-",
-      "--skip-git-repo-check",
-      "--sandbox", "workspace-write",
-      "-c", "approval_policy=\"never\"",
-      "--color", "never",
-    ];
-    if (extraDir) { args.push("--add-dir", extraDir); }
-    const r = await spawnBounded("codex", args, { cwd, env, timeoutMs, input: brief });
-    return { runtime: "codex exec - --sandbox workspace-write -c approval_policy=never", ...r };
-  }
+  const cap = adapterCap(adapter);
+  // Always print the chosen worker line — never a silent fallback (audit §4b).
+  console.log(bold(`  ${workerLine(adapter, cap)}`));
 
-  return { runtime: "none", status: null, error: "no worker runtime found (need claude or codex on PATH)", maxDescendants: 0 };
+  const launched = adapter.launch(brief, { extraDir, timing });
+  // TIMEKEEPER: only adapters that opt into a stream (claude --timing) get a
+  // parser. Default OFF => byte-identical to the plain invocation.
+  const parser = launched.stream ? makeStreamParser() : null;
+
+  const r = await spawnBounded(launched.cmd, launched.argv, {
+    cwd,
+    env,
+    timeoutMs,
+    input: launched.input,
+    descendantCap: cap,
+    onStreamLine: parser ? parser.onLine : undefined,
+  });
+
+  return {
+    runtime: `${adapter.label} ${adapter.leashLabel}` + (launched.stream ? " --output-format stream-json --verbose" : ""),
+    workerStamps: parser ? parser.stamps : null,
+    ...r,
+  };
 }
 
 function summarizeRun(r) {

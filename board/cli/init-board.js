@@ -218,6 +218,63 @@ function killPortIfBoard(port) {
   }
 }
 
+/**
+ * openRunBoard — the shared "always open/attach a VISIBLE board for THIS run"
+ * step. Extracted from runInitBoard so the run command (and anything else that
+ * starts a run) gets a board on the RUN's status/workflow without re-stitching
+ * ensureBoard → waitForWorkflow → openBrowser by hand (audit §2).
+ *
+ * Identity is the port (ensureBoard): a healthy board there is attached, else
+ * one is spawned. Pure logic + side effects (registry sync, browser open); the
+ * caller prints. Returns a structured result so callers can report precisely.
+ *
+ * @returns {Promise<{ok, healthy, served, spawned, url, browserUrl, workflow, health, workflows}>}
+ */
+export async function openRunBoard(statusPath, workflowPath, { headless = false, port = 3042 } = {}) {
+  const conductorDir = path.dirname(path.resolve(statusPath));
+  const serverJsonPath = path.join(conductorDir, "server.json");
+  const registry = registryPath();
+
+  let workflow;
+  try {
+    workflow = workflowName(workflowPath);
+  } catch {
+    workflow = "workflow";
+  }
+
+  // PHASE A: one shared find-or-spawn rule (identity = port). A healthy board is
+  // attached, never SIGTERMed; only an unanswered /health spawns one.
+  const ensured = await ensureBoard(port, { statusPath, workflowPath });
+  const health0 = ensured.health;
+  if (!health0) {
+    return { ok: false, healthy: false, served: false, spawned: ensured.spawned, url: ensured.url, browserUrl: null, workflow, health: null, workflows: {} };
+  }
+
+  syncRegistry(registry, { port, url: ensured.url, pid: health0.pid }, {
+    url: ensured.url,
+    conductor_root: health0.conductor_root || conductorDir,
+    status_path: statusPath,
+    workflow_path: workflowPath,
+  });
+
+  // If WE spawned the board it must serve our workflow; an ATTACH to another
+  // root's board legitimately may not (cross-root attach is not an error).
+  const health = await waitForWorkflow(ensured.url, workflow, conductorDir);
+  const served = healthHasWorkflow(health, workflow);
+  if (ensured.spawned && !served) {
+    return { ok: false, healthy: true, served: false, spawned: true, url: ensured.url, browserUrl: null, workflow, health, workflows: health?.workflows || {} };
+  }
+
+  // Stable canonical URL — opening the same URL focuses the existing tab.
+  const browserUrl = canonicalUrl(port, workflow);
+  if (!headless && !browserAlreadyOpened(serverJsonPath, registry)) {
+    openBrowser(browserUrl);
+    markBrowserOpened(serverJsonPath, browserUrl, registry);
+  }
+
+  return { ok: true, healthy: true, served, spawned: ensured.spawned, url: ensured.url, browserUrl, workflow, health, workflows: health?.workflows || {} };
+}
+
 export async function runInitBoard(args) {
   const [workflowArg] = positionals(args);
   const workflowPath = path.resolve(process.cwd(), workflowArg || ".conductor/workflow.json");
@@ -244,51 +301,23 @@ export async function runInitBoard(args) {
   const ok = await runStatusInit([workflowPath, "--path", statusPath]);
   if (!ok) return false;
 
-  const conductorDir = path.dirname(statusPath);
-  const serverJsonPath = path.join(conductorDir, "server.json");
-  const registry = registryPath();
+  // PHASE A: one shared find-or-spawn rule via openRunBoard. Identity is the
+  // PORT, not the cwd. A healthy board on the port IS the board — attach, spawn
+  // nothing, never SIGTERM it. Only when /health does not answer do we spawn one.
+  const board = await openRunBoard(statusPath, workflowPath, { headless, port });
 
-  // PHASE A: one shared find-or-spawn rule. Identity is the PORT, not the cwd.
-  // A healthy board on the port IS the board — attach, spawn nothing, never
-  // SIGTERM it. Only when /health does not answer do we spawn one (inside
-  // ensureBoard). killPortIfBoard is gone from this spawn path entirely.
-  const ensured = await ensureBoard(port, { statusPath, workflowPath });
-  let board = { url: ensured.url, info: { port, url: ensured.url, pid: ensured.health?.pid } };
-  let health = ensured.health;
-
-  if (!health) {
+  if (!board.healthy) {
     console.error(red(`✗ board did not become healthy on port ${port}`));
     return false;
   }
-
-  syncRegistry(registry, board.info, {
-    url: board.url,
-    conductor_root: health.conductor_root || conductorDir,
-    status_path: statusPath,
-    workflow_path: workflowPath,
-  });
-
-  // If WE spawned this board (not attached), it watches our root, so it should
-  // serve our workflow. If we ATTACHED to a board started by another root, it
-  // legitimately may not serve this workflow — that is the cross-root attach,
-  // not an error in Phase A (identity = port).
-  health = await waitForWorkflow(board.url, workflow, conductorDir);
-  if (ensured.spawned && !healthHasWorkflow(health, workflow)) {
+  if (!board.ok && board.spawned && !board.served) {
     console.error(red(`✗ board is live but is not serving workflow "${workflow}"`));
-    console.error(dim(`  workflows: ${Object.keys(health?.workflows || {}).join(", ") || "(none)"}`));
+    console.error(dim(`  workflows: ${Object.keys(board.workflows || {}).join(", ") || "(none)"}`));
     return false;
   }
 
-  // Stable canonical URL for the port — opening the same URL focuses the
-  // existing tab instead of stacking a new one (single shared impl).
-  const browserUrl = canonicalUrl(port, workflow);
-  if (!headless && !browserAlreadyOpened(serverJsonPath, registry)) {
-    openBrowser(browserUrl);
-    markBrowserOpened(serverJsonPath, browserUrl, registry);
-  }
-
   console.log("");
-  console.log(`${green("✓")} Board initialized and live: ${browserUrl}`);
+  console.log(`${green("✓")} Board initialized and live: ${board.browserUrl}`);
   console.log(dim(`  workflow: ${workflow}`));
   console.log(dim(`  health:   ${board.url.replace(/\/$/, "")}/health`));
   console.log("");

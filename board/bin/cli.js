@@ -47,6 +47,9 @@ const HELP = `
                              then independently check and repair the result
     compile --skill <path>   Reuse an accepted compiled workflow, or run
                              decompose + order + audit + validate and cache it
+    run <skill>              ONE command: compile-if-needed → open the board →
+                             dispatch the run. Resumes not-done cards; reruns
+                             fresh when all are done. [--cap N] [--force]
     integrate --dir <path>   Apply open knowledge.json items to cards.json
                              before a repeat run
     order                    Add requires arrays to .conductor/cards.json,
@@ -147,6 +150,11 @@ if (command === "decompose") {
 if (command === "compile") {
   const { runCompile } = await import("../cli/compile.js");
   process.exit((await runCompile(rest)) ? 0 : 1);
+}
+
+if (command === "run") {
+  const { runRun } = await import("../cli/run.js");
+  process.exit((await runRun(rest)) ? 0 : 1);
 }
 
 if (command === "integrate") {

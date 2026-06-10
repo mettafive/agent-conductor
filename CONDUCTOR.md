@@ -36,7 +36,29 @@ fold it into a card that can be checked.
 
 ## Runtime
 
-There is no automatic runner. You keep `.conductor/status.json` live as you work.
+### The one command (start here)
+
+To take a skill from any state to a finished run with a visible board, use a
+single command — it compiles if needed, picks the worker, opens the board, and
+dispatches:
+
+```bash
+npx conductor-board run SKILL.md
+```
+
+`run` follows one rule against the run's `status.json`: **run everything that
+isn't done; if everything's done, rerun fresh.** A re-run reuses the compiled
+workflow and skips done cards, so only a new or edited skill pays the first
+compile. The worker (`claude` / `codex` / `CONDUCTOR_WORKER_CMD`) is chosen
+automatically and printed; with none on PATH, `run` fails loud. See
+[`board/START.md`](board/START.md) for prerequisites and gotchas.
+
+`run` is the supported path. The manual verbs below still exist for driving one
+phase in isolation, and are what `run` orchestrates internally.
+
+### Driving phases by hand
+
+You keep `.conductor/status.json` live as you work.
 
 1. Initialize the visible board for this workflow:
 

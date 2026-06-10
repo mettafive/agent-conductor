@@ -24,6 +24,7 @@
     "test:loops": "npx --yes tsx test/loops.smoke.ts",
     "test:artifacts": "node test/artifacts.smoke.mjs",
     "test:features": "node test/features.smoke.mjs",
+    "test:run": "node test/run.smoke.mjs",
     "prepublishOnly": "npm run build"
   },
   "engines": {

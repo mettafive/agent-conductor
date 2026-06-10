@@ -7,7 +7,7 @@
   ],
   "steps": [
     {
-      "instruction": "Verify the environment can run conductor-board.\nCheck that Node.js 18+ and npx are available.\n",
+      "instruction": "Verify the environment can run conductor-board.\nCheck that Node.js 18+ and npx are available.\nNote: the supported one-command path is `conductor-board run SKILL.md`, which does compile-if-needed, opens the board, and dispatches the run end to end (see board/START.md). The steps below are the expanded, drive-by-hand form of that same flow.\n",
       "title": "Preflight",
       "requires": []
     },
