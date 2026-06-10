@@ -376,6 +376,11 @@ function ExpandedMonitor({
   const [typingKey, setTypingKey] = useState<string | null>(null);
   const nextToType = shown.find((b) => b.key !== typingKey && !typedRef.current.has(b.key)) ?? null;
   const catchingUp = !!nextToType; // a newer beat is parked behind the rider
+  // The last VISIBLE beat (the rider, or the last one that finished typing) —
+  // parked beats are hidden. The idle "live" cursor rides INLINE at the end of
+  // this beat's row, not on a row of its own (which jumped as it came and went).
+  let lastVisibleKey: string | undefined;
+  for (const b of shown) if (b.key === typingKey || typedRef.current.has(b.key)) lastVisibleKey = b.key;
 
   // Pump: when nothing is typing, pull the oldest parked beat in. Also clears a
   // stale rider whose beat a run reset removed, so the queue never gets stuck.
@@ -543,7 +548,15 @@ function ExpandedMonitor({
                     }}
                   />
                 ) : (
-                  plainNote(b.note)
+                  <>
+                    {plainNote(b.note)}
+                    {/* idle "live" cursor — inline, right after the last beat (same
+                        row), only while recent and the run isn't done. Inline means
+                        it can blink away without nudging the terminal's height. */}
+                    {b.key === lastVisibleKey && cursorOn && !done && (
+                      <span className="tw-cursor text-cyan">▌</span>
+                    )}
+                  </>
                 )}
               </span>
               {b.finalBeat && (
@@ -566,11 +579,6 @@ function ExpandedMonitor({
             </div>
             );
           })}
-          {cursorOn && (
-            <div className="px-0 text-cyan">
-              <span className="tw-cursor">▌</span>
-            </div>
-          )}
           {done && (
             // The closing line — after every beat (and the last insight). The run
             // is over and the board is yours again.
