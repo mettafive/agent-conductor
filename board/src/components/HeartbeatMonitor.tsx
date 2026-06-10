@@ -524,6 +524,20 @@ function ExpandedMonitor({
               <span className="tw-cursor">▌</span>
             </div>
           )}
+          {done && (
+            // The closing line — after every beat (and the last insight). The run
+            // is over and the board is yours again.
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="mt-1.5 flex items-center gap-2.5 border-t border-line/60 pt-2.5 text-mint"
+            >
+              {lastBeatIso && <span className="shrink-0 select-none text-dim">{clock(lastBeatIso)}</span>}
+              <span className="min-w-0 flex-1 font-medium">Board complete — awaiting your instructions.</span>
+              <span className="shrink-0 select-none" aria-hidden title="done">✓</span>
+            </motion.div>
+          )}
           <div className="h-2" />
           </div>
         )}
