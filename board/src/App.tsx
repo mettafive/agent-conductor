@@ -58,7 +58,7 @@ const params = new URLSearchParams(window.location.search);
 
 export function App() {
   const { workflows, order, conn } = useBoardState();
-  const [selectedWf] = useState<string | null>(params.get("wf"));
+  const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
   const [ticksOn, setTicksOn] = useState(!isTicksMuted());
   const [chimesOn, setChimesOn] = useState(!isChimesMuted());
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
@@ -210,6 +210,24 @@ export function App() {
       prevStatuses.current[name] = cur;
     }
   }, [workflows, order]);
+
+  // Improve & Run starts a fresh loop. A frozen ?wf pin (selectedWf) would keep
+  // the view on the work feed and hide the running integration feed — killing the
+  // "watch the insides get integrated" moment. So clear the pin the instant a
+  // fresh loop begins: an integration feed goes live, or the active feed's run_id
+  // changes. The preference (App.tsx run-feed logic) then lets integration lead.
+  const prevLiveRunId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (selectedWf) {
+      const integrationRunning = order.some(
+        (n) => workflows[n]?.snap?.variant === "integration" && statusOf(workflows[n]) === "running",
+      );
+      const rid = liveModel.runId;
+      const freshLoop = !!rid && !!prevLiveRunId.current && rid !== prevLiveRunId.current;
+      if (integrationRunning || freshLoop) setSelectedWf(null);
+    }
+    prevLiveRunId.current = liveModel.runId;
+  }, [liveModel.runId, order, workflows, selectedWf]);
 
   useEffect(() => {
     const url = new URL(window.location.href);

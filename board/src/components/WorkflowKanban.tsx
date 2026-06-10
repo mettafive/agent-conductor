@@ -2251,7 +2251,9 @@ export function WorkflowKanban({
     });
 
   useEffect(() => {
-    if (settled && steps.length > 0) {
+    // Capture ONLY when the run is genuinely all-settled (not merely the delayed
+    // `settled` flag mid-transition) — so a freshly-started run is never captured.
+    if (settled && allSettledNow && steps.length > 0) {
       setSettledSnapshot((prev) => {
         if (prev && prev.runId === model.runId && prev.model === model && prev.steps === steps && prev.notes === notes) {
           return prev;
@@ -2261,10 +2263,15 @@ export function WorkflowKanban({
       return;
     }
     setSettledSnapshot((prev) => {
-      if (prev && model.runId && prev.runId && model.runId !== prev.runId) return null;
-      return prev;
+      if (!prev) return prev;
+      // Release on EITHER signal: a new run replaced the old (run_id changed —
+      // Improve & Run's fresh loop), OR the live run is simply active again (a true
+      // resume that legitimately kept its run_id must also un-freeze).
+      const runChanged = !!model.runId && !!prev.runId && model.runId !== prev.runId;
+      const liveActive = !allSettledNow && steps.length > 0;
+      return runChanged || liveActive ? null : prev;
     });
-  }, [settled, steps, model, notes]);
+  }, [settled, allSettledNow, steps, model, notes]);
 
   const latchedSettled = !settled && !!settledSnapshot && (!model.runId || model.runId === settledSnapshot.runId);
   const displayModel = settled ? model : latchedSettled ? settledSnapshot.model : model;

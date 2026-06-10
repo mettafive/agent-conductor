@@ -29,6 +29,7 @@
     "test:dispatch": "node test/dispatch.smoke.mjs",
     "test:server": "node test/server.smoke.mjs",
     "test:heartbeat": "node test/heartbeat.smoke.mjs",
+    "test:relaunch": "node test/relaunch.smoke.mjs",
     "test:shaping": "npx --yes tsx test/shaping.smoke.ts",
     "prepublishOnly": "npm run build"
   },

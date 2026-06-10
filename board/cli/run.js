@@ -106,7 +106,7 @@ function cardStatus(status, doc, index) {
  *                                                    running → pending; keep done)
  * Failed is NOT special — it is just "not done". Returns the decision label.
  */
-function decideRunState(statusPath, doc) {
+export function decideRunState(statusPath, doc) {
   if (!fs.existsSync(statusPath)) return { mode: "new" };
   let status;
   try {
@@ -149,6 +149,41 @@ function applyResume(statusPath, status, doc) {
   status.current_step = null;
   saveJson(statusPath, status);
   return { reset, kept };
+}
+
+/**
+ * Was the prior run FINISHED (no card still pending/running) before integration
+ * touched the plan? A relaunch of a finished board is a fresh LOOP, not a resume —
+ * even when integration then adds cards the old status can't mark done. We read
+ * the OLD workflow (before integration rewrites it) against the existing status,
+ * so the relaunch mints a new run_id (which the board's settled snapshot keys off)
+ * instead of resuming in place and freezing the old Done frame.
+ */
+export function priorRunFinished(statusPath, doc) {
+  if (!fs.existsSync(statusPath) || !doc?.steps?.length) return false;
+  let status;
+  try {
+    status = readJson(statusPath);
+  } catch {
+    return false;
+  }
+  for (let i = 0; i < doc.steps.length; i++) {
+    const s = cardStatus(status, doc, i);
+    if (s !== "done" && s !== "failed") return false; // a card mid-flight → genuine resume
+  }
+  return true;
+}
+
+/**
+ * Resolve the relaunch's true state mode. A FINISHED board that INTEGRATION then
+ * reshaped relaunches as a fresh loop (new run_id, all pending) — even though the
+ * grown plan makes the raw model read "resume". But a finished board relaunched
+ * WITHOUT integration (a plain retry of a failed run) stays "resume" — we keep the
+ * done cards and retry only the failed ones. Two conditions, both required.
+ */
+export function relaunchMode({ baseMode, priorFinished, integrated }) {
+  if (priorFinished && integrated && baseMode === "resume") return "rerun-fresh";
+  return baseMode;
 }
 
 export async function runRun(args) {
@@ -233,6 +268,16 @@ export async function runRun(args) {
     return false;
   }
 
+  // Was this board FINISHED before we touched it? Capture against the OLD workflow
+  // NOW, before integration rewrites it — a relaunch of a finished board is a fresh
+  // loop (rerun-fresh) even if integration then adds cards (see the override below).
+  let priorFinished = false;
+  try {
+    priorFinished = priorRunFinished(statusPath, readJson(workflowPath));
+  } catch {
+    priorFinished = false;
+  }
+
   // 1b. INTEGRATION LEADS (continuous flow, audit Change 1). If the skill carries
   //     open insights, SHAPE the plan first — on the same board surface — then
   //     chain into the work dispatch below. One command, no second confirm.
@@ -272,7 +317,19 @@ export async function runRun(args) {
   }
 
   // 2. STATE MODEL — new / rerun-fresh / resume.
-  const decision = decideRunState(statusPath, doc);
+  let decision = decideRunState(statusPath, doc);
+  const finalMode = relaunchMode({
+    baseMode: decision.mode,
+    priorFinished,
+    integrated: openInsights.length > 0,
+  });
+  if (finalMode !== decision.mode) {
+    // Finished board + integration grew the plan → a genuine fresh loop: new
+    // run_id, all cards pending, and the board releases its settled snapshot on
+    // its own (the new run_id invalidates it).
+    console.log(dim("  state: finished board reshaped by integration — rerunning the improved plan fresh."));
+    decision = { mode: finalMode };
+  }
   if (decision.mode === "new" || decision.mode === "rerun-fresh") {
     const label = decision.mode === "new" ? "new run" : "all cards done — rerunning fresh";
     console.log(dim(`  state: ${label} — status-init (all cards pending).`));

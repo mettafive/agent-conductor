@@ -225,7 +225,7 @@ function integrationWorkflow(openItems) {
     conductor: "3.0.0",
     name: "Integrating insights",
     description: "Apply open knowledge items before starting the next run.",
-    max_attempts: 5,
+    max_attempts: 10,
     steps: selected.map((phase, index) => ({
       title: phase.title,
       instruction: phase.instruction,
@@ -313,7 +313,7 @@ function makeIntegrationProgress({ statusPath, phaseToStep }) {
   };
 }
 
-function integrationPrompt({ skill, cards, workflow, openItems, summary, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 5 }) {
+function integrationPrompt({ skill, cards, workflow, openItems, summary, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 10 }) {
   return `Here is the skill file. Here are the current cards. Here are the open learning items.
 
 For each learning item, edit the most relevant existing card's instruction to include this learning. Fold it in naturally — weave it into the instruction as if it was always there, do not append it as a footnote.
@@ -461,7 +461,7 @@ Proposed patches:
 ${JSON.stringify(result, null, 2)}`;
 }
 
-function orderIntegrationPrompt({ cards, workflow, orderItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 5 }) {
+function orderIntegrationPrompt({ cards, workflow, orderItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 10 }) {
   return `You are the Agent Conductor integration order composer.
 
 Instruction edits have already passed. You may only propose requires deltas for
@@ -554,7 +554,7 @@ Proposed requires deltas:
 ${JSON.stringify(orderChanges, null, 2)}`;
 }
 
-function addIntegrationPrompt({ cards, workflow, addItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 5 }) {
+function addIntegrationPrompt({ cards, workflow, addItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 10 }) {
   return `You are the Agent Conductor integration add-card composer.
 
 Instruction edits and order edits have already passed. You may only propose new
@@ -694,7 +694,7 @@ Proposed new cards:
 ${JSON.stringify(addChanges, null, 2)}`;
 }
 
-function removeIntegrationPrompt({ cards, workflow, removeItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 5 }) {
+function removeIntegrationPrompt({ cards, workflow, removeItems, locked = [], checkerFeedback = "", attempt = 1, maxAttempts = 10 }) {
   return `You are the Agent Conductor integration remove-card composer.
 
 Instruction, order, and add-card changes have already passed. You may only
@@ -1555,7 +1555,7 @@ function localOrderCoverageCheck({ orderItems, orderChanges }) {
   };
 }
 
-async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAttempts = 5, strict = false, progress } = {}) {
+async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAttempts = 10, strict = false, progress } = {}) {
   if (!orderItems.length) {
     return { result: { changes: [], dismissed: [] }, workflow, report: { ok: true, attempts: [], final: null, locked: [] } };
   }
@@ -1666,7 +1666,7 @@ async function composeCheckOrderIntegration({ cards, workflow, orderItems, maxAt
   };
 }
 
-async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttempts = 5, strict = false, progress } = {}) {
+async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttempts = 10, strict = false, progress } = {}) {
   if (!addItems.length) {
     return { result: { changes: [], dismissed: [] }, cards, workflow, report: { ok: true, attempts: [], final: null, locked: [] } };
   }
@@ -1800,7 +1800,7 @@ async function composeCheckAddIntegration({ cards, workflow, addItems, maxAttemp
   };
 }
 
-async function composeCheckRemoveIntegration({ cards, workflow, removeItems, maxAttempts = 5, strict = false, progress } = {}) {
+async function composeCheckRemoveIntegration({ cards, workflow, removeItems, maxAttempts = 10, strict = false, progress } = {}) {
   if (!removeItems.length) {
     return { result: { changes: [], dismissed: [] }, cards, workflow, report: { ok: true, attempts: [], final: null, locked: [] } };
   }
@@ -1944,7 +1944,7 @@ async function composeCheckRemoveIntegration({ cards, workflow, removeItems, max
   };
 }
 
-async function composeCheckIntegration({ skill, cards, workflow, openItems, summary, maxAttempts = 5, strict = false, progress } = {}) {
+async function composeCheckIntegration({ skill, cards, workflow, openItems, summary, maxAttempts = 10, strict = false, progress } = {}) {
   const locked = new Map();
   const attempts = [];
   let checkerFeedback = "";
@@ -2355,7 +2355,7 @@ export async function runIntegration(args) {
   const orderItems = openItems.filter(isOrderChangeItem);
   const addItems = openItems.filter(isAddChangeItem);
   const removeItems = openItems.filter(isRemoveChangeItem);
-  const maxAttempts = Number(flag(args, ["--max-attempts"]) || 5);
+  const maxAttempts = Number(flag(args, ["--max-attempts"]) || 10);
   const integrationBoard = initIntegrationBoard(root, openItems);
   const progress = makeIntegrationProgress(integrationBoard);
 
