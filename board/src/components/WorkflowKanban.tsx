@@ -1725,10 +1725,10 @@ function PendingColumnCards({
     <div className="space-y-3">
       {bands.map((band) => (
         <div key={band.key}>
-          <div className="mb-1.5 flex items-center gap-2 px-2 font-mono text-[11px] uppercase tracking-[0.14em] text-mist">
-            <span className={`h-1.5 w-1.5 rounded-full ${band.key === "ready" ? "bg-mint/70" : "bg-dim/70"}`} />
-            <span>{band.title}</span>
-          </div>
+          {/* The "Waiting for · …" band header is gone — it cluttered the initial
+              view. The waiting-for detail now lives inside each card's open view;
+              the column stays a clean title list (ready cards still lead, and keep
+              their mint edge). */}
           <AnimatePresence mode="popLayout" initial={false}>
             {band.steps.map((step) => (
               <WorkflowCard
@@ -1976,8 +1976,12 @@ function WorkflowCard({
             <div className="mt-2.5 space-y-2.5 border-t border-line pt-2.5">
               {/* status meta — moved out of the collapsed view: status · checks · duration · handoff */}
               <div className="flex flex-wrap items-center gap-2 text-[14px] text-mist">
-                <span className={`capitalize ${pendingVariant ? "text-mist" : step.column === "pending" ? "text-mist" : ""}`}>
-                  {pendingVariant ? (unmetRequirementIndexes(step, allSteps).length ? "pending" : "ready") : statusLine(step, allSteps, maxAttempts)}
+                <span className={pendingVariant ? "text-mist" : `capitalize ${step.column === "pending" ? "text-mist" : ""}`}>
+                  {pendingVariant
+                    ? (requirementTitles(step, allSteps).length
+                        ? `Waiting for: ${requirementTitles(step, allSteps).join(", ")}`
+                        : "Ready")
+                    : statusLine(step, allSteps, maxAttempts)}
                 </span>
                 {!pendingVariant && gateTotal > 0 && (
                   <span className="tabular-nums">
@@ -2014,7 +2018,9 @@ function WorkflowCard({
                 </div>
               )}
 
-              {/* footer drawers — Artifact (always) · Insight (if present) · Condition (check + verdict) */}
+              {/* footer drawers — Artifact (always) · Insight (if present) ·
+                  Condition (only once the card is DONE — before there's a verdict
+                  it's empty and just confusing). */}
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 {canBrowseArtifacts && (
                   <button
@@ -2034,6 +2040,7 @@ function WorkflowCard({
                     Insight
                   </button>
                 )}
+                {step.column === "done" && (
                 <button
                   type="button"
                   onClick={() => setConditionModalOpen(true)}
@@ -2041,6 +2048,7 @@ function WorkflowCard({
                 >
                   Condition
                 </button>
+                )}
               </div>
 
               {/* comments — exactly ONE section, at the very bottom of the card. A comment attaches to
