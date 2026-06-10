@@ -19,6 +19,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Keep these tests OFFLINE: card completion fires the post-card learning loop,
+// which would otherwise make a real codex/model call (slow, costly, lingering).
+process.env.CONDUCTOR_DECOMPOSE_CODEX = "0";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BOARD = path.resolve(HERE, "..");
 const CLI = path.join(BOARD, "bin", "cli.js");
@@ -239,23 +243,36 @@ async function withEnv(env, fn) {
   }
 }
 
-test("B1 claude on PATH → claude adapter, cap 5", async () => {
+test("B1 claude on PATH → claude adapter, default cap 200, printed", async () => {
   const { selectAdapter, adapterCap, workerLine } = await import("../cli/worker-adapters.js");
   await withEnv({ PATH: fakeBin(["claude"]), CONDUCTOR_WORKER_CMD: undefined, CONDUCTOR_WORKER_CAP: undefined }, () => {
     const a = selectAdapter();
     assert(a && a.id === "claude", `expected claude, got ${a && a.id}`);
-    assert(adapterCap(a) === 5, `expected cap 5, got ${adapterCap(a)}`);
-    assert(/worker: claude \(cap 5\)/.test(workerLine(a, adapterCap(a))), workerLine(a, adapterCap(a)));
+    assert(adapterCap(a) === 200, `expected default cap 200, got ${adapterCap(a)}`);
+    assert(/^worker: claude \(cap 200\)$/.test(workerLine(a, adapterCap(a))), workerLine(a, adapterCap(a)));
   });
 });
 
-test("B2 claude absent, codex present → codex adapter, loud note, codex cap (not 5)", async () => {
+test("B2 claude absent, codex present → codex adapter, loud note, same default cap 200", async () => {
   const { selectAdapter, adapterCap, workerLine } = await import("../cli/worker-adapters.js");
   await withEnv({ PATH: fakeBin(["codex"]), CONDUCTOR_WORKER_CMD: undefined, CONDUCTOR_WORKER_CAP: undefined }, () => {
     const a = selectAdapter();
     assert(a && a.id === "codex", `expected codex, got ${a && a.id}`);
-    assert(adapterCap(a) !== 5, `codex cap must not be the claude-tuned 5, got ${adapterCap(a)}`);
+    assert(adapterCap(a) === 200, `expected default cap 200, got ${adapterCap(a)}`);
     assert(/claude not found, using codex/.test(workerLine(a, adapterCap(a))), `expected loud note:\n${workerLine(a, adapterCap(a))}`);
+  });
+});
+
+test("B-cap printed cap names the override source (default vs CONDUCTOR_WORKER_CAP)", async () => {
+  const { selectAdapter, adapterCap, workerLine } = await import("../cli/worker-adapters.js");
+  await withEnv({ PATH: fakeBin(["claude"]), CONDUCTOR_WORKER_CMD: undefined, CONDUCTOR_WORKER_CAP: undefined }, () => {
+    const a = selectAdapter();
+    assert(workerLine(a, adapterCap(a)) === "worker: claude (cap 200)", workerLine(a, adapterCap(a)));
+  });
+  await withEnv({ PATH: fakeBin(["claude"]), CONDUCTOR_WORKER_CMD: undefined, CONDUCTOR_WORKER_CAP: "24" }, () => {
+    const a = selectAdapter();
+    assert(adapterCap(a) === 24, `override should win, got ${adapterCap(a)}`);
+    assert(workerLine(a, adapterCap(a)) === "worker: claude (cap 24, CONDUCTOR_WORKER_CAP)", workerLine(a, adapterCap(a)));
   });
 });
 
@@ -317,6 +334,43 @@ test("B5 per-adapter cap: K descendants killed under cap<K, survive under cap>K"
     { CONDUCTOR_WORKER_CMD: SPAWN9, CONDUCTOR_WORKER_CAP: "20", CONDUCTOR_HEADLESS: "1" },
   );
   assert(!/SIGKILLed: descendant cap exceeded/.test(over.out), `cap 20 should NOT kill 9 descendants:\n${over.out}`);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+const spawnN = (n) => `i=0; while [ $i -lt ${n} ]; do sleep 3 & i=$((i+1)); done; wait`;
+
+test("B6 DEFAULT cap 200: an honest busy card (~20 procs) is NOT killed", () => {
+  const tmp = tmpdir();
+  const { status, wf } = seedSkill(tmp, "b6", ONE("b6flow"));
+  assert(cli(["status-init", wf, "--path", status], tmp).code === 0, "status-init");
+  // NO CONDUCTOR_WORKER_CAP → the default 200 applies. ~20 stands in for npx + git/gh + helpers.
+  const r = cli(["run-card", "0", "--path", status, "--workflow", wf], tmp,
+    { CONDUCTOR_WORKER_CMD: spawnN(20), CONDUCTOR_HEADLESS: "1" });
+  assert(/worker: CONDUCTOR_WORKER_CMD \(cap 200\)/.test(r.out), `should run at the default cap 200:\n${r.out.slice(0, 400)}`);
+  assert(!/SIGKILLed: descendant cap exceeded/.test(r.out), `the default 200 must NOT kill an honest ~20-proc card:\n${r.out}`);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("B7 DEFAULT cap 200: a real runaway (~220 procs) IS killed", () => {
+  const tmp = tmpdir();
+  const { status, wf } = seedSkill(tmp, "b7", ONE("b7flow"));
+  assert(cli(["status-init", wf, "--path", status], tmp).code === 0, "status-init");
+  const r = cli(["run-card", "0", "--path", status, "--workflow", wf], tmp,
+    { CONDUCTOR_WORKER_CMD: spawnN(220), CONDUCTOR_HEADLESS: "1" });
+  assert(/SIGKILLed: descendant cap exceeded/.test(r.out), `the net must still catch a ~220-proc runaway under the default 200:\n${r.out.slice(0, 500)}`);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("B8 override wins both ways: cap 5 kills 6; cap 500 survives 50", () => {
+  const tmp = tmpdir();
+  const { status, wf } = seedSkill(tmp, "b8", ONE("b8flow"));
+  assert(cli(["status-init", wf, "--path", status], tmp).code === 0, "status-init");
+  const killed = cli(["run-card", "0", "--path", status, "--workflow", wf], tmp,
+    { CONDUCTOR_WORKER_CMD: spawnN(6), CONDUCTOR_WORKER_CAP: "5", CONDUCTOR_HEADLESS: "1" });
+  assert(/SIGKILLed: descendant cap exceeded/.test(killed.out), `cap 5 should kill 6:\n${killed.out}`);
+  const survives = cli(["run-card", "0", "--path", status, "--workflow", wf], tmp,
+    { CONDUCTOR_WORKER_CMD: spawnN(50), CONDUCTOR_WORKER_CAP: "500", CONDUCTOR_HEADLESS: "1" });
+  assert(!/SIGKILLed: descendant cap exceeded/.test(survives.out), `cap 500 should survive 50:\n${survives.out}`);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

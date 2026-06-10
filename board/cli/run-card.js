@@ -221,7 +221,7 @@ function countDescendants(rootPid) {
  * poll its descendant subtree, and SIGKILL the whole group on cap-breach or
  * timeout. Returns a summarizeRun-shaped object plus maxDescendants/killedReason.
  */
-function spawnBounded(cmd, argv, { cwd, env, timeoutMs, input, onStreamLine, descendantCap = 5 }) {
+function spawnBounded(cmd, argv, { cwd, env, timeoutMs, input, onStreamLine, descendantCap = 200 }) {
   return new Promise((resolve) => {
     const child = spawn(cmd, argv, {
       cwd,

@@ -18,6 +18,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Keep these tests OFFLINE: card completion fires the post-card learning loop,
+// which would otherwise make a real codex/model call (slow, costly, lingering).
+process.env.CONDUCTOR_DECOMPOSE_CODEX = "0";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BOARD = path.resolve(HERE, "..");
 const CLI = path.join(BOARD, "bin", "cli.js");
