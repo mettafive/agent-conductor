@@ -36,7 +36,8 @@
     "test:shaping": "npx --yes tsx test/shaping.smoke.ts",
     "prepublishOnly": "npm run build",
     "test:board-routing": "node test/board-routing.smoke.mjs",
-    "test:pause": "node test/pause.smoke.mjs"
+    "test:pause": "node test/pause.smoke.mjs",
+    "test:coherence": "npx --yes tsx test/coherence.smoke.ts"
   },
   "engines": {
     "node": ">=18"

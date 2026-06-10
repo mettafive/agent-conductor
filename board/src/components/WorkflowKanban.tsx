@@ -4,6 +4,7 @@ import type { BoardModel, BoardStep, Column as Col, DeveloperNote } from "../lib
 import { fmtDur } from "../lib/format";
 import { clockSince } from "../lib/view";
 import { renderNote } from "../lib/heartbeat";
+import { displayName, phaseLabel, isLifecycle } from "../lib/identity";
 import { Led } from "./Led";
 import { NoteThread } from "./HeartbeatTimeline";
 
@@ -536,6 +537,7 @@ function CompletionHeader({
   onView,
   settled,
   elapsed,
+  canonicalKey,
 }: {
   model: BoardModel;
   steps: BoardStep[];
@@ -543,12 +545,28 @@ function CompletionHeader({
   onView: (view: "summary" | "board") => void;
   settled: boolean;
   elapsed?: string | null;
+  canonicalKey?: string;
 }) {
   const failedCards = steps.filter((s) => s.column === "failed");
   const failed = failedCards.length;
   const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
   const retries = totalRetries(steps);
   const shownStatus = model.overallStatus ?? "idle";
+  // One identity, one display scheme: the base name from the canonical key (never the
+  // inner JSON title), plus a phase badge. Falls back to model.workflow only if no key.
+  const key = canonicalKey ?? model.workflow;
+  const baseName = displayName(key);
+  const phase = phaseLabel(key, shownStatus);
+  const phaseClass =
+    shownStatus === "paused"
+      ? "border-[#9db8de]/40 bg-[#9db8de]/10 text-[#9db8de]"
+      : shownStatus === "failed"
+        ? "border-rose/40 bg-rose/10 text-rose"
+        : isLifecycle(key)
+          ? "border-iris/40 bg-iris/10 text-iris"
+          : shownStatus === "done"
+            ? "border-line-2 bg-panel text-mist"
+            : "border-mint/40 bg-mint/10 text-mint";
   const [reasonOpen, setReasonOpen] = useState(false);
 
   // The "why did it fail" payload: prefer the run-level failed_reason/failed_step
@@ -566,16 +584,17 @@ function CompletionHeader({
     <div className="shrink-0 border-b border-line bg-ink/95">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-5 py-7">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Led state={model.overallStatus} />
-            <h2 className="truncate text-[20px] font-semibold text-chalk">{model.workflow}</h2>
-          </div>
-          {/* status cluster — [status] · done/total · elapsed, lifted from the masthead */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[14px] text-mist-2">
-            <span className={`capitalize ${shownStatus === "paused" ? "text-[#9db8de]" : ""}`}>
-              {shownStatus === "paused" ? "Paused" : shownStatus}
+            {/* base name = the canonical identity (matches the navigator); the phase
+                badge carries status/lifecycle — never the inner "Migrating…" title. */}
+            <h2 className="truncate text-[20px] font-semibold text-chalk">{baseName}</h2>
+            <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.12em] ${phaseClass}`}>
+              {phase}
             </span>
-            <span className="text-dim">·</span>
+          </div>
+          {/* status cluster — done/total · elapsed (the phase lives in the badge above) */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[14px] text-mist-2">
             <span className="tabular-nums">
               {model.done}/{model.total}
             </span>
@@ -611,14 +630,15 @@ function CompletionHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          {/* Pause / Resume — drain-and-hold. Only on an active run; reflects live status
-              (the POST flips status.json → SSE → this re-renders). Calm, not loud. */}
-          {(shownStatus === "running" || shownStatus === "paused") && (
+          {/* Pause / Resume — drain-and-hold. Only on the RUN/dispatch phase (hidden for
+              compile/integration lifecycle feeds — no dispatch loop to drain there).
+              Posts the CANONICAL key, reflects live status, and never navigates. */}
+          {(shownStatus === "running" || shownStatus === "paused") && !isLifecycle(key) && (
             <button
               type="button"
               onClick={() => {
                 const action = shownStatus === "paused" ? "resume" : "pause";
-                void fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/${action}`, { method: "POST" });
+                void fetch(`/api/workflow/${encodeURIComponent(key)}/${action}`, { method: "POST" });
               }}
               title={
                 shownStatus === "paused"
@@ -2250,11 +2270,15 @@ export function WorkflowKanban({
   model,
   notes,
   elapsed,
+  canonicalKey,
 }: {
   model: BoardModel;
   notes?: DeveloperNote[];
   /** App-computed run elapsed clock (live ticking; falls back to total time when absent). */
   elapsed?: string | null;
+  /** The canonical IDENTITY key (server discovery key / activeWf) — the one true id for
+   *  display + the pause API. The inner model.workflow JSON title is never shown as identity. */
+  canonicalKey?: string;
 }) {
   const [settledView, setSettledView] = useState<"summary" | "board">("board");
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
@@ -2345,6 +2369,7 @@ export function WorkflowKanban({
             onView={setSettledView}
             settled
             elapsed={elapsed}
+            canonicalKey={canonicalKey}
           />
           {/* Execution run-complete banner moved to a sticky bar above the heartbeat
               terminal (App → RunCompleteBanner), so it stays visible in both views. */}
@@ -2447,6 +2472,7 @@ export function WorkflowKanban({
           onView={setSettledView}
           settled={false}
           elapsed={elapsed}
+          canonicalKey={canonicalKey}
         />
         <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
           {cols.map((col) => {

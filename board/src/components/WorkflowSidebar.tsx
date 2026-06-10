@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkflowEntry } from "../lib/useBoardState";
 import type { HistoryRun } from "../lib/types";
 import { Icon } from "./Icon";
+import { displayName, phaseLabel } from "../lib/identity";
 
 // Selected-row surface lift — a neutral surface lift, never colour.
 const SEL = "bg-line-2/40";
@@ -154,7 +155,8 @@ export function WorkflowSidebar({
             {live && (() => {
               const running = live.status === "running";
               const failed = live.status === "failed";
-              const label = running ? "Currently running" : failed ? "Run failed" : "Run finished";
+              // Same display scheme as the header: base name + phase (never the inner title).
+              const label = phaseLabel(live.workflow, live.status);
               const labelColor = running ? "text-mint" : failed ? "text-rose" : "text-mist-2";
               const dotColor = running ? "bg-mint" : failed ? "bg-rose" : "bg-chalk";
               return (
@@ -166,7 +168,7 @@ export function WorkflowSidebar({
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] text-chalk">{live.runName}</div>
+                    <div className="truncate text-[13px] text-chalk">{displayName(live.workflow)}</div>
                     <div className={`mt-0.5 text-[11px] ${labelColor}`}>{label}</div>
                   </div>
                   <Slot>
@@ -180,7 +182,7 @@ export function WorkflowSidebar({
               <div key={name} className={multi ? "mt-2 border-t border-line/60 pt-2 first:mt-0 first:border-t-0 first:pt-0" : undefined}>
                 {multi && (
                   <div className="px-3 pb-1 pt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-mist-2">
-                    {name}
+                    {displayName(name)}
                   </div>
                 )}
                 {runs.map((r: HistoryRun) => (

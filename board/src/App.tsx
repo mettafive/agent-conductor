@@ -15,6 +15,7 @@ import {
 import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
 import { clockSince, fmtElapsedMs } from "./lib/view";
+import { displayName } from "./lib/identity";
 import { TopBar } from "./components/TopBar";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import type { LiveEntry } from "./components/WorkflowSidebar";
@@ -102,6 +103,8 @@ function RelaunchOverlay({ reduceMotion }: { reduceMotion: boolean }) {
 export function App() {
   const { workflows, order, conn } = useBoardState();
   const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
+  // The workflow currently on screen — its IDENTITY sticks across status rebroadcasts.
+  const stickyWfRef = useRef<string | null>(null);
   // When an integration (shaping) feed finishes, hold the board on it for a beat so
   // its last card (Validate) visibly settles to done before the work feed takes over.
   const [heldIntegration, setHeldIntegration] = useState<string | null>(null);
@@ -141,16 +144,35 @@ export function App() {
     const v = workflows[n]?.snap?.variant;
     return v !== "compile" && v !== "integration"; // run, or untagged/legacy
   };
+  // STICKY: when you're looking at a workflow, it IS the selection — a status
+  // rebroadcast must not re-resolve you elsewhere. We hold the viewed IDENTITY
+  // (displayName), preferring its run feed so compile → run advances WITHIN it, but
+  // a status change never jumps you to a different identity (or a stale fixture).
+  const stickyId =
+    stickyWfRef.current && workflows[stickyWfRef.current] ? displayName(stickyWfRef.current) : null;
+  const stickyChoice = stickyId
+    ? (order.find((n) => displayName(n) === stickyId && isRunFeed(n)) ??
+       order.find((n) => displayName(n) === stickyId))
+    : null;
+
   const activeWf =
     // Highest priority: a just-finished integration feed we're holding, so its
     // Validate card settles to done on screen before the work feed switches in.
     (heldIntegration && workflows[heldIntegration] ? heldIntegration : null) ??
     (selectedWf && workflows[selectedWf] ? selectedWf : null) ??
-    order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running") ??
-    order.find((n) => statusOf(workflows[n]) === "running") ??
+    stickyChoice ??
+    // Auto-selection (bare route / first load): only a LIVE feed may grab the wheel —
+    // a stale running/paused zombie is excluded (stale-exclusion).
+    order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running" && isLiveFeed(workflows[n], now)) ??
+    order.find((n) => statusOf(workflows[n]) === "running" && isLiveFeed(workflows[n], now)) ??
     order.find((n) => isRunFeed(n)) ??
     order[0] ??
     null;
+
+  // Remember what's on screen so the next render's sticky holds this identity.
+  useEffect(() => {
+    if (activeWf) stickyWfRef.current = activeWf;
+  }, [activeWf]);
 
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
@@ -483,6 +505,7 @@ export function App() {
                   model={model}
                   notes={model.developerNotes}
                   elapsed={elapsed}
+                  canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
                 />
               ) : (
                 <WaitingState model={model} statusPath={liveSnap.statusPath} />
@@ -585,6 +608,41 @@ export function App() {
 
 function statusOf(entry: WorkflowEntry | undefined): string | undefined {
   return (entry?.snap.status as { status?: string } | null)?.status;
+}
+
+// A feed is LIVE if it has PULSED recently — a recent heartbeat, or a recent
+// running_since/started_at. Trust the pulse, not the flag: a "running"/"paused"
+// record whose flag outlived its truth (a stale zombie) is not live and must not win
+// the bare-route auto-selection. (It stays viewable by explicit pin; it just can't
+// grab the wheel.)
+const LIVE_WINDOW_MS = 10 * 60 * 1000; // generous vs a momentarily-quiet live run
+function feedLastActivityMs(entry: WorkflowEntry | undefined): number {
+  const status = entry?.snap.status as
+    | {
+        steps?: Record<string, { heartbeat?: { at?: string }[] }>;
+        running_since?: string;
+        started_at?: string;
+        completed_at?: string;
+      }
+    | null;
+  if (!status || typeof status !== "object") return 0;
+  let max = 0;
+  const stamp = (s?: string) => {
+    if (typeof s !== "string") return;
+    const t = Date.parse(s);
+    if (Number.isFinite(t) && t > max) max = t;
+  };
+  stamp(status.running_since);
+  stamp(status.started_at);
+  stamp(status.completed_at);
+  for (const step of Object.values(status.steps ?? {})) {
+    for (const b of step?.heartbeat ?? []) stamp(b?.at);
+  }
+  return max;
+}
+function isLiveFeed(entry: WorkflowEntry | undefined, now: number): boolean {
+  const last = feedLastActivityMs(entry);
+  return last > 0 && now - last < LIVE_WINDOW_MS;
 }
 
 function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
