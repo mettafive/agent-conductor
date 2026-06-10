@@ -137,7 +137,9 @@ test("PT4 one pause path: dispatcher DRAINS, the endpoint/CLI ANNOUNCE (shared c
   assert(/running_since/.test(merge) && /elapsed_ms/.test(merge), "the model holds the clock via the accumulator");
   // the button is gated to ACTIVE DISPATCH and reflects the click optimistically
   const kanban = fs.readFileSync(path.join(BOARD, "src", "components", "WorkflowKanban.tsx"), "utf8");
-  assert(/activeDispatch/.test(kanban) && /livePulse/.test(kanban), "the button gates on active dispatch (a live pulse), not a bare flag");
+  assert(/\{activeDispatch && \(/.test(kanban), "the button gates on the shared activeDispatch (hasActiveDispatch) signal, not a bare flag");
+  const liveness = fs.readFileSync(path.join(BOARD, "src", "lib", "liveness.ts"), "utf8");
+  assert(/export function hasActiveDispatch/.test(liveness), "hasActiveDispatch is the one shared definition");
   assert(/setPending\(action\)/.test(kanban) && /Pausing…/.test(kanban), "the button registers the click optimistically (Pausing…/Resuming…)");
 });
 

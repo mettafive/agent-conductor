@@ -4,7 +4,7 @@ import path from "node:path";
 import { runCompile } from "./compile.js";
 import { runStatusInit } from "./writer.js";
 import { runDispatch } from "./dispatch.js";
-import { openRunBoard, ensureBoardVisible } from "./init-board.js";
+import { openRunBoard } from "./init-board.js";
 import { integrateRoot } from "./integration.js";
 import { scopedConductorDir } from "./learning.js";
 import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
@@ -233,13 +233,12 @@ export async function runRun(args) {
   }
   console.log(`  ${bold(workerLine(adapter, adapterCap(adapter)))}`);
 
-  // 0b. OPEN THE BOARD EARLY (Fix 3) — before compile, so the migration/compile
-  //     feed is watched live (cards pending → running → done). The board's
-  //     run-feed preference auto-advances compile → integration → run on the SAME
-  //     window. Best-effort; the authoritative health/serve check is below.
-  if (!headless) {
-    try { await ensureBoardVisible(statusPath, { headless, port }); } catch { /* best-effort */ }
-  }
+  // 0b. SURFACE ON SERVED, NOT EARLY-ON-HEALTH. We no longer pop the tab before compile
+  //     (it appeared empty then filled). Instead the compile path opens it the moment the
+  //     compile feed is SERVED (compile.js initCompileBoard), and the run path opens it
+  //     once the RUN feed is served (openRunBoard, below) — whichever comes first; the
+  //     server.json dedup keeps it to one tab. A bare re-run (no compile) surfaces at the
+  //     served run feed.
 
   // 1. COMPILE-IF-NEEDED. The durable compiled workflow is the "already-compiled"
   //    signal: reuse it unless --force or the skill is newer (edited) than it.
@@ -254,6 +253,7 @@ export async function runRun(args) {
     const compileArgs = ["--skill", skillPath, "--out-dir", outDir];
     if (name) compileArgs.push("--name", name);
     if (force) compileArgs.push("--force");
+    if (headless) compileArgs.push("--headless"); // so the compile path knows not to open a tab
     const ok = await runCompile(compileArgs);
     if (!ok) {
       console.error(red("  ✗ compile failed — not dispatching."));
@@ -351,7 +351,9 @@ export async function runRun(args) {
   // 3. RUN BOARD — health + serve check on the RUN's scoped files. The tab was
   //    already opened early (Fix 3), so don't open a second one; the board's
   //    run-feed preference auto-advances the active feed to the run workflow.
-  const board = await openRunBoard(statusPath, workflowPath, { headless, port, openBrowserTab: false });
+  // openBrowserTab:true — open once the RUN feed is served (the compile path may already
+  // have opened on the served compile feed; the server.json dedup prevents a second tab).
+  const board = await openRunBoard(statusPath, workflowPath, { headless, port, openBrowserTab: true });
   if (!board.healthy) {
     console.error(red(`  ✗ board did not become healthy on port ${port} — not dispatching.`));
     return false;

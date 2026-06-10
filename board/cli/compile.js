@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { composeAndCheckSkill, compact, flag } from "./decompose.js";
 import { ensureBoard, getHealth } from "./ensure-board.js";
+import { ensureBoardVisible } from "./init-board.js";
 import {
   ensureKnowledge,
   migrationMetaPathForRoot,
@@ -161,23 +162,28 @@ function acquireCompileLock(outDir) {
   };
 }
 
-async function initCompileBoard(outDir, name, port) {
+async function initCompileBoard(outDir, name, port, headless = false) {
   // The compile workflow/status files still live in the skill-scoped outDir so
   // progress notes have somewhere to write — but we do NOT start a board keyed
   // to that subdir. PHASE A: identity = port. We attach to the canonical board
   // on the main port (ensureBoard spawns one only if nothing is live there),
-  // never SIGTERM-and-respawn the main board, and never open our own tab.
+  // never SIGTERM-and-respawn the main board.
   const workflowPath = path.join(outDir, "compile.workflow.json");
   const statusPath = path.join(outDir, "compile.status.json");
   writeJson(workflowPath, compileWorkflow(name));
   await ensureBoard(port, { statusPath, workflowPath });
-  // BATON A — confirm the handoff: the compile feed is ready only when it's SERVED
-  // (discovered + renderable), not merely when the server is healthy. Wait until
-  // /health.workflows includes this compile feed before declaring the board live, so
-  // the board never surfaces a feed it can't yet render. The feed's canonical key is
-  // the namespaced compile variant (the 3.3.5 binding); during compile the dir name is
-  // the base, so it reads "<dir> (compile)".
+  // BATON A — SURFACE ON SERVED, NOT ON HEALTH. The compile feed is ready only when it's
+  // SERVED (discovered + renderable), not merely when the server is healthy. Hard-gate the
+  // browser open on that: wait until /health.workflows includes this compile feed, THEN
+  // open the tab — so the board never appears empty and "spawns then fills". The feed's
+  // canonical key is the namespaced compile variant (the 3.3.5 binding); during compile
+  // the dir name is the base, so it reads "<dir> (compile)".
   const served = await waitCompileServed(port, `${path.basename(outDir)} (compile)`);
+  if (served && !headless) {
+    // Open the tab now that the compile feed is renderable (idempotent + marks the
+    // server.json dedup so the later openRunBoard won't open a second tab).
+    try { await ensureBoardVisible(statusPath, { headless, port }); } catch { /* best-effort surface */ }
+  }
   return { workflowPath, statusPath, served };
 }
 
@@ -729,6 +735,7 @@ export async function runCompile(args) {
     : scopedConductorDir(skillPath, flag(args, ["--name", "-n"]));
   const cacheRoot = path.resolve(process.cwd(), flag(args, ["--cache-dir"]) || process.env.CONDUCTOR_CACHE_DIR || defaultCacheDir());
   const compilePort = Number(flag(args, ["--compile-port", "--port"], 3042)) || 3042;
+  const compileHeadless = args.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
   let compileBoard = null;
   let releaseLock = null;
 
@@ -742,7 +749,7 @@ export async function runCompile(args) {
   try {
     if (!args.includes("--no-compile-board")) {
       try {
-        compileBoard = await initCompileBoard(outDir, "Migrating skill to conductor", compilePort);
+        compileBoard = await initCompileBoard(outDir, "Migrating skill to conductor", compilePort, compileHeadless);
         console.log(dim(`  compile board: ${path.relative(process.cwd(), compileBoard.statusPath)}${compileBoard.served ? " (served)" : ""}`));
       } catch (e) {
         console.error(red(`✗ could not initialize compile board: ${e.message}`));

@@ -538,6 +538,7 @@ function CompletionHeader({
   settled,
   elapsed,
   canonicalKey,
+  activeDispatch = false,
 }: {
   model: BoardModel;
   steps: BoardStep[];
@@ -546,6 +547,7 @@ function CompletionHeader({
   settled: boolean;
   elapsed?: string | null;
   canonicalKey?: string;
+  activeDispatch?: boolean;
 }) {
   const failedCards = steps.filter((s) => s.column === "failed");
   const failed = failedCards.length;
@@ -588,19 +590,9 @@ function CompletionHeader({
     if (pending === "resume" && shownStatus === "running") setPending(null);
   }, [pending, shownStatus]);
 
-  // Gate on ACTIVE DISPATCH, not a bare flag: there must be a live dispatcher to drain.
-  // Trust the pulse — a recent heartbeat / runningSince — so a stale or manual "running"
-  // feed with no dispatcher shows no pause button (nothing to drain). A paused run always
-  // offers Resume (you paused it; let it resume).
-  let lastPulseMs = model.runningSince ? Date.parse(model.runningSince) : 0;
-  for (const s of steps) {
-    for (const b of s.heartbeat || []) {
-      const t = Date.parse(b.at);
-      if (Number.isFinite(t) && t > lastPulseMs) lastPulseMs = t;
-    }
-  }
-  const livePulse = lastPulseMs > 0 && Date.now() - lastPulseMs < 10 * 60 * 1000;
-  const activeDispatch = !isLifecycle(key) && (shownStatus === "paused" || (shownStatus === "running" && livePulse));
+  // Pause visibility reads the ONE shared signal — hasActiveDispatch(entry), computed by
+  // App and passed in. No second definition here: the navigator, board, and pause button
+  // can't disagree about what's alive.
 
   return (
     <div className="shrink-0 border-b border-line bg-ink/95">
@@ -1175,14 +1167,20 @@ function IntegrationSummaryPanel({
 
 function IntegrationCompletePanel({
   model,
+  canonicalKey,
 }: {
   model: BoardModel;
+  canonicalKey?: string;
 }) {
   const [summary, setSummary] = useState<IntegrationSummary | null>(null);
+  // Every request resolves by the canonical discovery key — never the inner JSON title
+  // (which on a lifecycle feed is "Integrating insights" / "Migrating skill to conductor"
+  // and mis-resolves on the server).
+  const postKey = canonicalKey ?? model.workflow;
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/integration-summary`)
+    fetch(`/api/workflow/${encodeURIComponent(postKey)}/integration-summary`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled) setSummary(data);
@@ -1193,7 +1191,7 @@ function IntegrationCompletePanel({
     return () => {
       cancelled = true;
     };
-  }, [model.workflow]);
+  }, [postKey]);
 
   // Display-only: integration is applied automatically as the run's leading
   // shaping cards — it is no longer a gate that needs a "Start Run" click.
@@ -1214,19 +1212,24 @@ function CompileCompletePanel({
   model,
   steps,
   onOpenArtifact,
+  canonicalKey,
 }: {
   model: BoardModel;
   steps: BoardStep[];
   onOpenArtifact: (step: BoardStep) => void;
+  canonicalKey?: string;
 }) {
   const [summary, setSummary] = useState<CompileSummary | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const artifactSteps = steps.filter((step) => canOpenReceipt(step));
+  // Resolve by the canonical discovery key, never the inner "Migrating skill to
+  // conductor" title (which is the compile feed's title and mis-resolves on the server).
+  const postKey = canonicalKey ?? model.workflow;
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/compile-summary`)
+    fetch(`/api/workflow/${encodeURIComponent(postKey)}/compile-summary`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled) setSummary(data);
@@ -1237,7 +1240,7 @@ function CompileCompletePanel({
     return () => {
       cancelled = true;
     };
-  }, [model.workflow]);
+  }, [postKey]);
 
   // One click launches the whole run (compile reuse → integrate → dispatch) on
   // the server, in the background; the board goes live via SSE. No second confirm.
@@ -1246,7 +1249,7 @@ function CompileCompletePanel({
     setStarting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
+      const res = await fetch(`/api/workflow/${encodeURIComponent(postKey)}/start-run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -1321,6 +1324,7 @@ export function RunCompleteBanner({
   insightCount = 0,
   onOpenInsights,
   onRelaunch,
+  canonicalKey,
 }: {
   model: BoardModel;
   /** Fresh-insight count for this run (App-computed); shown as an inline badge. */
@@ -1330,6 +1334,8 @@ export function RunCompleteBanner({
   /** Fires on click to drive the App-level relaunch transition (board sweep →
    *  setup beat → fresh run rides in). The POST below still launches the run. */
   onRelaunch?: () => void;
+  /** The canonical discovery key — every POST resolves by it, never the inner title. */
+  canonicalKey?: string;
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1367,7 +1373,7 @@ export function RunCompleteBanner({
     setError(null);
     onRelaunch?.(); // kick off the board sweep → setup beat the instant the click lands
     try {
-      const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
+      const res = await fetch(`/api/workflow/${encodeURIComponent(canonicalKey ?? model.workflow)}/start-run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -2301,6 +2307,7 @@ export function WorkflowKanban({
   notes,
   elapsed,
   canonicalKey,
+  activeDispatch = false,
 }: {
   model: BoardModel;
   notes?: DeveloperNote[];
@@ -2309,6 +2316,8 @@ export function WorkflowKanban({
   /** The canonical IDENTITY key (server discovery key / activeWf) — the one true id for
    *  display + the pause API. The inner model.workflow JSON title is never shown as identity. */
   canonicalKey?: string;
+  /** hasActiveDispatch(entry) for the displayed feed — the one signal the pause button reads. */
+  activeDispatch?: boolean;
 }) {
   const [settledView, setSettledView] = useState<"summary" | "board">("board");
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
@@ -2400,6 +2409,7 @@ export function WorkflowKanban({
             settled
             elapsed={elapsed}
             canonicalKey={canonicalKey}
+            activeDispatch={activeDispatch}
           />
           {/* Execution run-complete banner moved to a sticky bar above the heartbeat
               terminal (App → RunCompleteBanner), so it stays visible in both views. */}
@@ -2421,9 +2431,9 @@ export function WorkflowKanban({
               {settledView === "summary" ? (
                 <>
                   {compileLifecycle && (
-                    <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} />
+                    <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} canonicalKey={canonicalKey} />
                   )}
-                  {integrationLifecycle && <IntegrationCompletePanel model={displayModel} />}
+                  {integrationLifecycle && <IntegrationCompletePanel model={displayModel} canonicalKey={canonicalKey} />}
                   <CompletionTimeline model={displayModel} steps={displaySteps} maxAttempts={maxAttempts} />
                 </>
               ) : (
@@ -2503,6 +2513,7 @@ export function WorkflowKanban({
           settled={false}
           elapsed={elapsed}
           canonicalKey={canonicalKey}
+          activeDispatch={activeDispatch}
         />
         <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
           {cols.map((col) => {

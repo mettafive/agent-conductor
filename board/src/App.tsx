@@ -16,6 +16,7 @@ import { lastBeatIso, useHeartbeatStream } from "./lib/heartbeatStream";
 import { useNow } from "./lib/useNow";
 import { clockSince, fmtElapsedMs } from "./lib/view";
 import { displayName } from "./lib/identity";
+import { isFeedLive, hasActiveDispatch } from "./lib/liveness";
 import { TopBar } from "./components/TopBar";
 import { WorkflowSidebar } from "./components/WorkflowSidebar";
 import type { LiveEntry } from "./components/WorkflowSidebar";
@@ -100,6 +101,44 @@ function RelaunchOverlay({ reduceMotion }: { reduceMotion: boolean }) {
   );
 }
 
+/** The relaunch overlay's NAMED non-success outcome — surfaced instead of a silent
+ *  vanish, so Improve & Run always ends on a result the user can read. */
+function RelaunchOutcomeBanner({
+  outcome,
+  onDismiss,
+}: {
+  outcome: "unconfirmed" | "halted-after-integration-failure";
+  onDismiss: () => void;
+}) {
+  const halted = outcome === "halted-after-integration-failure";
+  const text = halted
+    ? "Integration failed — the run was halted. Check the terminal."
+    : "Couldn't confirm the launch — check the terminal.";
+  const tone = halted
+    ? "border-rose/40 bg-rose/10 text-rose"
+    : "border-[#e0b341]/40 bg-[#e0b341]/10 text-[#e0b341]";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className="absolute inset-x-0 top-0 z-20 flex justify-center pt-4"
+    >
+      <button
+        type="button"
+        onClick={onDismiss}
+        title="Dismiss"
+        className={`flex items-center gap-2 rounded-md border px-4 py-2 font-mono text-[13px] ${tone}`}
+      >
+        <span aria-hidden>{halted ? "✕" : "⚠"}</span>
+        {text}
+        <span className="ml-1 opacity-60">·  dismiss</span>
+      </button>
+    </motion.div>
+  );
+}
+
 export function App() {
   const { workflows, order, conn } = useBoardState();
   const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
@@ -171,8 +210,8 @@ export function App() {
     stickyChoice ??
     // Auto-selection (bare route / first load): only a LIVE feed may grab the wheel —
     // a stale running/paused zombie is excluded (stale-exclusion).
-    order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running" && isLiveFeed(workflows[n], now)) ??
-    order.find((n) => statusOf(workflows[n]) === "running" && isLiveFeed(workflows[n], now)) ??
+    order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running" && isFeedLive(workflows[n], now)) ??
+    order.find((n) => statusOf(workflows[n]) === "running" && isFeedLive(workflows[n], now)) ??
     order.find((n) => isRunFeed(n)) ??
     order[0] ??
     null;
@@ -185,12 +224,21 @@ export function App() {
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
 
-  // Does the live workflow actually have a run streaming (any steps written)?
+  // Does the live workflow actually have a run streaming — steps written AND a live
+  // pulse? The isFeedLive gate keeps a stale "running" feed (steps written but no recent
+  // activity) from posing as the streaming board; a just-finished run stays live via its
+  // recent completed_at, and the history fallback shows it once the window lapses.
   const liveStarted = !!(
     liveSnap.status &&
     typeof liveSnap.status === "object" &&
-    Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0
+    Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0 &&
+    isFeedLive(activeWf ? workflows[activeWf] : undefined, now)
   );
+
+  // hasActiveDispatch for the displayed live feed — the one liveness signal the pause
+  // button reads (a stale "running" with no dispatcher offers no pause). Off for a
+  // viewed past run (static — no dispatcher).
+  const activeDispatch = !!(activeWf && hasActiveDispatch(workflows[activeWf], now));
 
   // The newest finished run across all workflows (the active workflow's own newest wins ties via
   // order) — the fallback board source when nothing is streaming.
@@ -326,8 +374,15 @@ export function App() {
   // guarantees it never traps the board). prefers-reduced-motion → clean crossfade.
   const reduceMotion = useReducedMotion();
   const [relaunch, setRelaunch] = useState<{ phase: "sweep" | "setup"; fromRunId?: string; setupSince: number } | null>(null);
+  // The overlay ALWAYS ends on a named outcome — never a silent 12s vanish. Success
+  // (run-running / integration-running) clears the overlay onto the live board; the
+  // non-success terminals surface as a named banner instead of disappearing.
+  const [relaunchOutcome, setRelaunchOutcome] = useState<
+    null | "unconfirmed" | "halted-after-integration-failure"
+  >(null);
   const startRelaunch = useCallback(() => {
     setSelectedWf(null); // unpin so the running integration feed can lead
+    setRelaunchOutcome(null); // a fresh attempt clears any prior named outcome
     setRelaunch({ phase: "sweep", fromRunId: liveModel.runId, setupSince: 0 });
   }, [liveModel.runId]);
 
@@ -360,23 +415,52 @@ export function App() {
       return false;
     });
 
-  // Phase 2 → hand off: dismiss when the fresh run is live AND the readability floor
-  // (~700ms) has elapsed — so the line reads, but never lingers past the real work.
+  // SUCCESS — run-running / integration-running: dismiss onto the LIVE board once the
+  // fresh run is served AND the readability floor (~700ms) has elapsed. The live board
+  // is itself the named outcome, so no banner is needed; clear any prior one.
   useEffect(() => {
     if (relaunch?.phase !== "setup" || !freshRunLive) return;
     const floor = reduceMotion ? 0 : 700;
     const wait = Math.max(0, floor - (Date.now() - relaunch.setupSince));
-    const t = setTimeout(() => setRelaunch(null), wait);
+    const t = setTimeout(() => {
+      setRelaunch(null);
+      setRelaunchOutcome(null);
+    }, wait);
     return () => clearTimeout(t);
   }, [relaunch?.phase, relaunch?.setupSince, freshRunLive, reduceMotion]);
 
-  // Data wins, always: a hard cap dismisses the overlay even if the fresh run never
-  // materialises (e.g. integration failed and the run halted) — never trap the board.
+  // HALTED — integration failed: the run won't come. End on a NAMED outcome, not a
+  // vanish. (Detected the moment an integration feed reads failed during the relaunch.)
   useEffect(() => {
     if (!relaunch) return;
-    const cap = setTimeout(() => setRelaunch(null), 12000);
+    const halted = order.some(
+      (n) => workflows[n]?.snap?.variant === "integration" && statusOf(workflows[n]) === "failed",
+    );
+    if (halted) {
+      setRelaunch(null);
+      setRelaunchOutcome("halted-after-integration-failure");
+    }
+  }, [relaunch, order, workflows]);
+
+  // UNCONFIRMED — the cap. The overlay never traps the board, but it never silently
+  // vanishes either: if the fresh run never materialised within the window, end on
+  // "couldn't confirm launch". (This timer is cancelled the moment success/halt clears
+  // `relaunch`, so it only fires when nothing else resolved.)
+  useEffect(() => {
+    if (!relaunch) return;
+    const cap = setTimeout(() => {
+      setRelaunch(null);
+      setRelaunchOutcome("unconfirmed");
+    }, 12000);
     return () => clearTimeout(cap);
   }, [relaunch]);
+
+  // A named non-success outcome lingers long enough to read, then clears itself.
+  useEffect(() => {
+    if (!relaunchOutcome) return;
+    const t = setTimeout(() => setRelaunchOutcome(null), 6000);
+    return () => clearTimeout(t);
+  }, [relaunchOutcome]);
 
   // The URL is a SHADOW of the deliberate selection, never of the resolved activeWf.
   // It mirrors `selectedWf` (what you asked for — the ?wf seed or a navigation), and
@@ -527,6 +611,7 @@ export function App() {
                   notes={model.developerNotes}
                   elapsed={elapsed}
                   canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
+                  activeDispatch={!viewingPast && activeDispatch}
                 />
               ) : (
                 <WaitingState model={model} statusPath={liveSnap.statusPath} />
@@ -534,6 +619,11 @@ export function App() {
             </motion.div>
             <AnimatePresence>
               {relaunch && <RelaunchOverlay reduceMotion={!!reduceMotion} />}
+            </AnimatePresence>
+            <AnimatePresence>
+              {relaunchOutcome && (
+                <RelaunchOutcomeBanner outcome={relaunchOutcome} onDismiss={() => setRelaunchOutcome(null)} />
+              )}
             </AnimatePresence>
           </div>
 
@@ -568,6 +658,7 @@ export function App() {
             insightCount={freshInsightCount}
             onOpenInsights={() => setShowInsights(true)}
             onRelaunch={startRelaunch}
+            canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
           />
 
           <HeartbeatMonitor
@@ -631,40 +722,6 @@ function statusOf(entry: WorkflowEntry | undefined): string | undefined {
   return (entry?.snap.status as { status?: string } | null)?.status;
 }
 
-// A feed is LIVE if it has PULSED recently — a recent heartbeat, or a recent
-// running_since/started_at. Trust the pulse, not the flag: a "running"/"paused"
-// record whose flag outlived its truth (a stale zombie) is not live and must not win
-// the bare-route auto-selection. (It stays viewable by explicit pin; it just can't
-// grab the wheel.)
-const LIVE_WINDOW_MS = 10 * 60 * 1000; // generous vs a momentarily-quiet live run
-function feedLastActivityMs(entry: WorkflowEntry | undefined): number {
-  const status = entry?.snap.status as
-    | {
-        steps?: Record<string, { heartbeat?: { at?: string }[] }>;
-        running_since?: string;
-        started_at?: string;
-        completed_at?: string;
-      }
-    | null;
-  if (!status || typeof status !== "object") return 0;
-  let max = 0;
-  const stamp = (s?: string) => {
-    if (typeof s !== "string") return;
-    const t = Date.parse(s);
-    if (Number.isFinite(t) && t > max) max = t;
-  };
-  stamp(status.running_since);
-  stamp(status.started_at);
-  stamp(status.completed_at);
-  for (const step of Object.values(status.steps ?? {})) {
-    for (const b of step?.heartbeat ?? []) stamp(b?.at);
-  }
-  return max;
-}
-function isLiveFeed(entry: WorkflowEntry | undefined, now: number): boolean {
-  const last = feedLastActivityMs(entry);
-  return last > 0 && now - last < LIVE_WINDOW_MS;
-}
 
 function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
   return (

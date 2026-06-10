@@ -53,8 +53,11 @@ assert(/displayName\(name\)/.test(sidebar), "navigator group header uses display
 const app = src("src/App.tsx");
 assert(/stickyWfRef/.test(app) && /stickyChoice/.test(app), "activeWf has a sticky-by-identity choice");
 assert(/displayName\(n\) === stickyId/.test(app), "sticky holds the same IDENTITY (advances compile→run within it)");
-assert(/isLiveFeed\(workflows\[n\], now\)/.test(app), "auto-selection requires a LIVE feed (stale-exclusion)");
-assert(/Trust the pulse, not the flag/.test(app), "stale-exclusion is by recent activity, not the flag");
+assert(/isFeedLive\(workflows\[n\], now\)/.test(app), "auto-selection requires a LIVE feed (stale-exclusion)");
+const liveness = src("src/lib/liveness.ts");
+assert(/Trust the pulse, not the flag/.test(liveness), "stale-exclusion is by recent activity, not the flag");
+assert(/export function isFeedLive/.test(liveness) && /export function hasActiveDispatch/.test(liveness), "two liveness signals, one definition each");
+assert(/variant === "compile" \|\| variant === "integration"/.test(liveness), "hasActiveDispatch excludes lifecycle feeds (no dispatch loop)");
 
 // CO4b — URL as a passive shadow: mirrors the DELIBERATE selection (selectedWf), never
 // the resolved activeWf; fires only when selectedWf changes; the seed resolves by identity.
@@ -70,13 +73,26 @@ assert(!/prevLiveRunId/.test(app) && !/freshLoop/.test(app), "the fresh-run-id d
 assert(/setSelectedWf\(null\); \/\/ unpin so the running integration feed can lead/.test(app), "only the user-initiated relaunch still unpins (deliberate, in scope)");
 
 // CO5 — pause: run-phase only, canonical key
-assert(/!isLifecycle\(key\)/.test(kanban), "pause is hidden for lifecycle feeds (no dispatch to drain)");
+assert(/\{activeDispatch && \(/.test(kanban), "pause gates on the shared activeDispatch signal (hasActiveDispatch), not a bare flag");
 assert(/encodeURIComponent\(key\)\}\/\$\{action\}/.test(kanban), "pause posts the canonical key, not the inner title");
 
 // CO6 — binding fix intact (display-layer change only; server still namespaces variants)
 const server = src("server/server.js");
 assert(/\$\{runName\} \(\$\{variant\}\)/.test(server) || /variantName/.test(server), "server still namespaces variants <run> (compile)/(integration)");
 assert(/the run owns the primary id/.test(server), "the lifecycle launch still does not squat the primary id");
+
+// CO8 — the lifecycle sweep
+// Part 1: every UI POST resolves by the canonical key, never the inner title
+assert(/const postKey = canonicalKey \?\? model\.workflow/.test(kanban), "summary/start-run panels resolve by the canonical key (postKey)");
+assert(!/encodeURIComponent\(model\.workflow\)/.test(kanban), "no UI request carries the inner workflow title");
+// Part 4: compile surfaces on served, not on health
+const compileSrc = src("cli/compile.js");
+assert(/if \(served && !headless\)/.test(compileSrc) && /ensureBoardVisible/.test(compileSrc), "compile opens the tab only once its feed is served");
+const runSrc = src("cli/run.js");
+assert(/SURFACE ON SERVED/.test(runSrc) && !/ensureBoardVisible/.test(runSrc), "run.js no longer opens the board early on health");
+// Part 5: the overlay always ends on a named outcome
+assert(/relaunchOutcome/.test(app) && /RelaunchOutcomeBanner/.test(app), "the overlay resolves to a named outcome banner");
+assert(/"unconfirmed"/.test(app) && /halted-after-integration-failure/.test(app), "named terminals: unconfirmed + halted-after-integration-failure (no silent vanish)");
 
 console.log(`\n  ${failed ? `\x1b[31m${failed} failed\x1b[0m` : "\x1b[32mall passed\x1b[0m"}\n`);
 process.exit(failed ? 1 : 0);
