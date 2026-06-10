@@ -26,6 +26,7 @@
     "test:features": "node test/features.smoke.mjs",
     "test:run": "node test/run.smoke.mjs",
     "test:integration": "node test/integration.smoke.mjs",
+    "test:dispatch": "node test/dispatch.smoke.mjs",
     "test:shaping": "npx --yes tsx test/shaping.smoke.ts",
     "prepublishOnly": "npm run build"
   },

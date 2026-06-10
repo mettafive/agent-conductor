@@ -9,12 +9,18 @@
  * Wire it via:  CONDUCTOR_WORKER_CMD="node /abs/test/stub-worker.mjs"
  *
  * Env knobs (for failure-mode tests):
- *   STUB_FAIL=1     record --failed instead of --passed (drives the retry/breaker)
- *   STUB_NOOP=1     do nothing (worker exits without reporting → reclaim path)
+ *   STUB_FAIL=1               record --failed instead of --passed (retry/breaker)
+ *   STUB_NOOP=1               do nothing (worker exits unreported → reclaim path)
+ *   STUB_LAND_NO_COMPLETE=1   write receipt + gate-result --passed, then exit
+ *                             WITHOUT `complete` — the work + gate landed but the
+ *                             process raced ahead of the status:done write. The
+ *                             dispatcher must resolve this to DONE, not reclaim.
+ *   STUB_TEARDOWN=N           after completing, leave N live child processes for a
+ *                             beat (teardown noise) to exercise the ceiling count.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 
 const brief = fs.readFileSync(0, "utf8");
 
@@ -69,7 +75,25 @@ const run = (extra) =>
   });
 
 run(["gate-result", idx, passed, "--evidence", evidence, "--summary", summary]);
-if (process.env.STUB_FAIL !== "1") {
+
+// STUB_LAND_NO_COMPLETE: the work + gate LANDED (receipt written, gate passed),
+// but the process exits BEFORE `complete` flips status:done — the exact race the
+// dispatcher must resolve to DONE rather than reclaim. So skip `complete`.
+const landNoComplete = process.env.STUB_LAND_NO_COMPLETE === "1";
+if (process.env.STUB_FAIL !== "1" && !landNoComplete) {
   run(["complete", idx]);
+}
+
+// STUB_TEARDOWN=N: leave N live children for a beat (winding-down "teardown"
+// noise). They must NOT be counted as live concurrency by the dispatcher's
+// descendant ceiling once this card is terminal on disk.
+const teardown = Number(process.env.STUB_TEARDOWN) || 0;
+if (teardown > 0) {
+  for (let i = 0; i < teardown; i++) {
+    try { spawn("sleep", ["2"], { stdio: "ignore" }); } catch { /* ignore */ }
+  }
+  // stay alive briefly so the children remain this worker's descendants while the
+  // dispatcher evaluates the ceiling for the (now terminal-on-disk) card.
+  spawnSync("sleep", ["2"]);
 }
 process.exit(0);

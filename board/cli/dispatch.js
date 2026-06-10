@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveTopLevelIndex } from "./dependencies.js";
+import { artifactsDir, findReceiptArtifact } from "./artifacts.js";
 import {
   timingEnabled,
   TimingLedger,
@@ -129,6 +130,39 @@ function blockCard(statusPath, status, doc, index, note) {
   step.gate = "failed";
   step.completed_at = new Date().toISOString();
   step.dispatch_note = note;
+  saveStatus(statusPath, status);
+}
+
+// FIX 1.1: did the card's work LAND? gate accepted (passed) AND the receipt
+// artifact is durable on disk. This is the done-at-gate-acceptance signal
+// (commit 303b64e): a worker that passed its gate and wrote its receipt is
+// terminal even if its PROCESS exited a beat before `complete` flipped
+// status:done. Used to tell a spurious reclaim from a genuine mid-card crash.
+function workLanded(statusPath, status, doc, index) {
+  const entry = stepEntry(status, doc, index);
+  if (!entry || entry.gate !== "passed") return false;
+  const recorded = entry.artifact || entry.receipt;
+  if (recorded) {
+    const dir = artifactsDir(statusPath);
+    const abs = path.isAbsolute(recorded)
+      ? recorded
+      : path.resolve(dir, String(recorded).replace(/^artifacts[\\/]/, ""));
+    if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return true;
+  }
+  const found = findReceiptArtifact({ statusPath, stepId: String(index), entry, step: doc.steps?.[index] });
+  return !!found;
+}
+
+// Mark a landed card (gate + durable artifact) terminal, so the run records it
+// and the dispatcher never re-hands it. Mirrors complete's terminal write; the
+// learning fold/insight (a complete side-effect) is best-effort and may be
+// skipped when the worker raced ahead of its own `complete`.
+function finalizeAccepted(statusPath, status, doc, index) {
+  const key = statusKey(status, doc, index);
+  const step = (status.steps[key] = status.steps[key] || { attempt: 1 });
+  step.status = "done";
+  step.gate = "passed";
+  step.completed_at = step.completed_at || new Date().toISOString();
   saveStatus(statusPath, status);
 }
 
@@ -436,24 +470,31 @@ export async function runDispatch(args) {
   function dispatchPass(trigger) {
     if (aborting || stopped) return;
 
-    // global ceiling check (we had a 43-process runaway before)
+    let status;
+    try {
+      status = readJson(statusPath);
+    } catch {
+      return; // mid-write; the watch re-fires
+    }
+
+    // Global ceiling check — catch a genuine runaway (the 43-process origin),
+    // NOT teardown noise (audit Fix 1.2). Count only LIVE workers: skip entries
+    // that have exited, been marked terminal (ACCEPTED, killGroup'd), or whose
+    // card is already terminal on disk — such a worker is winding down (its
+    // subtree is about to be reaped), which is teardown, not live concurrency.
+    // Counting it let a self-abort fire on dying processes rather than a runaway.
     let totalDescendants = 0;
-    for (const [, info] of inFlight) {
+    for (const [index, info] of inFlight) {
+      if (info.exited || info.terminal) continue;
+      if (TERMINAL.has(stepStatus(status, doc, index))) continue;
       if (info.pgid && pidAlive(info.pgid)) {
         totalDescendants += 1 + countDescendants(info.pgid);
       }
     }
     if (totalDescendants > maxProcsObserved) maxProcsObserved = totalDescendants;
     if (totalDescendants > GLOBAL_DESCENDANT_CEILING) {
-      abortLoud(`total descendant process count ${totalDescendants} exceeded ceiling ${GLOBAL_DESCENDANT_CEILING}`);
+      abortLoud(`total LIVE descendant process count ${totalDescendants} exceeded ceiling ${GLOBAL_DESCENDANT_CEILING}`);
       return;
-    }
-
-    let status;
-    try {
-      status = readJson(statusPath);
-    } catch {
-      return; // mid-write; the watch re-fires
     }
 
     // ===== RECLAIM branch (FIRST) — liveness = the PROCESS, never the beat. =====
@@ -486,24 +527,41 @@ export async function runDispatch(args) {
 
       // Primary: a tracked run-card PROCESS has EXITED.
       if (info.exited) {
-        if (TERMINAL.has(onDisk)) {
-          console.log(`  ${green("DONE")} card ${index} ${dim(`(on-disk: ${onDisk}; freeing slot)`)}`);
+        // Re-read fresh first: a worker can write its terminal status a beat
+        // before its process-exit is observed (the close event can fire before
+        // the final fs write lands in THIS pass's snapshot). Closing that read
+        // race resolves the common case (FIX 1.1).
+        let liveStatus = status;
+        try { liveStatus = readJson(statusPath); } catch { /* keep the snapshot */ }
+        const onDiskNow = stepStatus(liveStatus, doc, index);
+        if (TERMINAL.has(onDiskNow)) {
+          console.log(`  ${green("DONE")} card ${index} ${dim(`(on-disk: ${onDiskNow}; freeing slot)`)}`);
+          inFlight.delete(index);
+        } else if (workLanded(statusPath, liveStatus, doc, index)) {
+          // FIX 1.1: gate passed AND artifact durable — the work + gate LANDED;
+          // the worker just exited before `complete` flipped status:done
+          // (done-at-gate-acceptance, 303b64e). Resolve to DONE, do NOT reclaim.
+          // Re-handing here is the spurious attempt-2/3 churn that piled up the
+          // teardown that crossed the ceiling and self-aborted the dispatcher.
+          finalizeAccepted(statusPath, liveStatus, doc, index);
+          console.log(`  ${green("DONE")} card ${index} ${dim("(gate passed + artifact durable; worker exited before the status write — accepted, not reclaimed)")}`);
           inFlight.delete(index);
         } else {
-          // worker died WITHOUT completing => freeze/crash.
+          // worker died WITHOUT landing the work => genuine freeze/crash. Reclaim
+          // (the legitimate path, unchanged).
           if (info.pgid) killGroup(info.pgid); // defensive subtree kill
           const attempts = handCount.get(index) || 0;
           if (attempts >= maxAttempts) {
             console.log(
               `  ${red("BREAKER")} card ${index} crashed ${attempts}x (max_attempts ${maxAttempts}) — marking failed, not re-handing.`,
             );
-            blockCard(statusPath, status, doc, index, `dispatcher breaker: ${attempts} crashed attempts`);
+            blockCard(statusPath, liveStatus, doc, index, `dispatcher breaker: ${attempts} crashed attempts`);
             inFlight.delete(index);
           } else {
             console.log(
-              `  ${amber("RECLAIM")} card ${index} ${dim(`(worker exited; on-disk "${onDisk}" not terminal — reset to pending)`)}`,
+              `  ${amber("RECLAIM")} card ${index} ${dim(`(worker exited; on-disk "${onDiskNow}" not terminal, work not landed — reset to pending)`)}`,
             );
-            resetCardToPending(statusPath, status, doc, index);
+            resetCardToPending(statusPath, liveStatus, doc, index);
             inFlight.delete(index);
           }
         }
