@@ -155,11 +155,19 @@ export function App() {
        order.find((n) => displayName(n) === stickyId))
     : null;
 
+  // The deliberate ask (the ?wf seed / a navigation) resolves BY IDENTITY — preferring
+  // the run feed — so ?wf=landing-forge lands the run, and follows compile → run.
+  const selectedChoice = selectedWf
+    ? (order.find((n) => displayName(n) === displayName(selectedWf) && isRunFeed(n)) ??
+       order.find((n) => displayName(n) === displayName(selectedWf)) ??
+       null)
+    : null;
+
   const activeWf =
     // Highest priority: a just-finished integration feed we're holding, so its
     // Validate card settles to done on screen before the work feed switches in.
     (heldIntegration && workflows[heldIntegration] ? heldIntegration : null) ??
-    (selectedWf && workflows[selectedWf] ? selectedWf : null) ??
+    selectedChoice ??
     stickyChoice ??
     // Auto-selection (bare route / first load): only a LIVE feed may grab the wheel —
     // a stale running/paused zombie is excluded (stale-exclusion).
@@ -363,11 +371,17 @@ export function App() {
     return () => clearTimeout(cap);
   }, [relaunch]);
 
+  // The URL is a SHADOW of the deliberate selection, never of the resolved activeWf.
+  // It mirrors `selectedWf` (what you asked for — the ?wf seed or a navigation), and
+  // fires only when that deliberately changes. A guessed/resolved feed never reaches
+  // the URL, so a refresh can't rehydrate a guess as your intent, and SSE/status churn
+  // (which re-resolves activeWf, not selectedWf) never rewrites your address.
   useEffect(() => {
     const url = new URL(window.location.href);
-    activeWf ? url.searchParams.set("wf", activeWf) : url.searchParams.delete("wf");
+    if (selectedWf) url.searchParams.set("wf", selectedWf);
+    else url.searchParams.delete("wf");
     window.history.replaceState(null, "", url);
-  }, [activeWf]);
+  }, [selectedWf]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

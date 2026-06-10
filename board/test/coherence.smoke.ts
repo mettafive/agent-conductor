@@ -56,6 +56,13 @@ assert(/displayName\(n\) === stickyId/.test(app), "sticky holds the same IDENTIT
 assert(/isLiveFeed\(workflows\[n\], now\)/.test(app), "auto-selection requires a LIVE feed (stale-exclusion)");
 assert(/Trust the pulse, not the flag/.test(app), "stale-exclusion is by recent activity, not the flag");
 
+// CO4b — URL as a passive shadow: mirrors the DELIBERATE selection (selectedWf), never
+// the resolved activeWf; fires only when selectedWf changes; the seed resolves by identity.
+assert(/\}, \[selectedWf\]\);/.test(app), "the URL effect fires on selectedWf (the deliberate ask), not activeWf");
+assert(/if \(selectedWf\) url\.searchParams\.set\("wf", selectedWf\)/.test(app), "the URL mirrors selectedWf");
+assert(!/searchParams\.set\("wf", activeWf\)/.test(app), "a resolved/guessed activeWf never reaches the URL");
+assert(/const selectedChoice = selectedWf/.test(app) && /displayName\(n\) === displayName\(selectedWf\)/.test(app), "the ?wf seed resolves by identity (follows compile → run)");
+
 // CO5 — pause: run-phase only, canonical key
 assert(/!isLifecycle\(key\)/.test(kanban), "pause is hidden for lifecycle feeds (no dispatch to drain)");
 assert(/encodeURIComponent\(key\)\}\/\$\{action\}/.test(kanban), "pause posts the canonical key, not the inner title");
