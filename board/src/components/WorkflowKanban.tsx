@@ -1265,6 +1265,14 @@ export function RunCompleteBanner({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // This component stays mounted across runs (only the inner banner shows/hides),
+  // so `starting` does NOT reset on its own. Once the launched run is live again,
+  // re-enable the button — otherwise it stays disabled (faint/"Starting...") after
+  // the next completion until a full page refresh.
+  useEffect(() => {
+    if (model.overallStatus === "running") setStarting(false);
+  }, [model.overallStatus]);
+
   const settled = model.overallStatus === "done" || model.overallStatus === "failed";
   const steps = model.steps.filter((s) => s.phase === "workflow");
   const show =
