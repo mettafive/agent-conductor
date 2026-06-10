@@ -97,6 +97,44 @@ function insightFor(b: StreamBeat, knowledge?: KnowledgeEntry[]): ShownInsight {
   };
 }
 
+/** Format THIS run's heartbeats + captured insights as a clean markdown digest —
+ *  for handing to an LLM (or a human). Prose beats only (system "Started/Checking/
+ *  Passed" pings are dropped); insights carry their full captured detail, not just
+ *  the chip. Scoped to the beats the terminal currently holds — the last run, not
+ *  any setup/lifecycle feed. */
+function buildRunDigest(beats: StreamBeat[], knowledge?: KnowledgeEntry[]): string {
+  const real = beats.filter((b) => !b.system && plainNote(b.note).trim());
+  const workflow = real[0]?.workflow ?? beats[0]?.workflow ?? "workflow";
+  const lines: string[] = [`# Run heartbeats — ${workflow}`, ""];
+  for (const b of real) {
+    const card = b.title ? `${b.title} — ` : "";
+    const tail = b.finalBeat ? "  (handoff)" : "";
+    lines.push(`[${clock(b.at)}] ${card}${plainNote(b.note)}${tail}`);
+  }
+  const seen = new Set<string>();
+  const insights: ShownInsight[] = [];
+  for (const b of beats) {
+    if (!b.insight) continue;
+    const ins = insightFor(b, knowledge);
+    if (seen.has(ins.title)) continue;
+    seen.add(ins.title);
+    insights.push(ins);
+  }
+  if (insights.length) {
+    lines.push("", `## Insights captured this run (${insights.length})`, "");
+    for (const ins of insights) {
+      lines.push(`### ${ins.title}`);
+      if (ins.note) lines.push(ins.note);
+      if (ins.current) lines.push(`- was:  ${ins.current}`);
+      if (ins.proposed) lines.push(`- now:  ${ins.proposed}`);
+      const meta = [ins.scope, ins.step, ins.observed ? `seen ${ins.observed}×` : null].filter(Boolean).join(" · ");
+      if (meta) lines.push(`(${meta})`);
+      lines.push("");
+    }
+  }
+  return `${lines.join("\n").trim()}\n`;
+}
+
 /** A clean modal for one insight — title, the captured note, the current→proposed change, and
  *  provenance. Opened by clicking a beat's "insight" tag; closes on backdrop click, ✕, or Esc.
  *  Every interaction stops propagation, so opening/closing it never re-routes the board beneath. */
@@ -302,6 +340,19 @@ function ExpandedMonitor({
   const driftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showJump, setShowJump] = useState(false);
   const [cursorOn, setCursorOn] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Copy this run's heartbeats (prose only — no system pings) + the captured
+  // insights with their full detail, in a clean markdown digest to hand to an LLM.
+  const copyRun = async () => {
+    try {
+      await navigator.clipboard.writeText(buildRunDigest(beats, knowledge));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be blocked (e.g. insecure context) */
+    }
+  };
 
   const shown = beats;
 
@@ -477,18 +528,38 @@ function ExpandedMonitor({
           </div>
         )}
       </div>
+      {/* Scrolled-up controls, stacked bottom-center: "Copy heartbeats" sits ABOVE
+          "Jump to latest". Copy is available whenever you've scrolled up OR the run
+          has finished, so a completed run is one click from your clipboard. */}
       <AnimatePresence>
-        {showJump && (
-          <motion.button
-            initial={{ opacity: 0, y: 8, x: "-50%" }}
-            animate={{ opacity: 1, y: 0, x: "-50%" }}
-            exit={{ opacity: 0, y: 8, x: "-50%" }}
+        {(showJump || done) && shown.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            onClick={jumpToLatest}
-            className="absolute bottom-3 left-1/2 z-10 rounded-full border border-cyan/40 bg-ink/90 px-3 py-1 text-[10px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
+            className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2"
           >
-            ↓ Jump to latest
-          </motion.button>
+            <button
+              onClick={copyRun}
+              title="Copy this run's heartbeats + insights as markdown — for handing to an LLM"
+              className={`rounded-full border px-3 py-1 text-[10px] shadow-lg backdrop-blur transition-colors ${
+                copied
+                  ? "border-mint/50 bg-mint/15 text-mint"
+                  : "border-line-2 bg-ink/90 text-mist-2 hover:bg-panel/60 hover:text-chalk"
+              }`}
+            >
+              {copied ? "Copied ✓" : "Copy heartbeats from this run"}
+            </button>
+            {showJump && (
+              <button
+                onClick={jumpToLatest}
+                className="rounded-full border border-cyan/40 bg-ink/90 px-3 py-1 text-[10px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
+              >
+                ↓ Jump to latest
+              </button>
+            )}
+          </motion.div>
         )}
       </AnimatePresence>
       {createPortal(
