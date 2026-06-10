@@ -36,6 +36,14 @@ so only a new or edited skill pays the first compile. See
   work cards flow, in one continuous run with no second confirm. A failed
   integration is a visible failed shaping card that halts the run cleanly; work
   never runs on a half-integrated plan.
+- **One continuous surface.** The board opens at compile start (you watch the
+  compile cards move pending → running → done) and the active feed auto-advances
+  compile → integration → run on the same window — `?wf=<skill>` loads the run
+  feed directly.
+- **Reliable supervision.** A worker that passes its gate and writes its receipt
+  resolves to done even if it exits a beat before the status write (no spurious
+  reclaim churn), and the runaway ceiling counts only live workers, never
+  winding-down teardown — so the dispatcher self-aborts on a real runaway only.
 
 ## Commands
 
