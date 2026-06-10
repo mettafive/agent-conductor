@@ -31,6 +31,7 @@
     "test:heartbeat": "node test/heartbeat.smoke.mjs",
     "test:relaunch": "node test/relaunch.smoke.mjs",
     "test:loop-narrate": "node test/loop-narrate.smoke.mjs",
+    "test:parallel-siblings": "node test/parallel-siblings.smoke.mjs",
     "test:shaping": "npx --yes tsx test/shaping.smoke.ts",
     "prepublishOnly": "npm run build"
   },

@@ -6,9 +6,11 @@ interface RawStep {
   instruction?: string;
   summary?: string;
   type?: string;
-  /** general card kind label (e.g. "shaping" for integration cards). Carried
-   *  through to the board model so shaping cards read distinct from work cards. */
+  /** general card kind label (e.g. "shaping" for integration cards, "parallel" for
+   *  parallel siblings). Carried through to the board model so they read distinct. */
   kind?: string;
+  /** one-line self-documentation for a tagged card (e.g. why a parallel sibling). */
+  rationale?: string;
   retired?: boolean;
   retired_by?: string;
   requires?: number[];
@@ -36,6 +38,7 @@ function toStep(s: RawStep, index: number): ConductorStep {
     instruction,
     summary: typeof s.summary === "string" && s.summary.trim() ? s.summary.trim() : undefined,
     kind: typeof s.kind === "string" && s.kind.trim() ? s.kind.trim() : undefined,
+    rationale: typeof s.rationale === "string" && s.rationale.trim() ? s.rationale.trim() : undefined,
     firstLine: firstLineOf(instruction),
     isCondition: false,
     retired: s.retired === true,

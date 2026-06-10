@@ -42,14 +42,16 @@ export function extractJson(text) {
   }
 }
 
-function normalizeCards(payload) {
+export function normalizeCards(payload) {
   const raw = Array.isArray(payload) ? payload : payload?.cards;
   if (!Array.isArray(raw)) throw new Error("composer JSON must be an array or { cards: [...] }");
   return raw.map((card, index) => {
     if (!card || typeof card !== "object" || Array.isArray(card)) {
       throw new Error(`card ${index} must be an object`);
     }
-    const allowed = new Set(["title", "instruction", "summary"]);
+    // kind/rationale are the parallel-sibling tag (kind:"parallel") + its one-line
+    // self-documentation; carried through to the checker, workflow.json, and board.
+    const allowed = new Set(["title", "instruction", "summary", "kind", "rationale"]);
     const unknown = Object.keys(card).filter((k) => !allowed.has(k));
     if (unknown.length) {
       throw new Error(`card ${index} has unsupported field(s): ${unknown.join(", ")}`);
@@ -60,7 +62,12 @@ function normalizeCards(payload) {
     if (!title) throw new Error(`card ${index} is missing title`);
     if (!instruction) throw new Error(`card ${index} is missing instruction`);
     if (!summary) throw new Error(`card ${index} is missing summary`);
-    return { title, instruction, summary };
+    const kind = compact(card.kind);
+    const rationale = compact(card.rationale);
+    const out = { title, instruction, summary };
+    if (kind) out.kind = kind;
+    if (rationale) out.rationale = rationale;
+    return out;
   });
 }
 
@@ -167,6 +174,16 @@ Card model:
 Do not use condition fields. Conditionality belongs inside instruction text.
 
 A good card is a concrete, independently verifiable unit of work.
+
+When a step calls for a small, fixed set of distinctly named outputs — each its own
+artifact, with no output feeding another — prefer one card per output over a single
+card covering all of them. These are parallel siblings: they share the same upstream
+and run concurrently, which is faster. Give each \`kind: "parallel"\` and a one-line
+rationale (e.g. "parallel sibling — runs concurrently with its siblings, saves time").
+Apply this only to a handful of explicitly named, independent deliverables — never to
+open-ended or large collections (see the collection rule below). Write each sibling's
+instruction self-contained, so no sibling references another.
+
 Every card instruction must require one primary markdown receipt at
 \`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`:
 - content/code/data/report/table/file work must be shown inside that markdown receipt
@@ -199,9 +216,12 @@ Skills normally contain:
 - references/background/API notes: context, not cards
 - situational work: real cards only when the decision itself is valuable to record; fold the situation and both valid outcomes into the instruction
 
-When the skill describes work across a collection — per page, per family member,
-per record — preserve that scope in the card instruction. The card executes once
-but its instruction and artifact must cover every item in the collection.
+When the skill repeats the same work across a generic, large, or open-ended
+collection — per page, per record, for each item in a set whose members aren't
+individually named — keep it as one card whose instruction and artifact cover every
+item; do not create a card per item. (A small, fixed set of distinctly named,
+independent outputs is the opposite case — split those into parallel siblings, per
+the rule above.)
 
 Do not create cards from generic rules, quality criteria, examples, references, or background.
 Do not invent work not present in the skill.
@@ -217,9 +237,11 @@ ${pressure ? `\n${pressure}\n` : ""}
 Return JSON only as:
 {
   "cards": [
-    { "title": "Clear action under 40 chars", "instruction": "Concrete verifiable instruction. If situational, say how to evaluate the situation and what artifact proves either action taken or no action needed.", "summary": "Two complete sentences describing what this card will do and the outcome it produces, for a user watching the board." }
+    { "title": "Clear action under 40 chars", "instruction": "Concrete verifiable instruction. If situational, say how to evaluate the situation and what artifact proves either action taken or no action needed.", "summary": "Two complete sentences describing what this card will do and the outcome it produces, for a user watching the board." },
+    { "title": "One named parallel output", "instruction": "Self-contained instruction producing this output's own artifact; references no sibling.", "summary": "Two complete sentences for a user watching the board.", "kind": "parallel", "rationale": "parallel sibling — runs concurrently with its siblings, saves time" }
   ]
 }
+Only include "kind" and "rationale" on parallel siblings; ordinary cards omit them.
 
 SKILL.md:
 ${skill}${repair}`;
@@ -262,6 +284,14 @@ FAIL if:
 - a system-level condition field is present
 - situational work is not folded into the instruction
 - a situational instruction does not require evidence that the condition was evaluated
+
+A card marked \`kind: "parallel"\` is a deliberate parallel sibling, not a too-tiny
+card — do NOT fold it. Verify instead that it produces its own distinct named
+artifact and shares its upstream with its siblings, with no sibling's output feeding
+another. Fold or fail it only if it has no distinct output, duplicates a sibling, or
+its siblings actually depend on one another. The too-tiny rule still applies to
+unmarked small cards; the cardinality rule still fails a generic or large collection
+that has lost its multiplicity.
 
 PASS only if the cards faithfully compile the skill into verifiable work.
 

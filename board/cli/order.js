@@ -15,7 +15,7 @@ function workflowNameFromCardsPath(cardsPath) {
   return parent && parent !== "." ? parent : "workflow";
 }
 
-function normalizeWorkflow(payload, cards, { name, description, maxAttempts }) {
+export function normalizeWorkflow(payload, cards, { name, description, maxAttempts }) {
   const raw = payload?.steps || payload?.workflow?.steps || payload?.cards || payload;
   if (!Array.isArray(raw)) throw new Error("order composer JSON must include steps: [...]");
   if (raw.length !== cards.length) {
@@ -34,6 +34,10 @@ function normalizeWorkflow(payload, cards, { name, description, maxAttempts }) {
       title: cards[index].title,
       instruction: cards[index].instruction,
       summary: cards[index].summary,
+      // Carry the parallel-sibling tag (kind:"parallel") + its rationale onto the
+      // workflow step, so the board renders it and the tag survives the order phase.
+      ...(cards[index].kind ? { kind: cards[index].kind } : {}),
+      ...(cards[index].rationale ? { rationale: cards[index].rationale } : {}),
       requires: normalizedRequires,
     };
   });

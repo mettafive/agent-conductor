@@ -1966,6 +1966,14 @@ function WorkflowCard({
               shaping
             </span>
           )}
+          {step.kind === "parallel" && (
+            <span
+              title={step.rationale || "parallel sibling — runs concurrently with its siblings"}
+              className="flex shrink-0 items-center gap-1 rounded-full border border-cyan/40 bg-cyan/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-cyan"
+            >
+              parallel
+            </span>
+          )}
           {isReady && (
             <span
               title="next — dependencies met, queued to go"

@@ -22,8 +22,10 @@ export interface ConductorStep {
   firstLine: string;
   isCondition: boolean;
   /** general card kind label carried from the raw step (e.g. "shaping" for the
-   *  integration cards that rewrite the plan). Undefined for ordinary work cards. */
+   *  integration cards, "parallel" for parallel siblings). Undefined for ordinary cards. */
   kind?: string;
+  /** one-line self-documentation for a tagged card (e.g. why it's a parallel sibling). */
+  rationale?: string;
   retired?: boolean;
   retired_by?: string;
   output?: string;
