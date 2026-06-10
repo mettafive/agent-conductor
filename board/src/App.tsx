@@ -88,6 +88,9 @@ function RelaunchOverlay({ reduceMotion }: { reduceMotion: boolean }) {
 export function App() {
   const { workflows, order, conn } = useBoardState();
   const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
+  // When an integration (shaping) feed finishes, hold the board on it for a beat so
+  // its last card (Validate) visibly settles to done before the work feed takes over.
+  const [heldIntegration, setHeldIntegration] = useState<string | null>(null);
   const [ticksOn, setTicksOn] = useState(!isTicksMuted());
   const [chimesOn, setChimesOn] = useState(!isChimesMuted());
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
@@ -125,6 +128,9 @@ export function App() {
     return v !== "compile" && v !== "integration"; // run, or untagged/legacy
   };
   const activeWf =
+    // Highest priority: a just-finished integration feed we're holding, so its
+    // Validate card settles to done on screen before the work feed switches in.
+    (heldIntegration && workflows[heldIntegration] ? heldIntegration : null) ??
     (selectedWf && workflows[selectedWf] ? selectedWf : null) ??
     order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running") ??
     order.find((n) => statusOf(workflows[n]) === "running") ??
@@ -245,6 +251,23 @@ export function App() {
   // "watch the insides get integrated" moment. So clear the pin the instant a
   // fresh loop begins: an integration feed goes live, or the active feed's run_id
   // changes. The preference (App.tsx run-feed logic) then lets integration lead.
+  // Hold a just-finished integration feed on screen for a beat (so Validate visibly
+  // settles to done), then release to let the work feed take over. Fires once per
+  // completion: only on a genuine running → done/failed transition.
+  const prevIntegStatus = useRef<Record<string, string>>({});
+  useEffect(() => {
+    for (const n of order) {
+      if (workflows[n]?.snap?.variant !== "integration") continue;
+      const cur = statusOf(workflows[n]) || "";
+      const prev = prevIntegStatus.current[n];
+      if (prev === "running" && (cur === "done" || cur === "failed")) {
+        setHeldIntegration(n);
+        setTimeout(() => setHeldIntegration((h) => (h === n ? null : h)), 1100);
+      }
+      prevIntegStatus.current[n] = cur;
+    }
+  }, [workflows, order]);
+
   const prevLiveRunId = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (selectedWf) {
