@@ -63,6 +63,12 @@ assert(/if \(selectedWf\) url\.searchParams\.set\("wf", selectedWf\)/.test(app),
 assert(!/searchParams\.set\("wf", activeWf\)/.test(app), "a resolved/guessed activeWf never reaches the URL");
 assert(/const selectedChoice = selectedWf/.test(app) && /displayName\(n\) === displayName\(selectedWf\)/.test(app), "the ?wf seed resolves by identity (follows compile → run)");
 
+// CO4c — a status/SSE event is never a deselection: the fresh-run-id/integration-detection
+// null is gone; the selection holds its canonical identity across a run start.
+assert(/A STATUS\/SSE EVENT IS NEVER A DESELECTION/.test(app), "the status-event deselection is replaced by the hold principle");
+assert(!/prevLiveRunId/.test(app) && !/freshLoop/.test(app), "the fresh-run-id deselection effect is removed");
+assert(/setSelectedWf\(null\); \/\/ unpin so the running integration feed can lead/.test(app), "only the user-initiated relaunch still unpins (deliberate, in scope)");
+
 // CO5 — pause: run-phase only, canonical key
 assert(/!isLifecycle\(key\)/.test(kanban), "pause is hidden for lifecycle feeds (no dispatch to drain)");
 assert(/encodeURIComponent\(key\)\}\/\$\{action\}/.test(kanban), "pause posts the canonical key, not the inner title");

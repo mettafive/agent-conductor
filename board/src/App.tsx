@@ -312,18 +312,12 @@ export function App() {
     }
   }, [workflows, order]);
 
-  const prevLiveRunId = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (selectedWf) {
-      const integrationRunning = order.some(
-        (n) => workflows[n]?.snap?.variant === "integration" && statusOf(workflows[n]) === "running",
-      );
-      const rid = liveModel.runId;
-      const freshLoop = !!rid && !!prevLiveRunId.current && rid !== prevLiveRunId.current;
-      if (integrationRunning || freshLoop) setSelectedWf(null);
-    }
-    prevLiveRunId.current = liveModel.runId;
-  }, [liveModel.runId, order, workflows, selectedWf]);
+  // A STATUS/SSE EVENT IS NEVER A DESELECTION. A fresh run-id (a run starting) or an
+  // integration feed going live under the SAME canonical workflow is the same selection
+  // — not a reason to clear it. selectedWf holds the canonical identity (the stable outer
+  // key, not the run-id), so it survives the new run for free: selectedChoice (App.tsx
+  // ~160) re-resolves the same identity onto the live feed, and ?wf= holds. (The only
+  // deliberate unpin is the user-initiated relaunch in startRelaunch, below.)
 
   // ── Improve & Run transition (Part B) ──────────────────────────────────────
   // A continuous, eased relaunch: board sweeps away → a "setting up" beat spans
