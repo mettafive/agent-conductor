@@ -9,6 +9,11 @@ import { NoteThread } from "./HeartbeatTimeline";
 
 const BASE_COLS: Col[] = ["pending", "running", "checking", "done"];
 const DWELL_MS = 1000;
+// After the dwell advances the last cards into Done, hold the LIVE board this long
+// so the move-into-Done layout animation (~0.42s) plays out before switching to the
+// settled snapshot — otherwise the snapshot teleports the cards and the board
+// "stops" before that final animation.
+const SETTLE_ANIM_MS = 520;
 const FLOW: Col[] = ["pending", "running", "checking", "done"];
 
 interface ArtifactFile {
@@ -2180,8 +2185,20 @@ export function WorkflowKanban({
   const rawSettled = model.overallStatus === "done" || model.overallStatus === "failed";
   const steps = useDwellSteps(rawSteps, rawSteps.length > 0, false);
   const allSteps = useDwellSteps(allRawSteps, allRawSteps.length > 0, false);
-  const settled =
+  // The dwell has just moved the last cards into Done/Failed. Don't switch to the
+  // settled snapshot immediately — that teleports the cards and cuts the final
+  // move-into-Done animation. Wait SETTLE_ANIM_MS so the live board plays it first.
+  const allSettledNow =
     rawSettled && steps.every((s) => s.column === "done" || s.column === "failed");
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!allSettledNow) {
+      setSettled(false);
+      return;
+    }
+    const t = setTimeout(() => setSettled(true), SETTLE_ANIM_MS);
+    return () => clearTimeout(t);
+  }, [allSettledNow]);
   const [compileArtifactStep, setCompileArtifactStep] = useState<BoardStep | null>(null);
 
   useEffect(() => {
