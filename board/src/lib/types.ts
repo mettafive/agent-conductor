@@ -338,4 +338,7 @@ export interface Snapshot {
   knowledgeJson?: string | null;
   statusPath: string;
   conductorPath: string | null;
+  /** which feed this is: "run" (the work workflow), "compile", or "integration".
+   *  Lets the board prefer the run feed and auto-advance compile → run. */
+  variant?: string;
 }

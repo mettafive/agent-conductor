@@ -86,9 +86,20 @@ export function App() {
     if (arrival && !arrival.beat.system) playTick();
   }, [arrival]);
 
+  // A "run" feed is the work workflow; "compile"/"integration" are the shaping
+  // feeds. Prefer the RUN feed so the board never sticks on the migration board
+  // when the run is going, and so it auto-advances compile → run on one surface
+  // (Fix 2). While compile is the only thing running, the third clause still
+  // surfaces it live (Fix 3 — you watch the build, not just the finish).
+  const isRunFeed = (n: string) => {
+    const v = workflows[n]?.snap?.variant;
+    return v !== "compile" && v !== "integration"; // run, or untagged/legacy
+  };
   const activeWf =
     (selectedWf && workflows[selectedWf] ? selectedWf : null) ??
+    order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running") ??
     order.find((n) => statusOf(workflows[n]) === "running") ??
+    order.find((n) => isRunFeed(n)) ??
     order[0] ??
     null;
 

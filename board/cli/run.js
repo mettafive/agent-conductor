@@ -4,7 +4,7 @@ import path from "node:path";
 import { runCompile } from "./compile.js";
 import { runStatusInit } from "./writer.js";
 import { runDispatch } from "./dispatch.js";
-import { openRunBoard } from "./init-board.js";
+import { openRunBoard, ensureBoardVisible } from "./init-board.js";
 import { integrateRoot } from "./integration.js";
 import { scopedConductorDir } from "./learning.js";
 import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
@@ -193,6 +193,14 @@ export async function runRun(args) {
   }
   console.log(`  ${bold(workerLine(adapter, adapterCap(adapter)))}`);
 
+  // 0b. OPEN THE BOARD EARLY (Fix 3) — before compile, so the migration/compile
+  //     feed is watched live (cards pending → running → done). The board's
+  //     run-feed preference auto-advances compile → integration → run on the SAME
+  //     window. Best-effort; the authoritative health/serve check is below.
+  if (!headless) {
+    try { await ensureBoardVisible(statusPath, { headless, port }); } catch { /* best-effort */ }
+  }
+
   // 1. COMPILE-IF-NEEDED. The durable compiled workflow is the "already-compiled"
   //    signal: reuse it unless --force or the skill is newer (edited) than it.
   //    runCompile itself is cache-aware (compile-meta.json) — this just avoids
@@ -226,12 +234,9 @@ export async function runRun(args) {
   const openInsights = openInsightsForRoot(outDir);
   if (openInsights.length) {
     console.log(`  ${iris("shaping:")} ${openInsights.length} open insight(s) — integration leads, then work.`);
-    // Bring the board up now (best-effort) so the integration feed is visible as
-    // the shaping cards run; the authoritative work-board open happens below.
-    // Interactive only — headless/CI doesn't need the early window.
-    if (!headless) {
-      try { await openRunBoard(statusPath, workflowPath, { headless, port }); } catch { /* best-effort */ }
-    }
+    // The board is already visible from the early open above; the integration
+    // feed appears on it as the shaping cards run (the board's run-feed
+    // preference keeps work ahead of the migration feed once it starts).
     let integrated = false;
     try {
       integrated = await integrateRoot({ root: outDir, skillPath });
@@ -281,9 +286,10 @@ export async function runRun(args) {
     }
   }
 
-  // 3. ALWAYS-OPEN RUN BOARD — on the RUN's scoped files (not compile's progress
-  //    board). Attaches to a live board on the port, else spawns one.
-  const board = await openRunBoard(statusPath, workflowPath, { headless, port });
+  // 3. RUN BOARD — health + serve check on the RUN's scoped files. The tab was
+  //    already opened early (Fix 3), so don't open a second one; the board's
+  //    run-feed preference auto-advances the active feed to the run workflow.
+  const board = await openRunBoard(statusPath, workflowPath, { headless, port, openBrowserTab: false });
   if (!board.healthy) {
     console.error(red(`  ✗ board did not become healthy on port ${port} — not dispatching.`));
     return false;

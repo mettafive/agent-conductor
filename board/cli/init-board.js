@@ -230,7 +230,7 @@ function killPortIfBoard(port) {
  *
  * @returns {Promise<{ok, healthy, served, spawned, url, browserUrl, workflow, health, workflows}>}
  */
-export async function openRunBoard(statusPath, workflowPath, { headless = false, port = 3042 } = {}) {
+export async function openRunBoard(statusPath, workflowPath, { headless = false, port = 3042, openBrowserTab = true } = {}) {
   const conductorDir = path.dirname(path.resolve(statusPath));
   const serverJsonPath = path.join(conductorDir, "server.json");
   const registry = registryPath();
@@ -267,12 +267,31 @@ export async function openRunBoard(statusPath, workflowPath, { headless = false,
 
   // Stable canonical URL — opening the same URL focuses the existing tab.
   const browserUrl = canonicalUrl(port, workflow);
-  if (!headless && !browserAlreadyOpened(serverJsonPath, registry)) {
+  if (!headless && openBrowserTab && !browserAlreadyOpened(serverJsonPath, registry)) {
     openBrowser(browserUrl);
     markBrowserOpened(serverJsonPath, browserUrl, registry);
   }
 
   return { ok: true, healthy: true, served, spawned: ensured.spawned, url: ensured.url, browserUrl, workflow, health, workflows: health?.workflows || {} };
+}
+
+/**
+ * Fix 3: open a VISIBLE board EARLY — before/at compile — so the migration
+ * (compile) feed is watched live, cards pending → running → done, instead of
+ * appearing already finished. Opens the canonical port URL (no wf); the board's
+ * run-feed preference then auto-advances compile → integration → run on the
+ * SAME window. Idempotent: later openRunBoard attaches and won't re-open the tab.
+ */
+export async function ensureBoardVisible(statusPath, { headless = false, port = 3042 } = {}) {
+  const ensured = await ensureBoard(port, { statusPath });
+  if (!headless && ensured.health) {
+    openBrowser(canonicalUrl(port));
+    try {
+      const serverJsonPath = path.join(path.dirname(path.resolve(statusPath)), "server.json");
+      markBrowserOpened(serverJsonPath, canonicalUrl(port), registryPath());
+    } catch { /* best-effort — prevents a duplicate tab from the later openRunBoard */ }
+  }
+  return ensured;
 }
 
 export async function runInitBoard(args) {

@@ -703,7 +703,10 @@ function workflowName(statusPath, conductorPath, dir) {
 function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
   const found = [];
   const seen = new Set();
-  const add = (name, dir, statusPath, conductorPath) => {
+  // variant: "run" (the work workflow.json/status.json) | "compile" | "integration".
+  // The frontend uses this to honor ?wf and to prefer the RUN feed over the
+  // migration/compile feed — and to auto-advance compile → run on one surface.
+  const add = (name, dir, statusPath, conductorPath, variant = "run") => {
     if (seen.has(name)) return;
     seen.add(name);
     found.push({
@@ -711,6 +714,7 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
       dir,
       statusPath,
       conductorPath,
+      variant,
       historyDir: path.join(dir, "history"),
     });
   };
@@ -725,7 +729,7 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
     const sp = path.join(conductorDir, `${variant}.status.json`);
     const cp = path.join(conductorDir, `${variant}.workflow.json`);
     if (fs.existsSync(sp) || fs.existsSync(cp)) {
-      add(workflowName(sp, cp, conductorDir), conductorDir, sp, fs.existsSync(cp) ? cp : null);
+      add(workflowName(sp, cp, conductorDir), conductorDir, sp, fs.existsSync(cp) ? cp : null, variant);
     }
   }
 
@@ -745,7 +749,7 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
         const vsp = path.join(dir, `${variant}.status.json`);
         const vcp = path.join(dir, `${variant}.workflow.json`);
         if (fs.existsSync(vsp) || fs.existsSync(vcp)) {
-          add(workflowName(vsp, vcp, dir), dir, vsp, fs.existsSync(vcp) ? vcp : null);
+          add(workflowName(vsp, vcp, dir), dir, vsp, fs.existsSync(vcp) ? vcp : null, variant);
         }
       }
     }
@@ -810,6 +814,7 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
   const snapshotFor = (wf) => {
     const snap = readSnapshot(wf.statusPath, wf.conductorPath);
     snap.workflow = wf.name;
+    snap.variant = wf.variant || "run";
     return snap;
   };
 
