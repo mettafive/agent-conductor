@@ -611,6 +611,25 @@ function CompletionHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
+          {/* Pause / Resume — drain-and-hold. Only on an active run; reflects live status
+              (the POST flips status.json → SSE → this re-renders). Calm, not loud. */}
+          {(shownStatus === "running" || shownStatus === "paused") && (
+            <button
+              type="button"
+              onClick={() => {
+                const action = shownStatus === "paused" ? "resume" : "pause";
+                void fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/${action}`, { method: "POST" });
+              }}
+              title={
+                shownStatus === "paused"
+                  ? "Resume — dispatch the next card"
+                  : "Pause — let in-flight cards finish, then hold (no new cards start)"
+              }
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-2 bg-panel/60 px-3 py-1.5 font-mono text-[13px] text-mist-2 transition-[colors,transform] hover:bg-panel hover:text-chalk active:scale-[0.97]"
+            >
+              {shownStatus === "paused" ? "▶ Resume" : "⏸ Pause"}
+            </button>
+          )}
           {/* Summary/Board toggle — only when settled (no summary during a live run). */}
           {settled && (
             <div className="flex rounded-md border border-line bg-panel p-0.5 text-[15px]">

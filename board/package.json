@@ -35,7 +35,8 @@
     "test:concurrency": "node test/concurrency.smoke.mjs",
     "test:shaping": "npx --yes tsx test/shaping.smoke.ts",
     "prepublishOnly": "npm run build",
-    "test:board-routing": "node test/board-routing.smoke.mjs"
+    "test:board-routing": "node test/board-routing.smoke.mjs",
+    "test:pause": "node test/pause.smoke.mjs"
   },
   "engines": {
     "node": ">=18"

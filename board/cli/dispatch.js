@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { resolveTopLevelIndex } from "./dependencies.js";
 import { artifactsDir, findReceiptArtifact } from "./artifacts.js";
-import { mutateStatus } from "./status-store.js";
+import { mutateStatus, stampBeat } from "./status-store.js";
 import {
   timingEnabled,
   TimingLedger,
@@ -370,6 +370,33 @@ export async function runDispatch(args) {
   let maxProcsObserved = 0;
   let aborting = false;
   let stopped = false;
+  let prevDispatchStatus = null; // narrate pause/resume exactly once per transition
+
+  // The cards the hand-out would pick next: pending, deps satisfied, unblockers first.
+  const firstEligible = (status) => {
+    const elig = [];
+    for (let i = 0; i < doc.steps.length; i++) {
+      if (inFlight.has(i)) continue;
+      if (stepStatus(status, doc, i) !== "pending") continue;
+      const reqs = (doc.steps[i]?.requires || []).map(Number);
+      if (reqs.every((d) => stepStatus(status, doc, d) === "done")) elig.push(i);
+    }
+    elig.sort((a, b) => unblockWeight(doc, b) - unblockWeight(doc, a) || a - b);
+    return elig;
+  };
+
+  // One control beat, anchored to a card so it lands in the stream; control:true so the
+  // terminal renders it IMMEDIATELY (outside the typewriter backlog). Locked write.
+  const emitControlBeat = (stepIndex, note) => {
+    const key = String(Number.isInteger(stepIndex) ? stepIndex : 0);
+    mutateStatus(statusPath, (fresh) => {
+      if (!fresh) return null;
+      fresh.steps = fresh.steps || {};
+      const step = (fresh.steps[key] = fresh.steps[key] || { attempt: 1 });
+      step.heartbeat = Array.isArray(step.heartbeat) ? step.heartbeat : [];
+      step.heartbeat.push(stampBeat(fresh, { at: new Date().toISOString(), note, system: true, control: true }));
+    });
+  };
 
   // ----- safety: kill EVERY tracked process group on abort/exit -----
   function killAll() {
@@ -491,6 +518,33 @@ export async function runDispatch(args) {
     } catch {
       return; // mid-write; the watch re-fires
     }
+
+    // ===== PAUSE / RESUME narration — exactly ONE control beat per transition. =====
+    // Pause names the in-flight COUNT (parallelism is live, so usually >1); resume names
+    // the next card to dispatch. Two different sources: the in-flight set vs firstEligible.
+    if (prevDispatchStatus !== null && status.status !== prevDispatchStatus) {
+      if (status.status === "paused") {
+        const live = [...inFlight.keys()].filter((i) => {
+          const info = inFlight.get(i);
+          return info && !info.exited && !info.terminal && !TERMINAL.has(stepStatus(status, doc, i));
+        });
+        if (live.length > 0) {
+          emitControlBeat(live[0], `Pausing — ${live.length} card${live.length === 1 ? "" : "s"} still running will finish, then holding.`);
+        } else {
+          emitControlBeat(firstEligible(status)[0], "Pausing before the next card.");
+        }
+      } else if (status.status === "running" && prevDispatchStatus === "paused") {
+        const elig = firstEligible(status);
+        if (elig.length > 0) {
+          const title = doc.steps[elig[0]]?.title || `card ${elig[0]}`;
+          const more = elig.length > 1 ? ` (+${elig.length - 1} more)` : "";
+          emitControlBeat(elig[0], `Resuming — dispatching ${title}${more}.`);
+        } else {
+          emitControlBeat(Number.isInteger(Number(status.current_step)) ? Number(status.current_step) : 0, "Resuming.");
+        }
+      }
+    }
+    prevDispatchStatus = status.status;
 
     // Global ceiling check — catch a genuine runaway (the 43-process origin),
     // NOT teardown noise (audit Fix 1.2). Count only LIVE workers: skip entries

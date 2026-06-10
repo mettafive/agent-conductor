@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ensureKnowledge, readJsonMaybe } from "../cli/learning.js";
 import { validateConductor } from "../cli/validate.js";
+import { mutateStatus } from "../cli/status-store.js";
 import { registeredRoots, registryFile, registerRoot, registerBoard, gcRegistry } from "../cli/registry.js";
 
 const readBody = (req) =>
@@ -1241,6 +1242,40 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
         return json(res, 500, { error: `write failed: ${e.message}` });
       }
       return json(res, 200, { ok: true });
+    }
+
+    // PAUSE / RESUME — drain-and-hold. /pause flips the run to "paused" (the dispatcher
+    // stops handing out NEW cards; in-flight ones finish on their own); /resume flips it
+    // back to "running". Written through mutateStatus (the locked path) so it never
+    // clobbers a concurrent worker/dispatcher write. The clock holds via the accumulator:
+    // pause folds the live running interval into elapsed_ms and nulls running_since;
+    // resume reopens the interval.
+    if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/(pause|resume)$/))) {
+      const wf = findWf(decodeURIComponent(m[1]));
+      if (!wf) return json(res, 404, { error: "not found" });
+      const action = m[2];
+      let applied = null;
+      mutateStatus(wf.statusPath, (s) => {
+        if (!s) return null;
+        if (action === "pause") {
+          if (s.status !== "running") return null; // only a running run pauses (idempotent)
+          if (typeof s.running_since === "string") {
+            const ran = Date.now() - Date.parse(s.running_since);
+            if (Number.isFinite(ran) && ran > 0) s.elapsed_ms = (typeof s.elapsed_ms === "number" ? s.elapsed_ms : 0) + ran;
+          }
+          s.running_since = null;
+          s.paused_at = new Date().toISOString();
+          s.status = "paused";
+          applied = "paused";
+        } else {
+          if (s.status !== "paused") return null; // only a paused run resumes (idempotent)
+          s.running_since = new Date().toISOString();
+          delete s.paused_at;
+          s.status = "running";
+          applied = "running";
+        }
+      });
+      return json(res, 200, { ok: true, status: applied });
     }
 
     if (req.method === "GET" && (m = url.match(/^\/api\/workflow\/([^/]+)\/compile-summary$/))) {
