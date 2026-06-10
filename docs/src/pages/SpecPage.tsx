@@ -1,131 +1,227 @@
+import type { ReactNode } from "react";
 import { SectionHead, Eyebrow, Page } from "../components/ui";
 import { Reveal } from "../components/Reveal";
 import { CodeBlock } from "../components/CodeBlock";
-import { Led } from "../components/Led";
+import { LiveBoard } from "../components/LiveBoard";
 
-const QUICKSTART = `{
-  "conductor": "3.0.0",
-  "name": "basic-report",
-  "description": "Research, outline, write, review.",
-  "inputs": ["topic"],
-  "steps": [
-    {
-      "title": "Research",
-      "instruction": "Research {topic}. Gather five credible sources.",
-      "summary": "Researches the topic and gathers five credible sources for the report.",
-      "requires": []
-    },
-    {
-      "title": "Write",
-      "instruction": "Write an 800-word report, citing every claim.",
-      "summary": "Writes the 800-word report from the research, citing every claim.",
-      "requires": [0]
-    }
-  ]
-}`;
+// A real, runnable example checked into the repo: examples/report/SKILL.md
+const SKILL = `# Research report
 
-const STATUS_JSON = `{
-  "workflow": "basic-report",
-  "status": "running",
-  "run_name": "basic-report-run-4-2026-06-04T12-30",
-  "auto_improve": true,
-  "current_step": "1",
-  "steps": {
-    "0": { "status": "done",    "gate": "passed",  "attempt": 1 },
-    "1": { "status": "running", "gate": "pending", "attempt": 2 }
-  }
-}`;
+Write a credible, well-sourced report on a given topic for a given audience.
 
-const CHECK_SNIPPET = `npx conductor-board check 0 \\
-  --output-file .conductor/outputs/0.md
-npx conductor-board gate-result 0 \\
-  --passed \\
-  --evidence "PASS source-list.json contains 5 credible sources with URLs. SUMMARY: Source list is complete."`;
+## Steps
+1. Research the topic for that audience — gather recent, credible
+   sources and capture the key facts and tensions.
+2. Outline the report: an intro, three to five body sections, a conclusion.
+3. Write the full report from the outline, citing every source inline,
+   in a tone that fits the audience.
+4. Review the draft critically — fix weak transitions, unsupported
+   claims, and filler — and produce the final report.
+
+## Standards
+- Every claim in the report cites one of the gathered sources.
+- The final report reads as finished work, not a draft.`;
+
+const RUN = `npx conductor-board run examples/report/SKILL.md`;
+
+// Real heartbeat notes (the canonical shape from spec/heartbeat-guide.md), as the
+// board renders them: timestamp · card · the agent's own prose.
+const HEARTBEATS = `[14:22:01]  Research  3/5 sources found via sitemap. Nav-crawling the
+                      last two; gate needs all 5 with URLs.
+[14:23:40]  Write     Section 2 drafted (320 words). Gate needs every
+                      claim cited — 4/6 cited so far.
+[14:25:12]  Review    Final pass done: 2 weak transitions fixed, every
+                      claim now cited. Handing off.`;
+
+// Real applied-insight closing beat (the buildAppliedSummary shape from integration.js).
+const INSIGHTS = `Applied 2 insights.
+- K-001: Folded the sitemap path into Research so the next run finds
+  sources without nav-crawling.
+- K-002: Required inline citations in the Write card so Review has
+  less to fix.`;
+
+function Claim({ title, children, extra }: { title: string; children: ReactNode; extra?: ReactNode }) {
+  return (
+    <Reveal className="mx-auto w-full max-w-2xl">
+      <h2 className="text-balance text-2xl font-semibold tracking-tight text-chalk">{title}</h2>
+      <div className="mt-3 space-y-3 text-pretty leading-relaxed text-mist-2">{children}</div>
+      {extra && <div className="mt-5">{extra}</div>}
+    </Reveal>
+  );
+}
 
 export function SpecPage() {
   return (
     <Page>
       <SectionHead
-        kicker="The spec"
-        title="One JSON file. Any agent."
-        sub="No SDK, no runtime, no lock-in — the conductor file is the whole contract."
+        kicker="Agent Conductor"
+        title="Don't make the agent trustworthy. Make its environment verifiable."
+        sub="The bet, borrowed from theorem provers like Lean: you trust the checker, not the prover."
       />
 
-      <div className="mt-12 grid items-start gap-5 lg:grid-cols-2">
+      <div className="mx-auto mt-10 max-w-2xl space-y-5">
         <Reveal>
-          <CodeBlock code={QUICKSTART} filename="workflow.json" lang="json" />
+          <p className="text-pretty leading-relaxed text-mist-2">
+            You write a <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-mist-2">SKILL.md</code> —
+            a plain-English description of the job. Conductor compiles it into a verified, ordered plan of
+            independent agents, runs them on a live board, and improves the plan a little on every run. It
+            drives any CLI agent — Claude, Codex, Gemini, and similar — and installs with one{" "}
+            <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-mist-2">npm install</code>.
+          </p>
         </Reveal>
-        <div className="space-y-5">
-          <Reveal>
-            <div className="rounded-2xl border border-line bg-panel/40 p-6">
-              <h3 className="flex items-center gap-2.5 text-base font-semibold text-chalk">
-                <Led state="done" /> Every card has an instruction check
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-mist-2">
-                Every card is independently verified against its instruction.
-                Check prints the comparison prompt; the output must be the work product itself,
-                not a report about the work.
-              </p>
-              <div className="mt-4">
-                <CodeBlock code={CHECK_SNIPPET} lang="bash" />
-              </div>
-            </div>
-          </Reveal>
-          <Reveal>
-            <div className="rounded-2xl border border-line bg-panel/40 p-6">
-              <h3 className="flex items-center gap-2.5 text-base font-semibold text-chalk">
-                <Led state="running" /> The agent writes its own status
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-mist-2">
-                As it works, the agent maintains{" "}
-                <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-mist-2">
-                  .conductor/status.json
-                </code>
-                . The board watches that file and updates live.
-              </p>
-              <div className="mt-4">
-                <CodeBlock code={STATUS_JSON} filename="status.json" lang="json" />
-              </div>
-            </div>
-          </Reveal>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
-        {[
-          { t: "Situational work", d: "Write the situation into the instruction; every card still runs." },
-          { t: "Dependencies", d: "requires lists the card indexes that must be done first." },
-          { t: "Outputs", d: "output: names data that downstream steps template in." },
-          { t: "Summary", d: "summary: a generated plain-language line the board shows. The composer writes the intent; the checker writes the outcome." },
-        ].map((f) => (
-          <Reveal key={f.t} className="h-full">
-            <div className="flex h-full flex-col rounded-xl border border-line bg-panel/30 p-5">
-              <div className="font-mono text-sm font-medium text-chalk">{f.t}</div>
-              <p className="mt-1.5 text-sm text-mist">{f.d}</p>
-            </div>
-          </Reveal>
-        ))}
-      </div>
-
-      {/* for agents */}
-      <section className="py-16">
         <Reveal>
-          <div className="overflow-hidden rounded-3xl border border-line bg-panel/30 p-8 sm:p-12">
+          <CodeBlock code={SKILL} filename="examples/report/SKILL.md" lang="markdown" />
+        </Reveal>
+        <Reveal>
+          <CodeBlock code={RUN} lang="bash" />
+        </Reveal>
+      </div>
+
+      <div className="mx-auto mt-20 flex max-w-2xl flex-col gap-16">
+        <Claim title="You describe the work. It builds the plan.">
+          <p>
+            A SKILL.md reads like a brief to a capable teammate — no orchestration syntax, no dependency
+            graph by hand. Conductor breaks it into discrete units of work (cards), each with one concrete,
+            checkable output.
+          </p>
+        </Claim>
+
+        <Claim title="It won't run a plan it can't verify.">
+          <p>
+            Conductor never accepts a decomposition on faith. It drafts the plan, an independent checker
+            reviews it, and it repairs until the checker passes — phase by phase, each locked before the next
+            builds on it. The Lean idea applied to planning: trust the checker, not the author. By the time
+            anything runs, the plan has survived its own review.
+          </p>
+        </Claim>
+
+        <Claim title="It knows what can run at once.">
+          <p>
+            Conductor reads the shape of the work. Distinct, independent outputs become parallel cards that
+            run side by side; a repeated job over a large collection stays one card that covers every item.
+            Concurrency where it pays, no card-explosion where it doesn't.
+          </p>
+        </Claim>
+
+        <Claim
+          title="It narrates itself, live."
+          extra={
+            <div className="space-y-5">
+              <CodeBlock code={HEARTBEATS} lang="text" />
+              <div className="overflow-hidden rounded-2xl border border-line bg-panel/30 p-3">
+                <LiveBoard />
+              </div>
+            </div>
+          }
+        >
+          <p>
+            When a run starts, a board opens. Cards move through their stages in real time, and each worker
+            writes plain-prose notes as it works — start, progress, finish. Open any card to read its output
+            mid-run or leave a comment. It runs in the background, so your terminal stays free.
+          </p>
+        </Claim>
+
+        <Claim title="Nothing grades its own work.">
+          <p>
+            Every card's output is verified by a separate agent — never the one that produced it. The check
+            is as strict as the criterion allows: a mechanical test where it can be (the file exists, the
+            tests pass, the commit is clean), an independent reviewer where the call is a judgment (is this
+            translation faithful?). The gate is derived from the skill's own standards.
+          </p>
+        </Claim>
+
+        <Claim
+          title="It learns from every run."
+          extra={<CodeBlock code={INSIGHTS} lang="text" />}
+        >
+          <p>
+            When a card passes, Conductor records any insight — a faster path, a cleaner input, a redundant
+            step. The next run folds those lessons in before it begins, and reports, in plain sentences, what
+            it changed and why.
+          </p>
+        </Claim>
+
+        <Claim title="A large insight can redraw the plan.">
+          <p>
+            Most lessons sharpen a single step. A large enough one reshapes the structure — reordering work,
+            changing what depends on what. Lessons specific to a single run aren't carried forward as noise.
+          </p>
+        </Claim>
+
+        <Claim title="You stay in control.">
+          <ul className="space-y-2">
+            <li>
+              <span className="text-chalk">Pause and resume</span> a run — it drains in flight, holds, and
+              resumes where it left off.
+            </li>
+            <li>
+              <span className="text-chalk">Retry</span> any card until it's right, with feedback that keeps
+              the chain consistent.
+            </li>
+            <li>
+              <span className="text-chalk">Comment</span> on cards, <span className="text-chalk">inspect</span>{" "}
+              artifacts as they're produced, browse <span className="text-chalk">past runs</span> from a sidebar.
+            </li>
+          </ul>
+        </Claim>
+
+        <Claim title="It runs on what you already use.">
+          <p>
+            Any CLI agent or provider — Claude, Codex, Gemini, others. One{" "}
+            <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-mist-2">npm install</code>. No
+            lock-in, no rewrite.
+          </p>
+        </Claim>
+      </div>
+
+      {/* What it is */}
+      <section className="py-20">
+        <Reveal>
+          <div className="mx-auto max-w-3xl rounded-3xl border border-line bg-panel/30 p-8 sm:p-12">
+            <Eyebrow>What it is</Eyebrow>
+            <h2 className="mt-4 text-balance text-2xl font-semibold tracking-tight text-chalk">
+              A verified, self-improving workflow of independent agents — with a board to watch and steer it.
+            </h2>
+            <div className="mt-4 space-y-4 text-pretty leading-relaxed text-mist-2">
+              <p>
+                Agent Conductor turns a plain-language SKILL.md into a verified, self-improving workflow of
+                independent AI agents, with a live board to watch and steer it. The principle under all of it:
+                make the environment verifiable, not the agent trustworthy. Independent checks make wrongness
+                cheap to catch; a learning loop makes the same workflow leaner each run; a narrated board makes
+                it visible instead of opaque.
+              </p>
+              <p>
+                <span className="text-chalk">Why use it.</span> A single agent is fast but unchecked, and it
+                never improves. Conductor gives you work that's verified before you trust it, a system that
+                sharpens itself run over run, and a board you can watch and steer.
+              </p>
+              <p>
+                <span className="text-chalk">What it's for.</span> Multi-step jobs you'd otherwise babysit:
+                content pipelines, code and refactor workflows, research and synthesis, data enrichment across
+                large sets — anywhere you want the output checked, the process visible, and the workflow
+                improving as it runs.
+              </p>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* For agents — the single-file contract (preserved) */}
+      <section className="pb-16">
+        <Reveal>
+          <div className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-line bg-panel/30 p-8 sm:p-12">
             <div className="grid items-center gap-8 lg:grid-cols-[1.1fr_1fr]">
               <div>
                 <Eyebrow>For agents</Eyebrow>
-                <h2 className="mt-4 text-balance text-3xl font-semibold tracking-tight text-chalk">
+                <h2 className="mt-4 text-balance text-2xl font-semibold tracking-tight text-chalk">
                   Point your agent at one file.
                 </h2>
                 <p className="mt-3 text-pretty leading-relaxed text-mist-2">
-                  <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-mist-2">
-                    CONDUCTOR.md
-                  </code>{" "}
-                  is a single, self-contained instruction file. Hand it to any agent
-                  and it converts your skill into a conductor, saves it, runs it, and
-                  keeps the status file live — no copy-paste.
+                  <code className="rounded bg-ink px-1.5 py-0.5 font-mono text-xs text-mist-2">CONDUCTOR.md</code>{" "}
+                  is a single, self-contained instruction file. Hand it to any agent and it converts your skill
+                  into a conductor, runs it, and keeps the status file live — no copy-paste.
                 </p>
-                <div className="mt-6 flex flex-wrap gap-3">
+                <div className="mt-6">
                   <a
                     href="https://github.com/mettafive/agent-conductor/blob/main/CONDUCTOR.md"
                     target="_blank"
@@ -138,17 +234,14 @@ export function SpecPage() {
               </div>
               <div className="rounded-2xl border border-line bg-ink-2/70 p-5 font-mono text-xs leading-relaxed text-mist-2">
                 <div className="text-mist">
-                  <span className="text-dim">#</span> start the board, then tell your agent to go
+                  <span className="text-dim">#</span> one command, from any skill state
                 </div>
                 <div className="mt-2">
-                  <span className="text-dim">$</span> npx conductor-board
+                  <span className="text-dim">$</span> npx conductor-board run SKILL.md
                 </div>
-                <div className="mt-3 text-mist">
-                  <span className="text-dim">#</span> "Here's my skill. Read CONDUCTOR.md,
-                </div>
-                <div className="text-mist">&nbsp;&nbsp;convert it to a conductor, and run it."</div>
-                <div className="mt-3 text-mint">→ .conductor/workflow.json + status.json</div>
-                <div className="text-mint">→ board lights up</div>
+                <div className="mt-3 text-mint">→ compiles + verifies the plan</div>
+                <div className="text-mint">→ board lights up, cards dispatch</div>
+                <div className="text-mint">→ re-run folds in what it learned</div>
               </div>
             </div>
           </div>
