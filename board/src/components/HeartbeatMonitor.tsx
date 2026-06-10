@@ -356,6 +356,40 @@ function ExpandedMonitor({
 
   const shown = beats;
 
+  // TYPING QUEUE — one beat types at a time. New beats don't preempt the one
+  // riding (which used to snap it to its finished text); they PARK (hidden) and
+  // ride in when it's their turn. While anything is parked behind the rider, the
+  // rider types in catch-up mode (fast), so you still see every character — then
+  // the last one in the queue rides in at normal speed. Beats come ~every 15s, so
+  // the queue is usually empty; a small backlog is fine.
+  //
+  // typedRef = beats already shown (seeded on first load + finished typing) →
+  // render plain. The currently-typing beat is `typingKey`. Any OTHER not-yet-
+  // typed beat is parked: hidden from its FIRST render (no flash of full text).
+  const typedRef = useRef<Set<string>>(new Set());
+  const seededRef = useRef(false);
+  if (!seededRef.current && shown.length > 0) {
+    // Lazy seed: beats already present on first load render plain, never re-type.
+    seededRef.current = true;
+    for (const b of shown) typedRef.current.add(b.key);
+  }
+  const [typingKey, setTypingKey] = useState<string | null>(null);
+  const nextToType = shown.find((b) => b.key !== typingKey && !typedRef.current.has(b.key)) ?? null;
+  const catchingUp = !!nextToType; // a newer beat is parked behind the rider
+
+  // Pump: when nothing is typing, pull the oldest parked beat in. Also clears a
+  // stale rider whose beat a run reset removed, so the queue never gets stuck.
+  useEffect(() => {
+    if (typingKey && !shown.some((b) => b.key === typingKey)) {
+      setTypingKey(null);
+      return;
+    }
+    if (typingKey === null) {
+      const next = shown.find((b) => !typedRef.current.has(b.key));
+      if (next) setTypingKey(next.key);
+    }
+  }, [shown, typingKey]);
+
   // Glue to the bottom SYNCHRONOUSLY (before paint): both the new-beat layout
   // effect and the typing ResizeObserver call this, so the bottom edge stays
   // pinned frame-by-frame as a beat streams in. Doing it in a rAF (next frame)
@@ -485,7 +519,12 @@ function ExpandedMonitor({
           </div>
         ) : (
           <div ref={contentRef}>
-          {shown.map((b) => (
+          {shown.map((b) => {
+            // Parked (queued behind the rider) — a not-yet-typed beat that isn't
+            // the current rider stays hidden from its FIRST render, so it rides in
+            // when it's its turn instead of flashing its full text.
+            if (b.key !== typingKey && !typedRef.current.has(b.key)) return null;
+            return (
             <div
               key={b.key}
               className={`flex items-start gap-2.5 rounded py-1 ${
@@ -494,8 +533,15 @@ function ExpandedMonitor({
             >
               <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
               <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${beatTextClass(b)}`}>
-                {b.key === streamKey ? (
-                  <TypewriterText text={plainNote(b.note)} />
+                {b.key === typingKey ? (
+                  <TypewriterText
+                    text={plainNote(b.note)}
+                    fast={catchingUp}
+                    onDone={() => {
+                      typedRef.current.add(b.key);
+                      setTypingKey(null);
+                    }}
+                  />
                 ) : (
                   plainNote(b.note)
                 )}
@@ -518,7 +564,8 @@ function ExpandedMonitor({
                 </button>
               )}
             </div>
-          ))}
+            );
+          })}
           {cursorOn && (
             <div className="px-0 text-cyan">
               <span className="tw-cursor">▌</span>
