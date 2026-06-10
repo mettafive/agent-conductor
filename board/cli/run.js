@@ -4,7 +4,7 @@ import path from "node:path";
 import { runCompile } from "./compile.js";
 import { runStatusInit } from "./writer.js";
 import { runDispatch } from "./dispatch.js";
-import { openRunBoard } from "./init-board.js";
+import { openRunBoard, ensureBoardVisible } from "./init-board.js";
 import { integrateRoot } from "./integration.js";
 import { scopedConductorDir } from "./learning.js";
 import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
@@ -233,12 +233,14 @@ export async function runRun(args) {
   }
   console.log(`  ${bold(workerLine(adapter, adapterCap(adapter)))}`);
 
-  // 0b. SURFACE ON SERVED, NOT EARLY-ON-HEALTH. We no longer pop the tab before compile
-  //     (it appeared empty then filled). Instead the compile path opens it the moment the
-  //     compile feed is SERVED (compile.js initCompileBoard), and the run path opens it
-  //     once the RUN feed is served (openRunBoard, below) — whichever comes first; the
-  //     server.json dedup keeps it to one tab. A bare re-run (no compile) surfaces at the
-  //     served run feed.
+  // 0b. OPEN EARLY WITH A "STARTING…" STATE — surface on served, never empty/stale. The
+  //     tab opens immediately (?starting=1) showing an honest "starting…" frame, and the
+  //     board swaps to real cards the moment the first phase feed is LIVE (compile /
+  //     integration / run) — never a blank board or a stale completed run. The server.json
+  //     dedup means the later served opens (compile/openRunBoard) won't add a second tab.
+  if (!headless) {
+    try { await ensureBoardVisible(statusPath, { headless, port, starting: true }); } catch { /* best-effort surface */ }
+  }
 
   // 1. COMPILE-IF-NEEDED. The durable compiled workflow is the "already-compiled"
   //    signal: reuse it unless --force or the skill is newer (edited) than it.
@@ -289,7 +291,7 @@ export async function runRun(args) {
     // preference keeps work ahead of the migration feed once it starts).
     let integrated = false;
     try {
-      integrated = await integrateRoot({ root: outDir, skillPath });
+      integrated = await integrateRoot({ root: outDir, skillPath, port });
     } catch (e) {
       // 3c: integration must never crash the run with a wall. A thrown error is
       // treated as a failed shaping card — halt cleanly, do not dispatch work.
@@ -351,9 +353,9 @@ export async function runRun(args) {
   // 3. RUN BOARD — health + serve check on the RUN's scoped files. The tab was
   //    already opened early (Fix 3), so don't open a second one; the board's
   //    run-feed preference auto-advances the active feed to the run workflow.
-  // openBrowserTab:true — open once the RUN feed is served (the compile path may already
-  // have opened on the served compile feed; the server.json dedup prevents a second tab).
-  const board = await openRunBoard(statusPath, workflowPath, { headless, port, openBrowserTab: true });
+  // openBrowserTab:false — the early ?starting=1 open (step 0b) already surfaced the tab
+  // for every non-headless run; this call only confirms the run feed is SERVED before dispatch.
+  const board = await openRunBoard(statusPath, workflowPath, { headless, port, openBrowserTab: false });
   if (!board.healthy) {
     console.error(red(`  ✗ board did not become healthy on port ${port} — not dispatching.`));
     return false;

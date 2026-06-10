@@ -85,11 +85,17 @@ assert(/the run owns the primary id/.test(server), "the lifecycle launch still d
 // Part 1: every UI POST resolves by the canonical key, never the inner title
 assert(/const postKey = canonicalKey \?\? model\.workflow/.test(kanban), "summary/start-run panels resolve by the canonical key (postKey)");
 assert(!/encodeURIComponent\(model\.workflow\)/.test(kanban), "no UI request carries the inner workflow title");
-// Part 4: compile surfaces on served, not on health
+// Part 4 / cold-start: surface on served with an honest "starting…" state
 const compileSrc = src("cli/compile.js");
-assert(/if \(served && !headless\)/.test(compileSrc) && /ensureBoardVisible/.test(compileSrc), "compile opens the tab only once its feed is served");
+assert(/waitCompileServed/.test(compileSrc), "compile confirms its feed is served");
 const runSrc = src("cli/run.js");
-assert(/SURFACE ON SERVED/.test(runSrc) && !/ensureBoardVisible/.test(runSrc), "run.js no longer opens the board early on health");
+assert(/starting: true/.test(runSrc) && /ensureBoardVisible/.test(runSrc), "run.js opens early with the honest starting state (?starting=1)");
+// the board shows "starting…" until a phase feed is live — never empty/stale
+assert(/showStarting/.test(app) && /params\.get\("starting"\)/.test(app) && /StartingState/.test(app), "the board has a cold-start 'starting…' state, suppressing stale history");
+assert(/setColdStart\(false\)/.test(app) && /liveStarted/.test(app), "the starting state clears the moment a live feed streams");
+// integration gets the same served check compile and run have
+const integ = src("cli/integration.js");
+assert(/waitIntegrationServed/.test(integ) && /\(integration\)`\)/.test(integ), "integration now has a served check");
 // Part 5: the overlay always ends on a named outcome
 assert(/relaunchOutcome/.test(app) && /RelaunchOutcomeBanner/.test(app), "the overlay resolves to a named outcome banner");
 assert(/"unconfirmed"/.test(app) && /halted-after-integration-failure/.test(app), "named terminals: unconfirmed + halted-after-integration-failure (no silent vanish)");

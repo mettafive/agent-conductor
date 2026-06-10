@@ -142,6 +142,10 @@ function RelaunchOutcomeBanner({
 export function App() {
   const { workflows, order, conn } = useBoardState();
   const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
+  // COLD START — surface on served, never on health. When the board is opened by a run
+  // (?starting=1), show an explicit "starting…" state until the first phase feed is live
+  // (compile / integration / run), instead of an empty board or a stale completed run.
+  const [coldStart, setColdStart] = useState(params.get("starting") === "1");
   // The workflow currently on screen — its IDENTITY sticks across status rebroadcasts.
   const stickyWfRef = useRef<string | null>(null);
   // When an integration (shaping) feed finishes, hold the board on it for a beat so
@@ -298,12 +302,26 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestKey, viewing, liveStarted]);
 
+  // The cold-start "starting…" frame shows until the first phase feed is actually live —
+  // never an empty board or a stale completed run. Cleared the moment a live feed streams.
+  const viewingPastEarly = !!(viewing && viewedModel);
+  const showStarting = coldStart && !liveStarted && !viewingPastEarly;
+  useEffect(() => {
+    if (liveStarted) setColdStart(false); // a live feed is serving content → leave "starting"
+  }, [liveStarted]);
+  useEffect(() => {
+    if (!coldStart) return; // safety: never trap in "starting" if nothing ever streams
+    const t = setTimeout(() => setColdStart(false), 30000);
+    return () => clearTimeout(t);
+  }, [coldStart]);
+
   // Resolve the displayed model: a viewed past run wins; else the live run if it has started;
-  // else the newest finished run; else the empty live model (→ WaitingState).
+  // else the newest finished run; else the empty live model (→ WaitingState). During cold
+  // start we deliberately DON'T fall back to the stale newest-finished run.
   const model: BoardModel =
-    (viewing && viewedModel) ? viewedModel : liveStarted ? liveModel : latestModel ?? liveModel;
+    (viewing && viewedModel) ? viewedModel : liveStarted ? liveModel : showStarting ? liveModel : latestModel ?? liveModel;
   // The board is interactive (live-following) only when showing the genuinely live run.
-  const boardStarted = (viewing && viewedModel) ? true : liveStarted ? true : !!latestModel;
+  const boardStarted = (viewing && viewedModel) ? true : liveStarted ? true : !showStarting && !!latestModel;
 
   // The terminal's beat source: a viewed past run isn't streaming, so source its persisted beats
   // (flattened from steps[].heartbeat[]); otherwise the live session stream.
@@ -605,7 +623,9 @@ export function App() {
                     : { type: "spring", stiffness: 360, damping: 26 } // ride back in with a settle
               }
             >
-              {boardStarted ? (
+              {showStarting ? (
+                <StartingState />
+              ) : boardStarted ? (
                 <WorkflowKanban
                   model={model}
                   notes={model.developerNotes}
@@ -722,6 +742,32 @@ function statusOf(entry: WorkflowEntry | undefined): string | undefined {
   return (entry?.snap.status as { status?: string } | null)?.status;
 }
 
+
+/** The honest cold-start first frame: an explicit "starting…" state, shown until the
+ *  first phase feed (compile / integration / run) is live. Never empty, never stale. */
+function StartingState() {
+  return (
+    <div className="grid h-full place-items-center px-5">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <img src="./conductor.svg" alt="" className="h-12 w-12 opacity-80" />
+        <h1 className="text-xl font-semibold text-chalk">Starting workflow…</h1>
+        <p className="max-w-sm text-sm leading-relaxed text-mist">
+          Preparing the board. Cards appear the moment the first phase is ready to render.
+        </p>
+        <div className="mt-1 flex items-center gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="h-1.5 w-1.5 rounded-full bg-mint"
+              animate={{ opacity: [0.25, 1, 0.25] }}
+              transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut", delay: i * 0.18 }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: string }) {
   return (

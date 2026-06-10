@@ -10,6 +10,7 @@ import {
 } from "./learning.js";
 import { validateConductor } from "./validate.js";
 import { stampBeat } from "./status-store.js";
+import { getHealth } from "./ensure-board.js";
 import {
   applyLockedEdges,
   checkWorkflowWithDependencyGuard,
@@ -258,7 +259,7 @@ function writeIntegrationStatus(statusPath, status) {
   fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 }
 
-function initIntegrationBoard(root, openItems) {
+async function initIntegrationBoard(root, openItems, port = 3042) {
   const workflow = integrationWorkflow(openItems);
   const workflowPath = path.join(root, "integration.workflow.json");
   const statusPath = path.join(root, "integration.status.json");
@@ -276,8 +277,23 @@ function initIntegrationBoard(root, openItems) {
     started_at: nowIso(),
     steps,
   });
+  // SURFACE ON SERVED — integration gets the same served check compile and run have.
+  // Wait until /health.workflows includes this integration feed before proceeding, so we
+  // never assume the board is already showing it. (Bounded; no board ⇒ returns false and
+  // proceeds — the wait never blocks the integration run.)
+  await waitIntegrationServed(port, `${path.basename(root)} (integration)`);
   const phaseToStep = new Map(workflow.steps.map((step, index) => [step.phase_key, index]));
   return { workflowPath, statusPath, phaseToStep };
+}
+
+async function waitIntegrationServed(port, key, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const h = await getHealth(port);
+    if (h?.workflows && Object.prototype.hasOwnProperty.call(h.workflows, key)) return true;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
 }
 
 // The loop's closing summary — ONE multi-line note (never one beat per insight):
@@ -2379,6 +2395,7 @@ export async function runIntegration(args) {
   const dirArg = flag(args, ["--dir", "--out-dir"]);
   const root = path.resolve(process.cwd(), typeof dirArg === "string" ? dirArg : ".conductor");
   const skillPath = typeof skillArg === "string" ? path.resolve(process.cwd(), skillArg) : null;
+  const port = Number(flag(args, ["--port"], 3042)) || 3042;
   const cardsPath = path.join(root, "cards.json");
   const workflowPath = path.join(root, "workflow.json");
   const runId = String(flag(args, ["--run-id"]) || timestampRunId());
@@ -2405,7 +2422,7 @@ export async function runIntegration(args) {
   const addItems = openItems.filter(isAddChangeItem);
   const removeItems = openItems.filter(isRemoveChangeItem);
   const maxAttempts = Number(flag(args, ["--max-attempts"]) || 10);
-  const integrationBoard = initIntegrationBoard(root, openItems);
+  const integrationBoard = await initIntegrationBoard(root, openItems, port);
   const progress = makeIntegrationProgress(integrationBoard);
 
   const skill = skillPath && fs.existsSync(skillPath) ? fs.readFileSync(skillPath, "utf8") : "";
@@ -2740,8 +2757,9 @@ export async function runIntegration(args) {
   return true;
 }
 
-export async function integrateRoot({ root, skillPath, runId } = {}) {
+export async function integrateRoot({ root, skillPath, runId, port } = {}) {
   const args = ["--dir", root, "--run-id", runId || timestampRunId()];
   if (skillPath) args.push("--skill", skillPath);
+  if (port) args.push("--port", String(port));
   return runIntegration(args);
 }

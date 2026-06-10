@@ -284,13 +284,18 @@ export async function openRunBoard(statusPath, workflowPath, { headless = false,
  * run-feed preference then auto-advances compile → integration → run on the
  * SAME window. Idempotent: later openRunBoard attaches and won't re-open the tab.
  */
-export async function ensureBoardVisible(statusPath, { headless = false, port = 3042 } = {}) {
+export async function ensureBoardVisible(statusPath, { headless = false, port = 3042, starting = false } = {}) {
   const ensured = await ensureBoard(port, { statusPath });
   if (!headless && ensured.health) {
-    openBrowser(canonicalUrl(port));
+    // `starting:true` opens with ?starting=1 so the board shows the honest "starting…"
+    // first frame (surface on served, never empty/stale) until the first phase feed is live.
+    const u = new URL(canonicalUrl(port));
+    if (starting) u.searchParams.set("starting", "1");
+    const url = u.toString();
+    openBrowser(url);
     try {
       const serverJsonPath = path.join(path.dirname(path.resolve(statusPath)), "server.json");
-      markBrowserOpened(serverJsonPath, canonicalUrl(port), registryPath());
+      markBrowserOpened(serverJsonPath, url, registryPath());
     } catch { /* best-effort — prevents a duplicate tab from the later openRunBoard */ }
   }
   return ensured;
