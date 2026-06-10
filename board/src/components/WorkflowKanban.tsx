@@ -1033,9 +1033,11 @@ function IntegrationSummaryPanel({
   onStart,
 }: {
   summary: IntegrationSummary;
-  starting: boolean;
-  error: string | null;
-  onStart: () => void;
+  starting?: boolean;
+  error?: string | null;
+  // Optional: integration is no longer a gate (the run applies it automatically),
+  // so this panel is display-only unless a caller still wants a launch button.
+  onStart?: () => void;
 }) {
   const applied = summary.applied ?? 0;
   const dismissed = summary.dismissed ?? 0;
@@ -1081,17 +1083,18 @@ function IntegrationSummaryPanel({
       )}
 
       {error && <div className="mt-3 text-[11px] text-rose">{error}</div>}
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-        <button
-          type="button"
-          disabled={starting}
-          onClick={onStart}
-          className="rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
-        >
-          {starting ? "Starting..." : "Start Run"}
-        </button>
-        {!starting && <span className="font-mono text-[11px] text-dim">Review the changes, then start when ready</span>}
-      </div>
+      {onStart && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <button
+            type="button"
+            disabled={starting}
+            onClick={onStart}
+            className="rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
+          >
+            {starting ? "Starting..." : "Start Run"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1102,8 +1105,6 @@ function IntegrationCompletePanel({
   model: BoardModel;
 }) {
   const [summary, setSummary] = useState<IntegrationSummary | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1120,39 +1121,15 @@ function IntegrationCompletePanel({
     };
   }, [model.workflow]);
 
-  async function startRun() {
-    if (starting) return;
-    setStarting(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmed: true, run_id: summary?.run_id }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `start failed: ${res.status}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setStarting(false);
-    }
-  }
-
+  // Display-only: integration is applied automatically as the run's leading
+  // shaping cards — it is no longer a gate that needs a "Start Run" click.
   return (
     <div className="border-b border-line bg-panel/40 px-5 py-4">
       <div className="mx-auto max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
         {summary ? (
-          <IntegrationSummaryPanel
-            summary={summary}
-            starting={starting}
-            error={error}
-            onStart={() => void startRun()}
-          />
+          <IntegrationSummaryPanel summary={summary} />
         ) : (
-          <div className="font-mono text-[11px] text-mist">
-            Integration complete. {error ? <span className="text-rose">{error}</span> : "Loading summary..."}
-          </div>
+          <div className="font-mono text-[11px] text-mist">Integration complete. Loading summary…</div>
         )}
       </div>
     </div>
@@ -1169,7 +1146,6 @@ function CompileCompletePanel({
   onOpenArtifact: (step: BoardStep) => void;
 }) {
   const [summary, setSummary] = useState<CompileSummary | null>(null);
-  const [integration, setIntegration] = useState<IntegrationSummary | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const artifactSteps = steps.filter((step) => canOpenReceipt(step));
@@ -1189,7 +1165,9 @@ function CompileCompletePanel({
     };
   }, [model.workflow]);
 
-  async function startRun(confirmed = false, runId?: string) {
+  // One click launches the whole run (compile reuse → integrate → dispatch) on
+  // the server, in the background; the board goes live via SSE. No second confirm.
+  async function startRun() {
     if (starting) return;
     setStarting(true);
     setError(null);
@@ -1197,17 +1175,12 @@ function CompileCompletePanel({
       const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmed, run_id: runId }),
+        body: "{}",
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `start failed: ${res.status}`);
-      if (body.integration_required && body.summary) {
-        setIntegration(body.summary);
-        return;
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
       setStarting(false);
     }
   }
@@ -1249,29 +1222,16 @@ function CompileCompletePanel({
                 ))}
               </div>
             )}
-            {integration ? (
-              <IntegrationSummaryPanel
-                summary={integration}
-                starting={starting}
-                error={error}
-                onStart={() => void startRun(true, integration.run_id)}
-              />
-            ) : (
-              <>
-                {error && <div className="mt-2 text-[11px] text-rose">{error}</div>}
-              </>
-            )}
+            {error && <div className="mt-2 text-[11px] text-rose">{error}</div>}
           </div>
-          {!integration && (
-            <button
-              type="button"
-              disabled={starting || summary?.ready === false}
-              onClick={() => void startRun()}
-              className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
-            >
-              {starting ? "Starting..." : "Start Run"}
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={starting || summary?.ready === false}
+            onClick={() => void startRun()}
+            className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
+          >
+            {starting ? "Starting..." : "Start Run"}
+          </button>
         </div>
       </div>
     </div>
@@ -1293,7 +1253,6 @@ export function RunCompleteBanner({
   /** Opens the insights modal. */
   onOpenInsights?: () => void;
 }) {
-  const [integration, setIntegration] = useState<IntegrationSummary | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1313,7 +1272,10 @@ export function RunCompleteBanner({
   const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
   const buttonLabel = openKnowledge.length > 0 ? "Improve & Run" : "Run Again";
 
-  async function startRun(confirmed = false, runId?: string) {
+  // One click → the server launches the whole run (compile reuse → integrate-if-
+  // insights → dispatch) in the background. The board resets and goes live in the
+  // SAME window via SSE — no second confirm, no terminal.
+  async function startRun() {
     if (starting) return;
     setStarting(true);
     setError(null);
@@ -1321,17 +1283,14 @@ export function RunCompleteBanner({
       const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmed, run_id: runId }),
+        body: "{}",
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `start failed: ${res.status}`);
-      if (body.integration_required && body.summary) {
-        setIntegration(body.summary);
-        return;
-      }
+      // success: the run is launching; the banner will fall away as the board
+      // goes live. Leave `starting` set through that transition.
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
       setStarting(false);
     }
   }
@@ -1346,16 +1305,7 @@ export function RunCompleteBanner({
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="shrink-0 border-t border-line bg-panel/80 backdrop-blur"
         >
-          {integration ? (
-            <div className="px-5 py-3">
-              <IntegrationSummaryPanel
-                summary={integration}
-                starting={starting}
-                error={error}
-                onStart={() => void startRun(true, integration.run_id)}
-              />
-            </div>
-          ) : (
+          {(
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-mint">

@@ -177,7 +177,12 @@ export async function runRun(args) {
   // Scoped paths — compile writes here; init-board + dispatch read here. Threading
   // these everywhere is what closes the path coupling (compile scopes to
   // .conductor/<slug>/ but the other verbs default to flat .conductor/).
-  const outDir = scopedConductorDir(skillPath, name);
+  // --dir pins the scoped dir explicitly (used by the board server's one-click
+  // re-run, which knows the exact workflow dir and shouldn't re-derive the slug).
+  const explicitDir = flag(args, ["--dir"]);
+  const outDir = typeof explicitDir === "string"
+    ? path.resolve(process.cwd(), explicitDir)
+    : scopedConductorDir(skillPath, name);
   const workflowPath = path.join(outDir, "workflow.json");
   const statusPath = path.join(outDir, "status.json");
 

@@ -11,9 +11,9 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { integrateRoot } from "../cli/integration.js";
-import { ensureKnowledge, readJsonMaybe, timestampRunId } from "../cli/learning.js";
+import { ensureKnowledge, readJsonMaybe } from "../cli/learning.js";
 import { validateConductor } from "../cli/validate.js";
 import { registeredRoots, registryFile, registerRoot, registerBoard, gcRegistry } from "../cli/registry.js";
 
@@ -69,6 +69,18 @@ function applyMutations(doc, suggestions) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, "..", "dist");
+// The shipped CLI — the ONE engine for how a run runs. The start-run endpoint
+// launches `node CLI_BIN run …` in the background instead of reimplementing it.
+const CLI_BIN = path.resolve(__dirname, "..", "bin", "cli.js");
+
+// The project root for a workflow dir = the dir CONTAINING .conductor. Used as
+// the run child's cwd so its workers shell out (git/gh/npx) in the real repo.
+function projectRootForWf(wf) {
+  const parts = path.resolve(wf.dir).split(path.sep);
+  const idx = parts.lastIndexOf(".conductor");
+  if (idx > 0) return parts.slice(0, idx).join(path.sep) || path.sep;
+  return path.dirname(path.resolve(wf.dir));
+}
 
 let VERSION = "0.0.0";
 try {
@@ -124,34 +136,11 @@ function artifactRootFor(wf) {
   return fs.existsSync(legacy) ? legacy : current;
 }
 
-function initRuntimeStatus(workflow, statusPath) {
-  const now = new Date().toISOString();
-  const runId = now.replace(/\.\d+Z$/, "").replace(/:/g, "-");
-  const nameSlug = String(workflow.name || "workflow").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const historyDir = path.join(path.dirname(statusPath), "history");
-  let priorRuns = 0;
-  try {
-    priorRuns = fs.readdirSync(historyDir).filter((f) => f.endsWith(".json")).length;
-  } catch {
-    /* no history yet */
-  }
-  const tsShort = runId.replace(/-\d{2}$/, "");
-  const steps = {};
-  for (const [index] of (workflow.steps || []).entries()) {
-    steps[String(index)] = { status: "pending", gate: "pending", attempt: 1 };
-  }
-  return {
-    workflow: workflow.name || "workflow",
-    run_id: runId,
-    run_name: `${nameSlug}-run-${priorRuns + 1}-${tsShort}`,
-    auto_improve: workflow.auto_improve === true,
-    status: "running",
-    goal: workflow.description || workflow.name || "workflow",
-    current_step: null,
-    started_at: now,
-    steps,
-  };
-}
+// NOTE: the server no longer reimplements run-start. The start-run endpoint
+// launches the CLI's `run` orchestration (status-init/resume + integrate +
+// dispatch) in the background — one engine for how a run runs. The old
+// initRuntimeStatus reset-only path (always-fresh, no resume, no dispatch) was
+// removed with that collapse.
 
 // Normalize status the SAME way integration.js's knowledgeStatus does (trim +
 // lowercase), so a malformed "Open"/"OPEN"/" open " item is detected here rather
@@ -1283,53 +1272,51 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       const wf = findWf(decodeURIComponent(m[1]));
       if (!wf) return json(res, 404, { error: "workflow not found" });
       readBody(req).then(async (bodyStr) => {
-        let body = {};
         try {
-          body = bodyStr ? JSON.parse(bodyStr) : {};
+          if (bodyStr) JSON.parse(bodyStr); // tolerate (and validate) an optional body
         } catch {
           return json(res, 400, { error: "invalid request body" });
         }
         const runtimeWorkflowPath = path.join(wf.dir, "workflow.json");
         if (!fs.existsSync(runtimeWorkflowPath)) return json(res, 400, { error: "compiled workflow.json not found" });
-        const runId = body.run_id || timestampRunId();
-        const confirmed = body.confirmed === true;
-        if (!confirmed) {
-          const openItems = openKnowledgeItems(wf);
-          if (openItems.length > 0) {
-            const meta = readJsonMaybe(path.join(wf.dir, "migration-meta.json"));
-            const ok = await integrateRoot({ root: wf.dir, skillPath: meta?.skill_path, runId });
-            if (!ok) return json(res, 500, { error: "integration failed" });
-            const summary = readJsonMaybe(path.join(wf.dir, "runs", runId, "integration-summary.json"));
-            broadcast();
-            return json(res, 200, { ok: true, integration_required: true, run_id: runId, summary });
-          }
+
+        // The skill path lives in compile provenance — needed to reuse the cached
+        // compile when the run re-runs. Required (compile records it; recompile
+        // if it's somehow absent).
+        const meta = readJsonMaybe(path.join(wf.dir, "migration-meta.json"));
+        const skillPath = meta?.skill_path;
+        if (!skillPath || !fs.existsSync(skillPath)) {
+          return json(res, 400, { error: "cannot start run: skill path missing from migration-meta.json (recompile to record it)" });
         }
 
-        let runtimeWorkflow;
+        // ONE engine. Launch the CLI's `run` orchestration in the BACKGROUND: it
+        // reuses the cached compile, LEADS with integration if there are open
+        // insights, resets the cards via the state model, then dispatches —
+        // headless (the board tab is already open) and on THIS port (run attaches
+        // to this very server via the no-dup-tab guard; the server is NOT
+        // restarted, so no dead socket / stale tab). Progress reflects through the
+        // SSE broadcasts the server already sends on file-watch. Detached + unref
+        // so a dispatch hiccup can't take the board server down, and the POST
+        // returns the instant the run launches (a run takes minutes).
+        const listenPort = server.address()?.port ?? port;
+        let child;
         try {
-          runtimeWorkflow = JSON.parse(fs.readFileSync(runtimeWorkflowPath, "utf8"));
+          let stdio = ["ignore", "ignore", "ignore"];
+          try {
+            const logFd = fs.openSync(path.join(wf.dir, "run.log"), "a");
+            stdio = ["ignore", logFd, logFd];
+          } catch { /* logging is best-effort */ }
+          child = spawn(
+            process.execPath,
+            [CLI_BIN, "run", skillPath, "--dir", wf.dir, "--headless", "--port", String(listenPort)],
+            { cwd: projectRootForWf(wf), env: { ...process.env, CONDUCTOR_HEADLESS: "1" }, detached: true, stdio },
+          );
+          child.unref();
         } catch (e) {
-          return json(res, 500, { error: `could not read compiled workflow: ${e.message}` });
-        }
-        try {
-          if (wf.conductorPath) fs.copyFileSync(runtimeWorkflowPath, wf.conductorPath);
-          const status = initRuntimeStatus(runtimeWorkflow, wf.statusPath);
-          status.run_id = runId;
-          status.run_dir = `runs/${runId}`;
-          const integration = latestIntegrationSummary(wf);
-          if (integration && integration.run_id === runId) {
-            status.integration_summary = integration;
-            status.integration_tier = integration.added > 0 ? 2 : integration.applied > 0 ? 1 : 0;
-            status.integration_changes = (integration.changes || []).map((change) => change.change).filter(Boolean);
-          }
-          fs.mkdirSync(path.join(wf.dir, "runs", runId, "artifacts"), { recursive: true });
-          fs.writeFileSync(wf.statusPath, JSON.stringify(status, null, 2));
-          fs.writeFileSync(path.join(wf.dir, "runs", runId, "status.json"), JSON.stringify(status, null, 2));
-        } catch (e) {
-          return json(res, 500, { error: `could not start run: ${e.message}` });
+          return json(res, 500, { error: `could not launch run: ${e.message}` });
         }
         broadcast();
-        return json(res, 200, { ok: true, workflow: runtimeWorkflow.name || "workflow", run_id: runId });
+        return json(res, 200, { ok: true, launched: true, workflow: wf.name, pid: child.pid });
       });
       return;
     }
