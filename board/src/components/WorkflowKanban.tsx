@@ -580,6 +580,28 @@ function CompletionHeader({
   const failureReason = model.failedReason || failedCardFeedback || null;
   const canShowReason = (shownStatus === "failed" || failed > 0) && !!(failureReason || failedCard);
 
+  // Pause/resume — optimistic: the click registers AT ONCE (the button flips to
+  // Pausing…/Resuming…), cleared when the broadcast confirms the real status.
+  const [pending, setPending] = useState<null | "pause" | "resume">(null);
+  useEffect(() => {
+    if (pending === "pause" && shownStatus === "paused") setPending(null);
+    if (pending === "resume" && shownStatus === "running") setPending(null);
+  }, [pending, shownStatus]);
+
+  // Gate on ACTIVE DISPATCH, not a bare flag: there must be a live dispatcher to drain.
+  // Trust the pulse — a recent heartbeat / runningSince — so a stale or manual "running"
+  // feed with no dispatcher shows no pause button (nothing to drain). A paused run always
+  // offers Resume (you paused it; let it resume).
+  let lastPulseMs = model.runningSince ? Date.parse(model.runningSince) : 0;
+  for (const s of steps) {
+    for (const b of s.heartbeat || []) {
+      const t = Date.parse(b.at);
+      if (Number.isFinite(t) && t > lastPulseMs) lastPulseMs = t;
+    }
+  }
+  const livePulse = lastPulseMs > 0 && Date.now() - lastPulseMs < 10 * 60 * 1000;
+  const activeDispatch = !isLifecycle(key) && (shownStatus === "paused" || (shownStatus === "running" && livePulse));
+
   return (
     <div className="shrink-0 border-b border-line bg-ink/95">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-5 py-7">
@@ -630,24 +652,32 @@ function CompletionHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          {/* Pause / Resume — drain-and-hold. Only on the RUN/dispatch phase (hidden for
-              compile/integration lifecycle feeds — no dispatch loop to drain there).
-              Posts the CANONICAL key, reflects live status, and never navigates. */}
-          {(shownStatus === "running" || shownStatus === "paused") && !isLifecycle(key) && (
+          {/* Pause / Resume — shown only when there's ACTIVE DISPATCH to drain (hidden for
+              compile/integration and for a stale "running" with no live dispatcher). Posts
+              the CANONICAL key, registers the click optimistically, and never navigates. */}
+          {activeDispatch && (
             <button
               type="button"
+              disabled={!!pending}
               onClick={() => {
                 const action = shownStatus === "paused" ? "resume" : "pause";
-                void fetch(`/api/workflow/${encodeURIComponent(key)}/${action}`, { method: "POST" });
+                setPending(action); // optimistic — the click shows at once
+                fetch(`/api/workflow/${encodeURIComponent(key)}/${action}`, { method: "POST" }).catch(() => setPending(null));
               }}
               title={
                 shownStatus === "paused"
                   ? "Resume — dispatch the next card"
                   : "Pause — let in-flight cards finish, then hold (no new cards start)"
               }
-              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-2 bg-panel/60 px-3 py-1.5 font-mono text-[13px] text-mist-2 transition-[colors,transform] hover:bg-panel hover:text-chalk active:scale-[0.97]"
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-2 bg-panel/60 px-3 py-1.5 font-mono text-[13px] text-mist-2 transition-[colors,transform] hover:bg-panel hover:text-chalk active:scale-[0.97] disabled:opacity-70"
             >
-              {shownStatus === "paused" ? "▶ Resume" : "⏸ Pause"}
+              {pending === "pause" && shownStatus !== "paused"
+                ? "⏸ Pausing…"
+                : pending === "resume" && shownStatus !== "running"
+                  ? "▶ Resuming…"
+                  : shownStatus === "paused"
+                    ? "▶ Resume"
+                    : "⏸ Pause"}
             </button>
           )}
           {/* Summary/Board toggle — only when settled (no summary during a live run). */}

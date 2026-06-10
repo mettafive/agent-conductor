@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { mutateStatus } from "./status-store.js";
+import { applyPauseResume } from "./pause-core.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -26,11 +28,6 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
-function saveStatus(statusPath, status) {
-  fs.mkdirSync(path.dirname(statusPath), { recursive: true });
-  fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
-}
-
 // Fold the currently-running interval into the accumulator, then freeze the clock.
 // Returns elapsed_ms after folding. Idempotent when not running (running_since null).
 export function accumulateAndFreeze(status, nowMs = Date.now()) {
@@ -51,61 +48,61 @@ export function resumeClock(status, nowMs = Date.now()) {
 }
 
 export async function runPause(args) {
-  const statusPath = resolveStatusPath(args);
-  if (!fs.existsSync(statusPath)) {
-    console.error(red(`no status.json at ${statusPath}`));
-    return false;
-  }
-  let status;
-  try {
-    status = readJson(statusPath);
-  } catch (e) {
-    console.error(red(`could not parse status.json: ${e.message}`));
-    return false;
-  }
-  if (status.status === "done" || status.status === "failed") {
-    console.error(amber(`run is already ${status.status} — nothing to pause.`));
-    return false;
-  }
-  if (status.status === "paused") {
-    console.log(dim("run already paused."));
-    return true;
-  }
-  accumulateAndFreeze(status);
-  status.status = "paused";
-  status.paused_at = new Date().toISOString();
-  saveStatus(statusPath, status);
-  console.log(
-    `  ${amber("|| PAUSED")} ${dim(`(timer frozen at ${Math.round((status.elapsed_ms || 0) / 1000)}s; dispatcher will idle)`)}`,
-  );
-  return true;
+  return pauseResumeCli(args, "pause");
 }
 
 export async function runResume(args) {
+  return pauseResumeCli(args, "resume");
+}
+
+// ONE pause path: the CLI writes the SAME way the UI endpoint does — through the locked
+// mutateStatus + the shared applyPauseResume (flip status + fold the clock + emit the
+// control heartbeat), so both confirm identically. The terminal log is the CLI's extra.
+function pauseResumeCli(args, action) {
   const statusPath = resolveStatusPath(args);
   if (!fs.existsSync(statusPath)) {
     console.error(red(`no status.json at ${statusPath}`));
     return false;
   }
-  let status;
+  let pre;
   try {
-    status = readJson(statusPath);
+    pre = readJson(statusPath);
   } catch (e) {
     console.error(red(`could not parse status.json: ${e.message}`));
     return false;
   }
-  if (status.status === "done" || status.status === "failed") {
-    console.error(amber(`run is ${status.status} — cannot resume a finished run.`));
+  if (pre.status === "done" || pre.status === "failed") {
+    console.error(amber(`run is ${pre.status} — cannot ${action} a finished run.`));
     return false;
   }
-  if (status.status === "running") {
+  if (action === "pause" && pre.status === "paused") {
+    console.log(dim("run already paused."));
+    return true;
+  }
+  if (action === "resume" && pre.status === "running") {
     console.log(dim("run already running."));
     return true;
   }
-  resumeClock(status);
-  status.status = "running";
-  delete status.paused_at;
-  saveStatus(statusPath, status);
-  console.log(`  ${green("> RESUMED")} ${dim("(timer continues; dispatcher resumes handing)")}`);
+
+  // The doc lets resume name the next card (same source as the UI endpoint).
+  let doc = null;
+  try {
+    const wfp = path.join(path.dirname(statusPath), "workflow.json");
+    if (fs.existsSync(wfp)) doc = readJson(wfp);
+  } catch {
+    /* resume note falls back without a doc */
+  }
+
+  let applied = null;
+  mutateStatus(statusPath, (s) => {
+    applied = applyPauseResume(s, action, doc);
+    return applied ? undefined : null;
+  });
+  if (applied === "paused") {
+    const secs = Math.round((readJson(statusPath).elapsed_ms || 0) / 1000);
+    console.log(`  ${amber("|| PAUSED")} ${dim(`(timer frozen at ${secs}s; dispatcher will idle)`)}`);
+  } else if (applied === "running") {
+    console.log(`  ${green("> RESUMED")} ${dim("(timer continues; dispatcher resumes handing)")}`);
+  }
   return true;
 }

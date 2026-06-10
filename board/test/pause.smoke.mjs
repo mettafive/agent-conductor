@@ -79,6 +79,11 @@ test("PT1 /pause flips to paused + freezes the clock", async () => {
   assert(st.running_since === null, "running_since must be nulled (clock frozen)");
   assert(typeof st.paused_at === "string", "paused_at must be set");
   assert(st.elapsed_ms >= 1000 + 2500, `the live interval must fold into elapsed_ms (got ${st.elapsed_ms})`);
+  // ACTION + CONFIRMATION ARE ONE EVENT: the endpoint emitted the control beat in the
+  // SAME write that flipped status — and NO dispatcher ran here, so it can only be the
+  // endpoint. The beat names the in-flight count (1 running card).
+  const beats = (st.steps?.["0"]?.heartbeat || []).filter((b) => b.control);
+  assert(beats.some((b) => /Pausing —/.test(b.note || "")), `the endpoint must emit the pause heartbeat immediately: ${JSON.stringify((st.steps?.["0"]?.heartbeat || []).map((b) => b.note))}`);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -110,22 +115,30 @@ test("PT3 idempotent: pause-while-paused and resume-while-running are no-ops", a
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test("PT4 engine wired for drain-and-hold (dispatcher narration + drain; clock model)", () => {
+test("PT4 one pause path: dispatcher DRAINS, the endpoint/CLI ANNOUNCE (shared core)", () => {
   const disp = fs.readFileSync(path.join(BOARD, "cli", "dispatch.js"), "utf8");
   // drain-and-hold: the dispatcher idles when paused (hands nothing), never kills in-flight
   assert(/status\.status === "paused"/.test(disp), "the dispatcher must honor paused (drain-and-hold)");
-  // exactly one control beat per transition, in-flight COUNT on pause, next on resume
-  assert(/prevDispatchStatus/.test(disp), "transitions are detected once via prevDispatchStatus");
-  assert(/still running will finish, then holding/.test(disp) && /live\.length/.test(disp), "pause beat names the in-flight count");
-  assert(/Resuming — dispatching/.test(disp), "resume beat names the next card");
-  assert(/control: true/.test(disp), "pause/resume beats are control beats (render immediately)");
+  // …but it NO LONGER announces — the late narration is gone from the dispatcher
+  assert(!/prevDispatchStatus/.test(disp) && !/emitControlBeat/.test(disp), "the dispatcher no longer narrates pause/resume (the click receiver does)");
+  // the shared core owns the announcement: notes + the control beat + the one write
+  const core = fs.readFileSync(path.join(BOARD, "cli", "pause-core.js"), "utf8");
+  assert(/still running will finish, then holding/.test(core), "pause-core names the in-flight count");
+  assert(/Resuming — dispatching/.test(core), "pause-core names the next card on resume");
+  assert(/control: true/.test(core) && /export function applyPauseResume/.test(core), "pause-core emits a control beat in the single applyPauseResume path");
+  // BOTH callers use the same locked path
+  const server = fs.readFileSync(path.join(BOARD, "server", "server.js"), "utf8");
+  assert(/applyPauseResume\(s, action, doc\)/.test(server) && /broadcast\(\);/.test(server), "the UI endpoint applies the shared path AND broadcasts immediately");
+  const cli = fs.readFileSync(path.join(BOARD, "cli", "pause.js"), "utf8");
+  assert(/mutateStatus\(statusPath/.test(cli) && /applyPauseResume\(s, action, doc\)/.test(cli), "the CLI uses the SAME locked mutateStatus + applyPauseResume (no unlocked write)");
+  assert(!/saveStatus\(statusPath, status\)/.test(cli), "the CLI's old unlocked fs.writeFileSync path is gone");
   // the model holds the clock via the accumulator
   const merge = fs.readFileSync(path.join(BOARD, "src", "lib", "merge.ts"), "utf8");
   assert(/running_since/.test(merge) && /elapsed_ms/.test(merge), "the model holds the clock via the accumulator");
-  // the button exists, gated to an active run
+  // the button is gated to ACTIVE DISPATCH and reflects the click optimistically
   const kanban = fs.readFileSync(path.join(BOARD, "src", "components", "WorkflowKanban.tsx"), "utf8");
-  assert(/\/(pause|resume)\b/.test(kanban) || /\$\{action\}/.test(kanban), "the run-header posts pause/resume");
-  assert(/Resume/.test(kanban) && /Pause/.test(kanban), "the toggle shows Pause / Resume");
+  assert(/activeDispatch/.test(kanban) && /livePulse/.test(kanban), "the button gates on active dispatch (a live pulse), not a bare flag");
+  assert(/setPending\(action\)/.test(kanban) && /Pausing…/.test(kanban), "the button registers the click optimistically (Pausing…/Resuming…)");
 });
 
 // ── runner ───────────────────────────────────────────────────────────────────

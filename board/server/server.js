@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { ensureKnowledge, readJsonMaybe } from "../cli/learning.js";
 import { validateConductor } from "../cli/validate.js";
 import { mutateStatus } from "../cli/status-store.js";
+import { applyPauseResume } from "../cli/pause-core.js";
 import { registeredRoots, registryFile, registerRoot, registerBoard, gcRegistry } from "../cli/registry.js";
 
 const readBody = (req) =>
@@ -1244,37 +1245,24 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       return json(res, 200, { ok: true });
     }
 
-    // PAUSE / RESUME — drain-and-hold. /pause flips the run to "paused" (the dispatcher
-    // stops handing out NEW cards; in-flight ones finish on their own); /resume flips it
-    // back to "running". Written through mutateStatus (the locked path) so it never
-    // clobbers a concurrent worker/dispatcher write. The clock holds via the accumulator:
-    // pause folds the live running interval into elapsed_ms and nulls running_since;
-    // resume reopens the interval.
+    // PAUSE / RESUME — drain-and-hold, and the ACTION AND ITS CONFIRMATION ARE ONE EVENT.
+    // The endpoint owns the whole moment: in a single locked mutateStatus it flips status,
+    // folds the clock, AND emits the control heartbeat (applyPauseResume — the same path
+    // the CLI uses). Then it broadcasts IMMEDIATELY, not on the file-watch cycle — so the
+    // instant you click, the board says "Pausing…" without waiting for the dispatcher's
+    // next pass. The dispatcher still drains; it no longer announces.
     if (req.method === "POST" && (m = url.match(/^\/api\/workflow\/([^/]+)\/(pause|resume)$/))) {
       const wf = findWf(decodeURIComponent(m[1]));
       if (!wf) return json(res, 404, { error: "not found" });
       const action = m[2];
+      let doc = null;
+      try { doc = wf.conductorPath ? JSON.parse(fs.readFileSync(wf.conductorPath, "utf8")) : null; } catch { /* resume note falls back without a doc */ }
       let applied = null;
       mutateStatus(wf.statusPath, (s) => {
-        if (!s) return null;
-        if (action === "pause") {
-          if (s.status !== "running") return null; // only a running run pauses (idempotent)
-          if (typeof s.running_since === "string") {
-            const ran = Date.now() - Date.parse(s.running_since);
-            if (Number.isFinite(ran) && ran > 0) s.elapsed_ms = (typeof s.elapsed_ms === "number" ? s.elapsed_ms : 0) + ran;
-          }
-          s.running_since = null;
-          s.paused_at = new Date().toISOString();
-          s.status = "paused";
-          applied = "paused";
-        } else {
-          if (s.status !== "paused") return null; // only a paused run resumes (idempotent)
-          s.running_since = new Date().toISOString();
-          delete s.paused_at;
-          s.status = "running";
-          applied = "running";
-        }
+        applied = applyPauseResume(s, action, doc);
+        return applied ? undefined : null; // commit the in-place flip+beat, or skip (no-op)
       });
+      if (applied) broadcast(); // confirmation is immediate, not on the watch cycle
       return json(res, 200, { ok: true, status: applied });
     }
 
