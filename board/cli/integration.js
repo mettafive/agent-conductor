@@ -2278,6 +2278,46 @@ function renderArtifact({ runId, openItems, changes, dismissed, report }) {
   ].join("\n");
 }
 
+// ----- crash-safe apply (audit 3a): a write-ahead marker that makes the whole
+// cards+workflow+knowledge commit atomic across a crash. -----
+const PENDING_APPLY = "pending-apply.json";
+
+/**
+ * Commit the integration result as one crash-safe unit. The marker holds the
+ * COMPLETE intended end-state (cards + workflow + knowledge); it is written
+ * BEFORE any live file and cleared only AFTER all three are durable. A crash at
+ * any point is recovered by reconcilePendingApply replaying this exact state.
+ */
+function commitIntegration(root, { runId, cards, workflow, knowledge }) {
+  const marker = path.join(root, PENDING_APPLY);
+  writeJson(marker, { run_id: runId, cards, workflow, knowledge });
+  writeJson(path.join(root, "cards.json"), cards);
+  writeJson(path.join(root, "workflow.json"), workflow);
+  writeJson(path.join(root, "knowledge.json"), knowledge);
+  try { fs.unlinkSync(marker); } catch { /* already gone */ }
+}
+
+/**
+ * Replay a surviving marker (prior crash mid-commit). Idempotent: writing the
+ * same bytes again is harmless. After this, the knowledge items are APPLIED, so
+ * the open-items filter drops them and they are never re-integrated. Returns
+ * true if a marker was reconciled.
+ */
+function reconcilePendingApply(root) {
+  const marker = path.join(root, PENDING_APPLY);
+  const pending = readJsonMaybe(marker);
+  if (!pending) return false;
+  try {
+    if (pending.cards) writeJson(path.join(root, "cards.json"), pending.cards);
+    if (pending.workflow) writeJson(path.join(root, "workflow.json"), pending.workflow);
+    if (pending.knowledge) writeJson(path.join(root, "knowledge.json"), pending.knowledge);
+    console.log(dim(`  reconciled a crashed integration (replayed pending-apply marker, run ${pending.run_id || "?"}) — insights already applied, not re-integrating.`));
+  } finally {
+    try { fs.unlinkSync(marker); } catch { /* already gone */ }
+  }
+  return true;
+}
+
 export async function runIntegration(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log("usage: conductor-board integrate --skill SKILL.md [--dir .conductor/<skill>] [--run-id ID]");
@@ -2290,6 +2330,13 @@ export async function runIntegration(args) {
   const cardsPath = path.join(root, "cards.json");
   const workflowPath = path.join(root, "workflow.json");
   const runId = String(flag(args, ["--run-id"]) || timestampRunId());
+
+  // CRASH RECOVERY (audit 3a): a surviving pending-apply marker means a prior
+  // integration wrote its intended final state but crashed before clearing.
+  // Replay it (idempotent — same bytes) so those insights end APPLIED and are
+  // NOT re-integrated. Done BEFORE reading knowledge so the reconciled (applied)
+  // items drop out of the open filter below.
+  reconcilePendingApply(root);
 
   if (!fs.existsSync(cardsPath)) return console.error(red(`✗ missing ${cardsPath}`)), false;
   if (!fs.existsSync(workflowPath)) return console.error(red(`✗ missing ${workflowPath}`)), false;
@@ -2544,9 +2591,10 @@ export async function runIntegration(args) {
   }
   progress({ phase: "validate", event: "phase-end", passed: true });
 
-  writeJson(cardsPath, nextCards);
-  writeJson(workflowPath, nextWorkflow);
-
+  // Build the FINAL knowledge state in memory first (mark applied/dismissed),
+  // then commit cards + workflow + knowledge as one crash-safe unit below — so
+  // the live files are never touched until the complete intended end-state is
+  // durable in the marker (audit 3a).
   for (const change of finalResult.changes) {
     for (const id of change.knowledge_ids || []) {
       const item = knowledge.items.find((candidate) => candidate.id === id);
@@ -2584,7 +2632,14 @@ export async function runIntegration(args) {
     found.dismissed_in = runId;
     found.dismissed_reason = item.reason;
   }
-  writeJson(path.join(root, "knowledge.json"), knowledge);
+
+  // CRASH-SAFE COMMIT (audit 3a): write-ahead the COMPLETE intended final state
+  // (cards + workflow + knowledge) to a marker BEFORE touching any live file.
+  // A crash anywhere from here on is recovered by reconcilePendingApply replaying
+  // the marker (idempotent), so the dangerous window between the workflow-write
+  // and the knowledge-mark can never cause a re-apply. Clear the marker only
+  // after all three live files are durable.
+  commitIntegration(root, { runId, cards: nextCards, workflow: nextWorkflow, knowledge });
 
   const artifactsDir = path.join(root, "runs", runId, "artifacts");
   fs.mkdirSync(artifactsDir, { recursive: true });

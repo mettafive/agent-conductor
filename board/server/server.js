@@ -153,9 +153,16 @@ function initRuntimeStatus(workflow, statusPath) {
   };
 }
 
-function openKnowledgeItems(wf) {
+// Normalize status the SAME way integration.js's knowledgeStatus does (trim +
+// lowercase), so a malformed "Open"/"OPEN"/" open " item is detected here rather
+// than being skipped by the server but integrated if called directly (audit 3b).
+function isOpenStatus(item) {
+  return String(item?.status ?? "open").trim().toLowerCase() === "open";
+}
+
+export function openKnowledgeItems(wf) {
   const knowledge = ensureKnowledge(wf.dir);
-  return knowledge.items.filter((item) => item && item.status === "open");
+  return knowledge.items.filter((item) => item && isOpenStatus(item));
 }
 
 function latestIntegrationSummary(wf) {
