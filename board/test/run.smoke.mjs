@@ -377,6 +377,52 @@ test("E scoped run uses .conductor/<slug>/ end to end, no flat .conductor/ fallb
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+// ── Integration-leads flow (Change 1 + 3c) ───────────────────────────────────
+
+test("INT-A no open insights → no integration, work runs straight through", () => {
+  const tmp = tmpdir();
+  const { scoped, status } = seedSkill(tmp, "inta", ONE("intaflow"));
+  // knowledge.json present but everything already applied → nothing open.
+  fs.writeFileSync(path.join(scoped, "knowledge.json"), JSON.stringify({ items: [{ id: "k1", status: "applied" }] }, null, 2));
+  const r = runSkill(tmp, "inta", scoped);
+  assert(r.code === 0, `run should exit 0:\n${r.out}`);
+  assert(!/shaping:/.test(r.out), `must NOT lead with integration when nothing is open:\n${r.out}`);
+  assert(!fs.existsSync(path.join(scoped, "integration.workflow.json")), "no integration feed should be written");
+  assert(cardStatus(readStatus(status), "0") === "done", "work should run straight through");
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("INT-F open insight + integration returns false → shaping leads, run halts clean, work never starts (3c)", () => {
+  const tmp = tmpdir();
+  const { scoped, status } = seedSkill(tmp, "intf", ONE("intfflow"));
+  fs.writeFileSync(path.join(scoped, "knowledge.json"), JSON.stringify({
+    items: [{ id: "k1", status: "open", scope: "this-conductor", title: "Tweak", current: "old", proposed: "new", step: "Solo" }],
+  }, null, 2));
+  // No cards.json — integration's own required-input guard makes integrateRoot
+  // return false deterministically (no model needed). The point under test is
+  // run.js's 3c handling: a false integration HALTS cleanly and never dispatches
+  // work, regardless of WHY integration failed (a real model failure is the
+  // real-machine proof, I).
+  const port = nextPort();
+  const r = cli(
+    ["run", "SKILL.md", "--name", "intf", "--headless", "--port", String(port)],
+    tmp,
+    { CONDUCTOR_WORKER_CMD: `node ${STUB}`, CONDUCTOR_HEADLESS: "1" },
+  );
+  stopBoardFor(scoped);
+  assert(r.code !== 0, `run should halt non-zero on integration failure:\n${r.out}`);
+  assert(/shaping:/.test(r.out), `integration should LEAD (shaping line):\n${r.out}`);
+  assert(/integration failed|integration errored/.test(r.out), `should report the integration failure (no crash/500):\n${r.out}`);
+  // 3c: work NEVER runs on a half-integrated plan — the work status.json (created
+  // at status-init, AFTER integration) must not exist / show no completed work.
+  if (fs.existsSync(status)) {
+    const st = readStatus(status);
+    const anyDone = Object.values(st.steps || {}).some((s) => s.status === "done");
+    assert(!anyDone, `work must not run on a half-integrated plan:\n${JSON.stringify(st.steps)}`);
+  }
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 // ── F. START GUIDE ───────────────────────────────────────────────────────────
 
 test("F START.md teaches `run` with prerequisites + gotchas; CONDUCTOR.md repointed", () => {

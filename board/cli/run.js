@@ -5,6 +5,7 @@ import { runCompile } from "./compile.js";
 import { runStatusInit } from "./writer.js";
 import { runDispatch } from "./dispatch.js";
 import { openRunBoard } from "./init-board.js";
+import { integrateRoot } from "./integration.js";
 import { scopedConductorDir } from "./learning.js";
 import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
 
@@ -64,6 +65,19 @@ function positionals(args) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+// Open insights carried by the skill (normalized status, matching integration's
+// knowledgeStatus). Empty if no knowledge.json or none open.
+function openInsightsForRoot(root) {
+  let kn;
+  try {
+    kn = JSON.parse(fs.readFileSync(path.join(root, "knowledge.json"), "utf8"));
+  } catch {
+    return [];
+  }
+  if (!kn || !Array.isArray(kn.items)) return [];
+  return kn.items.filter((it) => it && String(it.status ?? "open").trim().toLowerCase() === "open");
 }
 
 function saveJson(file, value) {
@@ -205,6 +219,40 @@ export async function runRun(args) {
     console.error(red(`  ✗ no workflow.json at ${path.relative(process.cwd(), workflowPath)} after compile`));
     return false;
   }
+
+  // 1b. INTEGRATION LEADS (continuous flow, audit Change 1). If the skill carries
+  //     open insights, SHAPE the plan first — on the same board surface — then
+  //     chain into the work dispatch below. One command, no second confirm.
+  const openInsights = openInsightsForRoot(outDir);
+  if (openInsights.length) {
+    console.log(`  ${iris("shaping:")} ${openInsights.length} open insight(s) — integration leads, then work.`);
+    // Bring the board up now (best-effort) so the integration feed is visible as
+    // the shaping cards run; the authoritative work-board open happens below.
+    // Interactive only — headless/CI doesn't need the early window.
+    if (!headless) {
+      try { await openRunBoard(statusPath, workflowPath, { headless, port }); } catch { /* best-effort */ }
+    }
+    let integrated = false;
+    try {
+      integrated = await integrateRoot({ root: outDir, skillPath });
+    } catch (e) {
+      // 3c: integration must never crash the run with a wall. A thrown error is
+      // treated as a failed shaping card — halt cleanly, do not dispatch work.
+      console.error(red(`  ✗ integration errored: ${e.message}`));
+      integrated = false;
+    }
+    if (!integrated) {
+      // 3c: a failed integration is a visible failed shaping card on the board;
+      // the run HALTS cleanly here — work is NEVER run on a half-integrated plan.
+      // No crash, no 500.
+      console.error(red("  ✗ integration failed — halting. Work is not run on a half-integrated plan."));
+      console.error(dim("    See the failed shaping card on the board, then retry (run again) or clear the open insight."));
+      return false;
+    }
+    // integration rewrote workflow.json / cards.json — the doc read below picks
+    // up the updated plan, and the state model runs the integrated workflow.
+  }
+
   let doc;
   try {
     doc = readJson(workflowPath);
