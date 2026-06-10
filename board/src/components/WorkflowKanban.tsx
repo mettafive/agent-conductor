@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import type { BoardModel, BoardStep, Column as Col, DeveloperNote } from "../lib/types";
 import { fmtDur } from "../lib/format";
@@ -7,6 +7,11 @@ import { renderNote } from "../lib/heartbeat";
 import { displayName, phaseLabel, isLifecycle } from "../lib/identity";
 import { Led } from "./Led";
 import { NoteThread } from "./HeartbeatTimeline";
+
+// The ONE view identity, available to every card without prop-threading. Scopes the
+// per-card layoutId so Framer never treats "card 0 in run A" and "card 0 in run B" as the
+// same object (the cross-run slide). Default "" keeps standalone renders working.
+const ViewKeyContext = createContext("");
 
 const BASE_COLS: Col[] = ["pending", "running", "checking", "done"];
 const DWELL_MS = 1000;
@@ -1934,6 +1939,7 @@ function WorkflowCard({
   // The "BAM": integration (shaping) cards land with a spring-overshoot when they
   // arrive after a relaunch — the one moment of impact. Reduced motion → plain fade.
   const reduceMotion = useReducedMotion();
+  const viewKey = useContext(ViewKeyContext); // scope the card's layoutId to this view
   const bam = step.phase === "shaping" && !reduceMotion;
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [insightModalOpen, setInsightModalOpen] = useState(false);
@@ -1998,7 +2004,7 @@ function WorkflowCard({
     <>
       <motion.div
         layout
-        layoutId={`workflow-card-${step.id}`}
+        layoutId={`${viewKey}:workflow-card-${step.id}`}
         initial={bam ? { opacity: 0, scale: 0.96 } : { opacity: 0 }}
         animate={bam ? { opacity: 1, scale: 1 } : { opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -2308,6 +2314,7 @@ export function WorkflowKanban({
   elapsed,
   canonicalKey,
   activeDispatch = false,
+  viewKey = "",
 }: {
   model: BoardModel;
   notes?: DeveloperNote[];
@@ -2318,6 +2325,9 @@ export function WorkflowKanban({
   canonicalKey?: string;
   /** hasActiveDispatch(entry) for the displayed feed — the one signal the pause button reads. */
   activeDispatch?: boolean;
+  /** The ONE view identity. Scopes per-card layout/open state so a card never slides — or
+   *  opens — across DIFFERENT runs (run-local step.id is never treated as global). */
+  viewKey?: string;
 }) {
   const [settledView, setSettledView] = useState<"summary" | "board">("board");
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
@@ -2348,7 +2358,13 @@ export function WorkflowKanban({
   // Per-card open/closed lives HERE (keyed by step.id), not in each card, so a
   // card keeps its open/closed state when it moves columns — moving rows used to
   // remount the card and snap it shut.
+  // Open state is keyed by step.id, which repeats across runs (0, 1, 2…) — so reset it on
+  // every view change, or "card 0 open in run A" would open "card 0 in run B" too. (The
+  // board also remounts per viewKey, so this is belt-and-suspenders.)
   const [openCards, setOpenCards] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setOpenCards(new Set());
+  }, [viewKey]);
   const toggleCard = (id: string) =>
     setOpenCards((prev) => {
       const next = new Set(prev);
@@ -2396,6 +2412,7 @@ export function WorkflowKanban({
 
   if ((settled || latchedSettled) && displaySteps.length > 0) {
     return (
+      <ViewKeyContext.Provider value={viewKey}>
       <LayoutGroup>
         {/* scrollbar-gutter:stable reserves the scrollbar lane in BOTH views, so
             the centered header/title never shifts horizontally when one view
@@ -2497,10 +2514,12 @@ export function WorkflowKanban({
           </AnimatePresence>
         </div>
       </LayoutGroup>
+      </ViewKeyContext.Provider>
     );
   }
 
   return (
+    <ViewKeyContext.Provider value={viewKey}>
     <LayoutGroup>
       <div className="h-full overflow-y-auto">
         {/* The shared run-header — live state. Same component as the settled view;
@@ -2561,5 +2580,6 @@ export function WorkflowKanban({
         </div>
       </div>
     </LayoutGroup>
+    </ViewKeyContext.Provider>
   );
 }

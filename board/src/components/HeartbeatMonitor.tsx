@@ -218,6 +218,9 @@ interface Props {
   done?: boolean;
   /** the knowledge store — lets an insight beat open its full captured detail in a modal */
   knowledge?: KnowledgeEntry[];
+  /** the ONE view identity — when it changes (a different run/view), the typing cache is
+   *  reset so the previous run's beats render settled instead of re-typing. */
+  streamIdentity?: string;
   doneCount?: number;
   totalCount?: number;
 }
@@ -233,6 +236,7 @@ export function HeartbeatMonitor({
   stallSeconds,
   done,
   knowledge,
+  streamIdentity,
 }: Props) {
   const streamKey = arrival?.beat.key;
   // The prominent single line is the agent's "what's happening" sentence — its own
@@ -309,6 +313,7 @@ export function HeartbeatMonitor({
       stallSeconds={stallSeconds}
       done={done}
       knowledge={knowledge}
+      streamIdentity={streamIdentity}
     />
   );
 }
@@ -322,6 +327,7 @@ function ExpandedMonitor({
   stallSeconds,
   done,
   knowledge,
+  streamIdentity,
 }: {
   beats: StreamBeat[];
   order: string[];
@@ -332,6 +338,7 @@ function ExpandedMonitor({
   stallSeconds?: number;
   done?: boolean;
   knowledge?: KnowledgeEntry[];
+  streamIdentity?: string;
 }) {
   const [modalInsight, setModalInsight] = useState<ShownInsight | null>(null);
   const [height, setHeight] = useState(280);
@@ -368,12 +375,23 @@ function ExpandedMonitor({
   // typed beat is parked: hidden from its FIRST render (no flash of full text).
   const typedRef = useRef<Set<string>>(new Set());
   const seededRef = useRef(false);
+  // VIEW CHANGE → reset the typing cache. The seed below then renders THIS view's existing
+  // beats as already-shown, so the previous run's beats render settled (don't re-type).
+  const idRef = useRef(streamIdentity);
+  if (idRef.current !== streamIdentity) {
+    idRef.current = streamIdentity;
+    typedRef.current = new Set();
+    seededRef.current = false;
+  }
   if (!seededRef.current && shown.length > 0) {
     // Lazy seed: beats already present on first load render plain, never re-type.
     seededRef.current = true;
     for (const b of shown) typedRef.current.add(b.key);
   }
   const [typingKey, setTypingKey] = useState<string | null>(null);
+  useEffect(() => {
+    setTypingKey(null); // a different view's typing queue starts clean
+  }, [streamIdentity]);
   // Control beats (pause/resume etc.) never enter the typing queue — they render
   // immediately so the live state surfaces now, not after a backlog of typed notes.
   const nextToType = shown.find((b) => b.key !== typingKey && !typedRef.current.has(b.key) && !b.control) ?? null;

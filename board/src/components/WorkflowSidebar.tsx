@@ -63,11 +63,12 @@ interface Props {
   workflows: Record<string, WorkflowEntry>;
   /** Workflow display order. */
   order: string[];
-  /** The run currently loaded onto the board (null = live/default). */
-  viewingRunId: string | null;
+  /** The run currently loaded onto the board, as a "wf:runId" identity (null = live/default).
+   *  Scoped by workflow so a matching run_id in ANOTHER group never lights up too. */
+  viewingKey: string | null;
   /** A live run if one is streaming, to pin at the top. */
   live: LiveEntry | null;
-  /** True when the board is showing the live run (viewingRunId === null and a live run exists). */
+  /** True when the board is showing the live run (viewingKey === null and a live run exists). */
   liveActive: boolean;
   /** Load a past run onto the board. */
   onPickRun: (wf: string, runId: string) => void;
@@ -84,7 +85,7 @@ interface Props {
 export function WorkflowSidebar({
   workflows,
   order,
-  viewingRunId,
+  viewingKey,
   live,
   liveActive,
   onPickRun,
@@ -189,7 +190,7 @@ export function WorkflowSidebar({
                   <Row
                     key={r.run_id}
                     run={r}
-                    active={viewingRunId === r.run_id}
+                    active={viewingKey === `${name}:${r.run_id}`}
                     onClick={() => onPickRun(name, r.run_id)}
                   />
                 ))}

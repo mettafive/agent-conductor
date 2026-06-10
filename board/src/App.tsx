@@ -315,13 +315,40 @@ export function App() {
     return () => clearTimeout(t);
   }, [coldStart]);
 
-  // Resolve the displayed model: a viewed past run wins; else the live run if it has started;
-  // else the newest finished run; else the empty live model (→ WaitingState). During cold
-  // start we deliberately DON'T fall back to the stale newest-finished run.
-  const model: BoardModel =
-    (viewing && viewedModel) ? viewedModel : liveStarted ? liveModel : showStarting ? liveModel : latestModel ?? liveModel;
-  // The board is interactive (live-following) only when showing the genuinely live run.
-  const boardStarted = (viewing && viewedModel) ? true : liveStarted ? true : !showStarting && !!latestModel;
+  // ONE VIEW IDENTITY. Every part that answers "which view am I showing" reads this — so
+  // no two parts can disagree, and ids that are only unique WITHIN a run (run_id, step.id,
+  // beat keys) are never treated as global: they're scoped by the view they live in.
+  const viewKey = viewing
+    ? `history:${viewing.wf}:${viewing.runId}`
+    : activeWf
+      ? `live:${activeWf}:${liveModel.runId ?? "no-run"}`
+      : "empty";
+
+  // The model for the SELECTED view; null when a history view is still fetching.
+  const selectedReady: BoardModel | null =
+    (viewing && viewedModel) ? viewedModel
+    : viewing ? null // history view, fetch pending → not ready yet
+    : (liveStarted || showStarting) ? liveModel
+    : latestModel ?? liveModel;
+
+  // HOLD THE OUTGOING UNTIL THE INCOMING IS READY — never flash the prior/live/default
+  // model in the navigation gap (same rule as cold start). While the selected view's model
+  // isn't ready, keep rendering the last ready (key, model); the crossfade swaps only when
+  // the real thing arrives.
+  const heldViewRef = useRef<{ key: string; model: BoardModel } | null>(null);
+  useEffect(() => {
+    if (selectedReady) heldViewRef.current = { key: viewKey, model: selectedReady };
+  }, [viewKey, selectedReady]);
+  const model: BoardModel = selectedReady ?? heldViewRef.current?.model ?? liveModel;
+  const displayKey = selectedReady ? viewKey : heldViewRef.current?.key ?? viewKey;
+  // The board is interactive only when showing a real run (selected, or held mid-transition).
+  const boardStarted = showStarting
+    ? false
+    : viewing
+      ? !!(viewedModel || heldViewRef.current)
+      : liveStarted
+        ? true
+        : !!latestModel;
 
   // The terminal's beat source: a viewed past run isn't streaming, so source its persisted beats
   // (flattened from steps[].heartbeat[]); otherwise the live session stream.
@@ -586,7 +613,7 @@ export function App() {
                 <WorkflowSidebar
                   workflows={workflows}
                   order={order}
-                  viewingRunId={viewing?.runId ?? null}
+                  viewingKey={viewing ? `${viewing.wf}:${viewing.runId}` : null}
                   live={liveEntry}
                   liveActive={!viewing && liveStarted}
                   onPickRun={(wf, runId) => setViewing({ wf, runId })}
@@ -623,19 +650,35 @@ export function App() {
                     : { type: "spring", stiffness: 360, damping: 26 } // ride back in with a settle
               }
             >
-              {showStarting ? (
-                <StartingState />
-              ) : boardStarted ? (
-                <WorkflowKanban
-                  model={model}
-                  notes={model.developerNotes}
-                  elapsed={elapsed}
-                  canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
-                  activeDispatch={!viewingPast && activeDispatch}
-                />
-              ) : (
-                <WaitingState model={model} statusPath={liveSnap.statusPath} />
-              )}
+              {/* BETWEEN-VIEWS transition: ease the outgoing view out, the incoming in,
+                  keyed by the ONE view identity. The held model (above) means we never
+                  flash the prior/live/default model in the gap. (Nests cleanly with the
+                  inner Summary↔Board crossfade, which handles swaps WITHIN a settled view.) */}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={displayKey}
+                  className="h-full"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduceMotion ? 0.12 : 0.2, ease: "easeInOut" }}
+                >
+                  {showStarting ? (
+                    <StartingState />
+                  ) : boardStarted ? (
+                    <WorkflowKanban
+                      model={model}
+                      notes={model.developerNotes}
+                      elapsed={elapsed}
+                      canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
+                      activeDispatch={!viewingPast && activeDispatch}
+                      viewKey={displayKey}
+                    />
+                  ) : (
+                    <WaitingState model={model} statusPath={liveSnap.statusPath} />
+                  )}
+                </motion.div>
+              </AnimatePresence>
             </motion.div>
             <AnimatePresence>
               {relaunch && <RelaunchOverlay reduceMotion={!!reduceMotion} />}
@@ -683,6 +726,9 @@ export function App() {
 
           <HeartbeatMonitor
             beats={monitorBeats}
+            // The ONE view identity — switching runs resets the monitor's typing cache so the
+            // previous run's beats render settled (don't re-type).
+            streamIdentity={displayKey}
             // A viewed past run is static — no live arrival, no heart pulse, settle as done.
             arrival={viewingPast ? null : arrival && !arrival.beat.system ? arrival : null}
             order={order}

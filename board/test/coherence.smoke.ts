@@ -100,5 +100,15 @@ assert(/waitIntegrationServed/.test(integ) && /\(integration\)`\)/.test(integ), 
 assert(/relaunchOutcome/.test(app) && /RelaunchOutcomeBanner/.test(app), "the overlay resolves to a named outcome banner");
 assert(/"unconfirmed"/.test(app) && /halted-after-integration-failure/.test(app), "named terminals: unconfirmed + halted-after-integration-failure (no silent vanish)");
 
+// CO9 — one view identity: local ids are never treated as global
+assert(/const viewKey = viewing/.test(app) && /history:\$\{viewing\.wf\}:\$\{viewing\.runId\}/.test(app), "viewKey is defined once from (wf, runId)");
+assert(/heldViewRef/.test(app) && /HOLD THE OUTGOING UNTIL THE INCOMING IS READY/.test(app), "the outgoing model is held until the incoming is ready (no flash in the gap)");
+assert(/key=\{displayKey\}/.test(app) && /AnimatePresence mode="wait"/.test(app), "the main view crossfades keyed by the view identity");
+assert(/viewingKey === `\$\{name\}:\$\{r\.run_id\}`/.test(sidebar), "the navigator active row compares (wf, runId), not run_id alone");
+assert(/\$\{viewKey\}:workflow-card-\$\{step\.id\}/.test(kanban) && /ViewKeyContext/.test(kanban), "card layoutId is scoped by viewKey (no cross-run slide)");
+assert(/setOpenCards\(new Set\(\)\);\n  \}, \[viewKey\]\)/.test(kanban), "card open state resets on viewKey change");
+const monitor = src("src/components/HeartbeatMonitor.tsx");
+assert(/streamIdentity/.test(monitor) && /idRef\.current !== streamIdentity/.test(monitor), "the heartbeat monitor resets its typing cache on view change");
+
 console.log(`\n  ${failed ? `\x1b[31m${failed} failed\x1b[0m` : "\x1b[32mall passed\x1b[0m"}\n`);
 process.exit(failed ? 1 : 0);
