@@ -689,7 +689,7 @@ function workflowName(statusPath, conductorPath, dir) {
  * (.conductor/status.json — a single workflow, for v1 backwards compatibility)
  * and the subdirectory layout (.conductor/<name>/status.json — many workflows).
  */
-function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
+export function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
   const found = [];
   const seen = new Set();
   // variant: "run" (the work workflow.json/status.json) | "compile" | "integration".
@@ -708,17 +708,49 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
     });
   };
 
+  // A lifecycle feed (compile/integration) is namespaced off its dir's run name —
+  // "<run> (compile)" — so it stays reachable WITHOUT colliding with or squatting
+  // the run's primary id. (workflowName alone falls back to the dir basename, which
+  // is the run's name — the original collision.)
+  const variantName = (d, variant) => {
+    const wf = fs.existsSync(path.join(d, "workflow.json")) ? path.join(d, "workflow.json") : null;
+    return `${workflowName(path.join(d, "status.json"), wf, d)} (${variant})`;
+  };
+
   // flat / explicit --path
   const flatStatus = explicitStatus || path.join(conductorDir, "status.json");
-  const flatConductor = discoverConductor(flatStatus, explicitConductor);
-  if (fs.existsSync(flatStatus) || (flatConductor && fs.existsSync(flatConductor))) {
-    add(workflowName(flatStatus, flatConductor, conductorDir), conductorDir, flatStatus, flatConductor);
+  // If the board was launched pointing AT a lifecycle feed (compile/integration —
+  // the warm-compile path spawns the board on compile.status.json), that feed must
+  // NOT take the flat primary id. The run owns its id. So: register the RUN's sibling
+  // status.json as the primary, and the lifecycle feed under its OWN variant,
+  // namespaced so both stay alive. Subtraction over arbitration — remove the
+  // collision at the source, don't tie-break it.
+  const lifecycle = path.basename(flatStatus).match(/^(compile|integration)\.status\.json$/);
+  if (lifecycle) {
+    const variant = lifecycle[1];
+    const dir = path.dirname(flatStatus);
+    const runStatus = path.join(dir, "status.json");
+    // The run's OWN workflow.json — never let discoverConductor strand onto the
+    // sibling compile.workflow.json (that would mint a phantom primary before the
+    // run exists). The primary is registered ONLY once the run's status.json lands.
+    const runWorkflow = fs.existsSync(path.join(dir, "workflow.json")) ? path.join(dir, "workflow.json") : null;
+    const runName = workflowName(runStatus, runWorkflow, dir);
+    if (fs.existsSync(runStatus)) {
+      add(runName, dir, runStatus, runWorkflow); // the run owns the primary id
+    }
+    const vcp = explicitConductor || path.join(dir, `${variant}.workflow.json`);
+    add(`${runName} (${variant})`, dir, flatStatus, fs.existsSync(vcp) ? vcp : null, variant);
+  } else {
+    const flatConductor = discoverConductor(flatStatus, explicitConductor);
+    if (fs.existsSync(flatStatus) || (flatConductor && fs.existsSync(flatConductor))) {
+      add(workflowName(flatStatus, flatConductor, conductorDir), conductorDir, flatStatus, flatConductor);
+    }
   }
   for (const variant of ["compile", "integration"]) {
     const sp = path.join(conductorDir, `${variant}.status.json`);
     const cp = path.join(conductorDir, `${variant}.workflow.json`);
     if (fs.existsSync(sp) || fs.existsSync(cp)) {
-      add(workflowName(sp, cp, conductorDir), conductorDir, sp, fs.existsSync(cp) ? cp : null, variant);
+      add(variantName(conductorDir, variant), conductorDir, sp, fs.existsSync(cp) ? cp : null, variant);
     }
   }
 
@@ -738,7 +770,7 @@ function discoverWorkflows(conductorDir, explicitStatus, explicitConductor) {
         const vsp = path.join(dir, `${variant}.status.json`);
         const vcp = path.join(dir, `${variant}.workflow.json`);
         if (fs.existsSync(vsp) || fs.existsSync(vcp)) {
-          add(workflowName(vsp, vcp, dir), dir, vsp, fs.existsSync(vcp) ? vcp : null, variant);
+          add(variantName(dir, variant), dir, vsp, fs.existsSync(vcp) ? vcp : null, variant);
         }
       }
     }

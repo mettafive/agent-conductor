@@ -34,7 +34,8 @@
     "test:parallel-siblings": "node test/parallel-siblings.smoke.mjs",
     "test:concurrency": "node test/concurrency.smoke.mjs",
     "test:shaping": "npx --yes tsx test/shaping.smoke.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test:board-routing": "node test/board-routing.smoke.mjs"
   },
   "engines": {
     "node": ">=18"
