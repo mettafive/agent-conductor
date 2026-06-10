@@ -3,6 +3,7 @@ import path from "node:path";
 import http from "node:http";
 import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
 import { appendAutoHeartbeat } from "./heartbeats.js";
+import { mutateStatus, stampBeat } from "./status-store.js";
 import {
   appendKnowledge,
   appendInsightHeartbeat,
@@ -266,23 +267,29 @@ export async function runStep(args) {
       // Let the normal command path handle unreadable conductor/status files.
     }
   }
-  const step = (s.steps[id] = s.steps[id] || { attempt: 1 });
-  step.status = status;
-  if (status === "running") {
-    step.started_at = step.started_at || now();
-    step.gate = step.gate && step.gate !== "passed" ? step.gate : "pending";
-    s.current_step = id;
-    const g = flag(args, ["--goal"]);
-    if (typeof g === "string") s.current_step_goal = g;
-    appendAutoHeartbeat(s, null, id, `Started: ${cardTitle(sp, id)}`);
-  } else if (status === "done") {
-    step.completed_at = now();
-    if (!step.gate || step.gate === "pending" || step.gate === "checking") step.gate = "passed";
-  } else if (status === "failed") {
-    step.completed_at = now();
-    step.gate = "failed";
-  }
-  save(sp, s);
+  const goal = flag(args, ["--goal"]);
+  const title = cardTitle(sp, id);
+  // Locked read-modify-write: re-read fresh inside the lock so a concurrent sibling
+  // never has its status field or beats clobbered by a stale-based write.
+  mutateStatus(sp, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const step = (fresh.steps[id] = fresh.steps[id] || { attempt: 1 });
+    step.status = status;
+    if (status === "running") {
+      step.started_at = step.started_at || now();
+      step.gate = step.gate && step.gate !== "passed" ? step.gate : "pending";
+      fresh.current_step = id;
+      if (typeof goal === "string") fresh.current_step_goal = goal;
+      appendAutoHeartbeat(fresh, null, id, `Started: ${title}`);
+    } else if (status === "done") {
+      step.completed_at = now();
+      if (!step.gate || step.gate === "pending" || step.gate === "checking") step.gate = "passed";
+    } else if (status === "failed") {
+      step.completed_at = now();
+      step.gate = "failed";
+    }
+  });
   return ok(`${id} → ${status}`);
 }
 
@@ -293,8 +300,10 @@ export async function runGate(args) {
   if (!id || !gate) return fail("usage: conductor-board gate <id> <checking|passed|failed>");
   const s = load(sp);
   if (!s || !s.steps[id]) return fail(`status.json has no step "${id}"`);
-  s.steps[id].gate = gate;
-  save(sp, s);
+  mutateStatus(sp, (fresh) => {
+    if (!fresh?.steps?.[id]) return null;
+    fresh.steps[id].gate = gate;
+  });
   return ok(`${id} gate → ${gate}`);
 }
 
@@ -312,9 +321,14 @@ export async function runHeartbeat(args) {
   if (!id || !note) return fail('usage: conductor-board update <id> "note" [flags]');
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
-  const step = (s.steps[id] = s.steps[id] || { attempt: 1 });
 
   const entry = { at: now(), note };
+  // event_at is when the work this beat reports actually happened. A worker that
+  // can capture its emit moment passes --event-at; otherwise it defaults (stampBeat)
+  // to `at`, the update-invocation time. Sorting by event_at fixes the late-flush
+  // reorder where a "wrote the file" beat sorted after the gate beats.
+  const eventAt = flag(args, ["--event-at"]);
+  if (typeof eventAt === "string") entry.event_at = eventAt;
   const it = flag(args, ["--iteration"]);
   if (typeof it === "string") entry.iteration = it;
   const sub = flag(args, ["--sub"]);
@@ -339,21 +353,28 @@ export async function runHeartbeat(args) {
     if (typeof to === "string") entry.handoff.to = to;
   }
 
-  if (typeof it === "string" && typeof sub === "string") {
-    // Sub-step beat bubbled to the loop parent's array (tagged iteration + sub).
-    // The board reads top-level arrays for the monitor and the freeball banner,
-    // and the iteration cards filter this array by iteration/sub — so one write
-    // lights up every level. (We write to the parent only, never also the cell,
-    // to avoid double-counting since the readers aggregate the whole tree.)
-    step.type = "loop";
-    step.iterations = step.iterations || {};
-    const iter = (step.iterations[it] = step.iterations[it] || {});
-    iter[sub] = iter[sub] || { attempt: 1 };
-    (step.heartbeat = step.heartbeat || []).push(entry);
-  } else {
-    (step.heartbeat = step.heartbeat || []).push(entry);
-  }
-  save(sp, s);
+  // Locked read-modify-write: re-read fresh, assign the monotonic seq, append —
+  // so concurrent siblings appending at once serialize and none is lost.
+  mutateStatus(sp, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const step = (fresh.steps[id] = fresh.steps[id] || { attempt: 1 });
+    stampBeat(fresh, entry); // seq (monotonic, under the lock) + event_at fallback to at
+    if (typeof it === "string" && typeof sub === "string") {
+      // Sub-step beat bubbled to the loop parent's array (tagged iteration + sub).
+      // The board reads top-level arrays for the monitor and the freeball banner,
+      // and the iteration cards filter this array by iteration/sub — so one write
+      // lights up every level. (We write to the parent only, never also the cell,
+      // to avoid double-counting since the readers aggregate the whole tree.)
+      step.type = "loop";
+      step.iterations = step.iterations || {};
+      const iter = (step.iterations[it] = step.iterations[it] || {});
+      iter[sub] = iter[sub] || { attempt: 1 };
+      (step.heartbeat = step.heartbeat || []).push(entry);
+    } else {
+      (step.heartbeat = step.heartbeat || []).push(entry);
+    }
+  });
   // When this beat opens a card, surface its id so a parallel summarizer can target it later.
   const cardTag = entry.card ? ` [card ${entry.at}]` : "";
   return ok(`${id}${typeof sub === "string" ? `/${it}/${sub}` : ""} ♥ ${note.length > 50 ? note.slice(0, 50) + "…" : note}${cardTag}`);
@@ -379,9 +400,12 @@ export async function runOverview(args) {
     cardId = openers.length >= 2 ? openers[openers.length - 2] : openers[openers.length - 1];
     if (!cardId) return fail(`no cards on step "${id}" to summarize`);
   }
-  step.cardOverviews = step.cardOverviews || {};
-  step.cardOverviews[cardId] = text;
-  save(sp, s);
+  mutateStatus(sp, (fresh) => {
+    const fstep = fresh?.steps?.[id];
+    if (!fstep) return null;
+    fstep.cardOverviews = fstep.cardOverviews || {};
+    fstep.cardOverviews[cardId] = text;
+  });
   return ok(`${id} ▸ overview saved for card ${cardId}`);
 }
 
@@ -399,25 +423,28 @@ export async function runComment(args) {
     return fail('usage: conductor-board comment <step> "text" --card <cardId> [--card-title "…"] [--directive --scope SC]');
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
-  s.developer_notes = Array.isArray(s.developer_notes) ? s.developer_notes : [];
   const directive = args.includes("--directive");
   const scope = flag(args, ["--scope"]);
   const cardTitle = flag(args, ["--card-title"]);
   const at = now();
-  s.developer_notes.push({
-    id: `${cardId}:${Date.now()}`,
-    at,
-    updated_at: at,
-    step: id,
-    card: cardId,
-    card_title: typeof cardTitle === "string" ? cardTitle : undefined,
-    text,
-    directive,
-    scope: typeof scope === "string" ? scope : undefined,
-    status: "open",
-    history: [{ at, action: "created", to: text }],
+  const noteId = `${cardId}:${Date.now()}`;
+  mutateStatus(sp, (fresh) => {
+    if (!fresh) return null;
+    fresh.developer_notes = Array.isArray(fresh.developer_notes) ? fresh.developer_notes : [];
+    fresh.developer_notes.push({
+      id: noteId,
+      at,
+      updated_at: at,
+      step: id,
+      card: cardId,
+      card_title: typeof cardTitle === "string" ? cardTitle : undefined,
+      text,
+      directive,
+      scope: typeof scope === "string" ? scope : undefined,
+      status: "open",
+      history: [{ at, action: "created", to: text }],
+    });
   });
-  save(sp, s);
   return ok(`${id} ▸ ${directive ? "directive" : "note"} on card ${cardId}: ${text.slice(0, 40)}${text.length > 40 ? "…" : ""}`);
 }
 
@@ -460,14 +487,20 @@ export async function runResolve(args) {
     return fail('usage: conductor-board resolve <cardId> --applied "how" | --deferred "why"');
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
-  const note = (Array.isArray(s.developer_notes) ? s.developer_notes : []).find((n) => n && n.id === cardId);
-  if (!note) return fail(`no developer note on card "${cardId}"`);
-  note.status = typeof applied === "string" ? "applied" : "deferred";
-  note.resolution = typeof applied === "string" ? applied : deferred;
-  note.resolved_at = now();
-  if (typeof s.run_id === "string") note.resolved_run = s.run_id;
-  save(sp, s);
-  return ok(`${note.status} directive on card ${cardId}`);
+  const exists = (Array.isArray(s.developer_notes) ? s.developer_notes : []).find((n) => n && n.id === cardId);
+  if (!exists) return fail(`no developer note on card "${cardId}"`);
+  const resolvedAt = now();
+  let resolvedStatus = "";
+  mutateStatus(sp, (fresh) => {
+    const note = (Array.isArray(fresh?.developer_notes) ? fresh.developer_notes : []).find((n) => n && n.id === cardId);
+    if (!note) return null;
+    note.status = typeof applied === "string" ? "applied" : "deferred";
+    note.resolution = typeof applied === "string" ? applied : deferred;
+    note.resolved_at = resolvedAt;
+    if (typeof fresh.run_id === "string") note.resolved_run = fresh.run_id;
+    resolvedStatus = note.status;
+  });
+  return ok(`${resolvedStatus || "resolved"} directive on card ${cardId}`);
 }
 
 // conductor-board loop-scope <loopId> <item...> [--note "..."]
@@ -505,24 +538,27 @@ export async function runLoopScope(args) {
   }
   const s = load(sp);
   if (!s) return fail("no status.json — run status-init first");
-  const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
-  lp.type = "loop";
-  lp.iterations = lp.iterations || {};
-  for (const item of uniqueItems) {
-    lp.iterations[item] = lp.iterations[item] || {}; // sub-steps materialize as work begins
-  }
-  // total tracks the DISTINCT scoped iterations actually in the map (re-scoping is additive,
-  // so reconcile to the real key count rather than to this call's argument length).
-  lp.total = Object.keys(lp.iterations).length;
-  lp.completed = lp.completed || 0;
-  if (lp.status !== "running") lp.status = lp.status || "pending";
   const noteFlag = flag(args, ["--note"]);
   const note =
     typeof noteFlag === "string"
       ? noteFlag
       : `${uniqueItems.length} scoped: ${uniqueItems.join(", ")}. All pending.`;
-  (lp.heartbeat = lp.heartbeat || []).push({ at: now(), note });
-  save(sp, s);
+  mutateStatus(sp, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const lp = (fresh.steps[loopId] = fresh.steps[loopId] || { type: "loop", iterations: {} });
+    lp.type = "loop";
+    lp.iterations = lp.iterations || {};
+    for (const item of uniqueItems) {
+      lp.iterations[item] = lp.iterations[item] || {}; // sub-steps materialize as work begins
+    }
+    // total tracks the DISTINCT scoped iterations actually in the map (re-scoping is
+    // additive, so reconcile to the real key count rather than this call's arg length).
+    lp.total = Object.keys(lp.iterations).length;
+    lp.completed = lp.completed || 0;
+    if (lp.status !== "running") lp.status = lp.status || "pending";
+    (lp.heartbeat = lp.heartbeat || []).push(stampBeat(fresh, { at: now(), note }));
+  });
   return ok(`${loopId} scoped — ${uniqueItems.length} iterations frontloaded`);
 }
 
@@ -555,31 +591,34 @@ export async function runLoop(args) {
       red(`⚠ '${subId}' is not a declared sub-step of loop '${loopId}' (declared: ${declaredSubs.join(", ")}).`),
     );
   }
-  const lp = (s.steps[loopId] = s.steps[loopId] || { type: "loop", iterations: {} });
-  lp.type = "loop";
-  lp.iterations = lp.iterations || {};
-  const iter = (lp.iterations[item] = lp.iterations[item] || {});
-  const cell = (iter[subId] = iter[subId] || { attempt: 1 });
-  cell.status = status;
-  if (status === "done") cell.gate = "passed";
-  if (status === "running") {
-    lp.current_item = item;
-    lp.status = "running";
-    s.current_step = loopId;
-  }
-  // Recompute completed against the conductor's DECLARED sub-steps when available, so an
-  // iteration counts complete only when every real sub-step is done (matching complete.js's
-  // coverage guard) — a phantom/typo'd cell can't falsely finish it. Fall back to the loose
-  // "has cells and all done" check only when the conductor can't be resolved. Either way a
-  // frontloaded-but-empty iteration ({}) must NOT count (that would flip the whole loop done
-  // the instant the first iteration finishes).
-  lp.completed = Object.values(lp.iterations).filter((sub) => {
-    if (declaredSubs) return declaredSubs.every((sid) => sub[sid] && sub[sid].status === "done");
-    const cells = Object.values(sub);
-    return cells.length > 0 && cells.every((c) => c.status === "done");
-  }).length;
-  if (lp.total && lp.completed >= lp.total) lp.status = "done";
-  save(sp, s);
+  mutateStatus(sp, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const lp = (fresh.steps[loopId] = fresh.steps[loopId] || { type: "loop", iterations: {} });
+    lp.type = "loop";
+    lp.iterations = lp.iterations || {};
+    const iter = (lp.iterations[item] = lp.iterations[item] || {});
+    const cell = (iter[subId] = iter[subId] || { attempt: 1 });
+    cell.status = status;
+    if (status === "done") cell.gate = "passed";
+    if (status === "running") {
+      lp.current_item = item;
+      lp.status = "running";
+      fresh.current_step = loopId;
+    }
+    // Recompute completed against the conductor's DECLARED sub-steps when available, so an
+    // iteration counts complete only when every real sub-step is done (matching complete.js's
+    // coverage guard) — a phantom/typo'd cell can't falsely finish it. Fall back to the loose
+    // "has cells and all done" check only when the conductor can't be resolved. Either way a
+    // frontloaded-but-empty iteration ({}) must NOT count (that would flip the whole loop done
+    // the instant the first iteration finishes).
+    lp.completed = Object.values(lp.iterations).filter((sub) => {
+      if (declaredSubs) return declaredSubs.every((sid) => sub[sid] && sub[sid].status === "done");
+      const cells = Object.values(sub);
+      return cells.length > 0 && cells.every((c) => c.status === "done");
+    }).length;
+    if (lp.total && lp.completed >= lp.total) lp.status = "done";
+  });
   return ok(`${loopId}/${item}/${subId} → ${status}`);
 }
 
@@ -839,8 +878,8 @@ export async function runStatusInit(args) {
   const runDir = path.join(root, "runs", runId);
   status.run_dir = path.relative(root, runDir).split(path.sep).join("/");
   fs.mkdirSync(path.join(runDir, "artifacts"), { recursive: true });
-  save(sp, status);
-  save(path.join(runDir, "status.json"), status);
+  mutateStatus(sp, () => status); // atomic create under the lock
+  save(path.join(runDir, "status.json"), status); // immutable run snapshot (single writer)
   const workflowCount = (doc.steps || []).filter((s) => s).length;
   return ok(
     `status.json initialized (${workflowCount} steps` +

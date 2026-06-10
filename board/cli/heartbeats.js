@@ -1,6 +1,10 @@
+import { stampBeat } from "./status-store.js";
+
 export function appendAutoHeartbeat(status, loopPath, stepId, note) {
   status.steps = status.steps || {};
-  const entry = { at: new Date().toISOString(), note, system: true };
+  // System/transition beats occur at their natural moment, so event_at ≈ at.
+  // stampBeat assigns the monotonic seq (runs under the caller's mutateStatus lock).
+  const entry = stampBeat(status, { at: new Date().toISOString(), note, system: true });
   if (loopPath) {
     entry.iteration = loopPath.iter;
     entry.sub = loopPath.subId;

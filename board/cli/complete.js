@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
 import { appendAutoHeartbeat, firstEvidenceLine } from "./heartbeats.js";
+import { mutateStatus } from "./status-store.js";
 import { archiveRun, queuePostCardLearning, queueCardFold } from "./learning.js";
 import { sequentialOrderGuard } from "./writer.js";
 import {
@@ -203,29 +204,36 @@ export async function runComplete(args) {
         console.log("");
         return false;
       }
-      st.status = "done";
-      st.gate = "passed";
-      st.artifact = artifact.path;
-      st.receipt = artifact.path; // legacy alias
-      st.artifacts = [...new Set([artifact.path, ...artifacts.map((artifact) => artifact.path)])];
-      st.gate_detail = detail.map((item) => ({
-        ...item,
-        artifact_paths: st.artifacts,
-        artifact_path: artifact.path,
-        receipt_path: artifact.path,
-      }));
-      st.last_feedback = undefined;
-      st.last_failed_attempt = undefined;
-      st.completed_at = new Date().toISOString();
-      appendAutoHeartbeat(status, loopPath, stepId, `Passed: ${step.title || stepId}`);
-      if (!loopPath && allTopLevelStepsDone(doc, status)) {
-        status.status = "done";
-        status.current_step = null;
-        status.endedAt = new Date().toISOString();
-        // Freeze the paused-aware timer: fold the live running interval into elapsed_ms.
-        accumulateAndFreeze(status);
-      }
-      fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+      // Locked read-modify-write: re-resolve the entry on a FRESH read so a
+      // concurrent sibling's beats/fields are never clobbered by this done write.
+      let runDone = false;
+      mutateStatus(statusPath, (fresh) => {
+        if (!fresh) return null;
+        const fst = statusEntry(fresh, loopPath, stepId);
+        fst.status = "done";
+        fst.gate = "passed";
+        fst.artifact = artifact.path;
+        fst.receipt = artifact.path; // legacy alias
+        fst.artifacts = [...new Set([artifact.path, ...artifacts.map((a) => a.path)])];
+        fst.gate_detail = detail.map((item) => ({
+          ...item,
+          artifact_paths: fst.artifacts,
+          artifact_path: artifact.path,
+          receipt_path: artifact.path,
+        }));
+        fst.last_feedback = undefined;
+        fst.last_failed_attempt = undefined;
+        fst.completed_at = new Date().toISOString();
+        appendAutoHeartbeat(fresh, loopPath, stepId, `Passed: ${step.title || stepId}`);
+        if (!loopPath && allTopLevelStepsDone(doc, fresh)) {
+          fresh.status = "done";
+          fresh.current_step = null;
+          fresh.endedAt = new Date().toISOString();
+          // Freeze the paused-aware timer: fold the live running interval into elapsed_ms.
+          accumulateAndFreeze(fresh);
+          runDone = true;
+        }
+      });
       queuePostCardLearning({ statusPath, workflowPath: conductorPath, stepId });
       // Per-card crash-safety + the overlap win: fold THIS done card's own
       // artifacts into the run dir in a detached background process — off this
@@ -237,7 +245,7 @@ export async function runComplete(args) {
       // per card. archiveRun's copy is now idempotent: cards the background folder
       // already absorbed are skipped, so this is a cheap final fold, and it is
       // re-runnable + safe after an interrupted run (nothing deferred is lost).
-      if (status.status === "done") archiveRun(statusPath, conductorPath);
+      if (runDone) archiveRun(statusPath, conductorPath);
     } catch (e) {
       console.error(red(`✗ checker passed but could not update status.json: ${e.message}`));
       return false;
@@ -257,39 +265,46 @@ export async function runComplete(args) {
       return false;
     }
     const failedAttempt = Number.isFinite(Number(st.attempt)) ? Number(st.attempt) : 1;
-    st.gate = "failed";
-    st.gate_detail = detail;
-    st.last_feedback = recorded.evidence || "Checker failed without evidence.";
-    st.last_failed_attempt = failedAttempt;
-    st.last_failed_at = new Date().toISOString();
-    st.last_consumed_check_id = recordedId || new Date().toISOString();
-    appendAutoHeartbeat(
-      status,
-      loopPath,
-      stepId,
-      `Failed attempt ${failedAttempt}/${maxAttempts}: ${firstEvidenceLine(recorded.evidence)}`,
-    );
-    if (failedAttempt >= maxAttempts) {
-      st.status = "failed";
-      st.attempt = maxAttempts;
-      status.status = "failed";
-      status.failed_step = stepId;
-      status.failed_reason = st.last_feedback;
-      // Freeze the paused-aware timer on terminal failure.
-      accumulateAndFreeze(status);
-      fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+    const feedback = recorded.evidence || "Checker failed without evidence.";
+    let terminalFail = false;
+    mutateStatus(statusPath, (fresh) => {
+      if (!fresh) return null;
+      const fst = statusEntry(fresh, loopPath, stepId);
+      fst.gate = "failed";
+      fst.gate_detail = detail;
+      fst.last_feedback = feedback;
+      fst.last_failed_attempt = failedAttempt;
+      fst.last_failed_at = new Date().toISOString();
+      fst.last_consumed_check_id = recordedId || new Date().toISOString();
+      appendAutoHeartbeat(
+        fresh,
+        loopPath,
+        stepId,
+        `Failed attempt ${failedAttempt}/${maxAttempts}: ${firstEvidenceLine(recorded.evidence)}`,
+      );
+      if (failedAttempt >= maxAttempts) {
+        fst.status = "failed";
+        fst.attempt = maxAttempts;
+        fresh.status = "failed";
+        fresh.failed_step = stepId;
+        fresh.failed_reason = feedback;
+        accumulateAndFreeze(fresh); // freeze the paused-aware timer on terminal failure
+        terminalFail = true;
+      } else {
+        fst.status = "running";
+        fst.attempt = failedAttempt + 1;
+        fresh.status = "running";
+        fresh.endedAt = undefined;
+        if (!loopPath) fresh.current_step = stepId;
+      }
+    });
+    if (terminalFail) {
       archiveRun(statusPath, conductorPath);
       console.log(red(`  ✕ Checker failed on attempt ${maxAttempts}/${maxAttempts}. Card and run failed.`));
       console.log(dim("  Run `conductor-board feedback " + stepId + "` for the final failure reason."));
       console.log("");
       return false;
     }
-    st.status = "running";
-    st.attempt = failedAttempt + 1;
-    status.status = "running";
-    status.endedAt = undefined;
-    if (!loopPath) status.current_step = stepId;
-    fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
   } catch (e) {
     console.error(red(`✗ checker failed and could not update status.json: ${e.message}`));
     return false;
@@ -358,12 +373,14 @@ export async function runGateResult(args) {
   }
 
   const parsedEvidence = parseCheckerEvidence(typeof evidence === "string" ? evidence : undefined);
-  recordCheckerResult(status, resolved, stepId, passed, typeof evidence === "string" ? evidence : undefined, {
-    summary: typeof summaryFlag === "string" ? summaryFlag : undefined,
-    made_summary: typeof madeFlag === "string" ? madeFlag : undefined,
-    checked_summary: typeof checkedFlag === "string" ? checkedFlag : undefined,
+  mutateStatus(statusPath, (fresh) => {
+    if (!fresh) return null;
+    recordCheckerResult(fresh, resolved, stepId, passed, typeof evidence === "string" ? evidence : undefined, {
+      summary: typeof summaryFlag === "string" ? summaryFlag : undefined,
+      made_summary: typeof madeFlag === "string" ? madeFlag : undefined,
+      checked_summary: typeof checkedFlag === "string" ? checkedFlag : undefined,
+    });
   });
-  fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
   console.log("");
   console.log(green(`✓ checker result recorded for ${stepId}: ${passed ? "passed" : "failed"}`));

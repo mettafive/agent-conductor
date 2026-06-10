@@ -40,17 +40,27 @@ function pastRunBeats(model: BoardModel): StreamBeat[] {
         step: String(step.id),
         title: step.title,
         at: h.at,
+        event_at: h.event_at ?? h.at,
+        seq: h.seq,
         note: h.note,
         iteration: h.iteration,
         sub: h.sub,
         finalBeat: h.finalBeat === true,
         system: h.system === true,
+        control: h.control === true,
         tone: h.tone,
         insight: h.insight,
       });
     });
   }
-  out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  // Work-order sort, mirroring the live stream: event_at, then seq, then at.
+  out.sort((a, b) => {
+    if (a.event_at !== b.event_at) return a.event_at < b.event_at ? -1 : 1;
+    const as = typeof a.seq === "number" ? a.seq : Number.POSITIVE_INFINITY;
+    const bs = typeof b.seq === "number" ? b.seq : Number.POSITIVE_INFINITY;
+    if (as !== bs) return as - bs;
+    return a.at < b.at ? -1 : a.at > b.at ? 1 : 0;
+  });
   return out;
 }
 

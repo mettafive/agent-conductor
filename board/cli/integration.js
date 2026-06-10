@@ -9,6 +9,7 @@ import {
   writeJson,
 } from "./learning.js";
 import { validateConductor } from "./validate.js";
+import { stampBeat } from "./status-store.js";
 import {
   applyLockedEdges,
   checkWorkflowWithDependencyGuard,
@@ -336,11 +337,16 @@ export function makeIntegrationProgress({ statusPath, phaseToStep }) {
     cell.heartbeat = Array.isArray(cell.heartbeat) ? cell.heartbeat : [];
     const note = integrationProgressNote(evt);
     if (note) {
-      cell.heartbeat.push({
-        at: nowIso(),
-        note,
-        ...(evt.tone ? { tone: evt.tone } : {}),
-      });
+      // Stamp seq + event_at so integration beats sort by work-order in the terminal
+      // alongside the run's beats (integration is single-threaded, so seq is naturally
+      // monotonic here — the lock isn't needed, but the fields keep sorting consistent).
+      cell.heartbeat.push(
+        stampBeat(status, {
+          at: nowIso(),
+          note,
+          ...(evt.tone ? { tone: evt.tone } : {}),
+        }),
+      );
     }
     if (done || failed) cell.completed_at = nowIso();
     status.steps[key] = cell;

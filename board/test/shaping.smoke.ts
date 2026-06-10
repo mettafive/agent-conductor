@@ -93,5 +93,34 @@ assert(!!sibA && /saves time/.test(sibA.rationale || ""), `the rationale carries
 assert(!!sibA && !!sibB && JSON.stringify(sibA.requires) === "[0]" && JSON.stringify(sibB.requires) === "[0]", "siblings share the one upstream");
 assert(!!sibA && !!sibB && !sibA.requires.includes(2) && !sibB.requires.includes(1), "no inter-sibling edge (scheduler runs them in parallel)");
 
-console.log(`\n  ${failed ? `\x1b[31m${failed} failed\x1b[0m` : "\x1b[32mall passed\x1b[0m"}\n`);
-process.exit(failed ? 1 : 0);
+// 5. Work-order (Part B): the terminal sorts by (event_at, seq), NOT flush time `at`.
+//    The Card 2 scenario — a worker beat emitted EARLY but flushed LATE must sort
+//    BEFORE the gate beats; equal event_at breaks deterministically by seq.
+import("../src/lib/heartbeatStream").then(({ flattenBeats }) => {
+  const entry = {
+    snap: {
+      status: {
+        steps: {
+          "0": {
+            heartbeat: [
+              { at: "2026-01-01T00:00:05Z", event_at: "2026-01-01T00:00:01Z", seq: 5, note: "wrote the file" }, // early event, LATE flush
+              { at: "2026-01-01T00:00:02Z", event_at: "2026-01-01T00:00:02Z", seq: 2, note: "Checking" },
+              { at: "2026-01-01T00:00:03Z", event_at: "2026-01-01T00:00:03Z", seq: 3, note: "Passed" },
+              { at: "2026-01-01T00:00:04Z", event_at: "2026-01-01T00:00:01Z", seq: 1, note: "tiebreak" }, // same event_at as first, lower seq
+            ],
+          },
+        },
+      },
+      workflowJson: JSON.stringify({ steps: [{ title: "A" }] }),
+    },
+    history: [],
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const beats = flattenBeats({ wf: entry as any }, ["wf"]);
+  const order = beats.map((b) => b.note);
+  assert(order[0] === "tiebreak" && order[1] === "wrote the file", `equal event_at breaks by seq, then later event_at (got ${order.join(", ")})`);
+  assert(order.indexOf("wrote the file") < order.indexOf("Checking"), "early-event/late-flush beat sorts BEFORE the gate beats (Card 2 fixed)");
+
+  console.log(`\n  ${failed ? `\x1b[31m${failed} failed\x1b[0m` : "\x1b[32mall passed\x1b[0m"}\n`);
+  process.exit(failed ? 1 : 0);
+});

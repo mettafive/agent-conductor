@@ -374,7 +374,9 @@ function ExpandedMonitor({
     for (const b of shown) typedRef.current.add(b.key);
   }
   const [typingKey, setTypingKey] = useState<string | null>(null);
-  const nextToType = shown.find((b) => b.key !== typingKey && !typedRef.current.has(b.key)) ?? null;
+  // Control beats (pause/resume etc.) never enter the typing queue — they render
+  // immediately so the live state surfaces now, not after a backlog of typed notes.
+  const nextToType = shown.find((b) => b.key !== typingKey && !typedRef.current.has(b.key) && !b.control) ?? null;
   const catchingUp = !!nextToType; // a newer beat is parked behind the rider
   // The last VISIBLE beat (the rider, or the last one that finished typing) —
   // parked beats are hidden. The idle "live" cursor rides INLINE at the end of
@@ -390,7 +392,7 @@ function ExpandedMonitor({
   const rows: { b: StreamBeat; divider: string | null }[] = [];
   let prevWf: string | undefined;
   for (const b of shown) {
-    if (b.key !== typingKey && !typedRef.current.has(b.key)) continue; // parked — hidden
+    if (!b.control && b.key !== typingKey && !typedRef.current.has(b.key)) continue; // parked — hidden (control beats always show)
     rows.push({ b, divider: prevWf !== undefined && b.workflow !== prevWf ? b.workflow : null });
     prevWf = b.workflow;
   }
@@ -403,7 +405,7 @@ function ExpandedMonitor({
       return;
     }
     if (typingKey === null) {
-      const next = shown.find((b) => !typedRef.current.has(b.key));
+      const next = shown.find((b) => !typedRef.current.has(b.key) && !b.control);
       if (next) setTypingKey(next.key);
     }
   }, [shown, typingKey]);

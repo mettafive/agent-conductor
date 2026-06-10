@@ -9,6 +9,10 @@ export interface StreamBeat {
   step: string;
   title: string;
   at: string;
+  /** event time (work-order sort key); falls back to `at` when absent */
+  event_at: string;
+  /** per-run monotonic sequence — deterministic tiebreak for equal event_at */
+  seq?: number;
   note: string;
   insight?: Insight;
   iteration?: string;
@@ -16,15 +20,20 @@ export interface StreamBeat {
   finalBeat: boolean;
   system: boolean;
   tone?: "feedback" | "insight";
+  /** control-state beat (pause/resume etc.) — rendered immediately, not queued */
+  control?: boolean;
 }
 
 interface RawBeat {
   at?: string;
+  event_at?: string;
+  seq?: number;
   note?: string;
   iteration?: string;
   sub?: string;
   finalBeat?: boolean;
   system?: boolean;
+  control?: boolean;
   tone?: "feedback" | "insight";
   insight?: { id?: string; type?: string; seed?: string; title?: string; step?: string; scope?: string; confidence?: string };
 }
@@ -56,11 +65,14 @@ function toStreamBeat(
     step: stepId,
     title,
     at: h.at,
+    event_at: typeof h.event_at === "string" ? h.event_at : h.at,
+    seq: typeof h.seq === "number" ? h.seq : undefined,
     note: h.note,
     iteration: h.iteration ?? iteration,
     sub: h.sub ?? sub,
     finalBeat: h.finalBeat === true,
     system: h.system === true,
+    control: h.control === true,
     tone: h.tone === "feedback" || h.tone === "insight" ? h.tone : undefined,
     insight:
       h.insight && typeof h.insight.type === "string"
@@ -126,7 +138,16 @@ export function flattenBeats(
       }
     }
   }
-  out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  // Sort by WORK-ORDER: event_at first (when the work happened, so a late-flushed
+  // beat doesn't sort after the gate beats), then seq (the deterministic same-instant
+  // tiebreak assigned under the lock), then `at` for any legacy beat lacking both.
+  out.sort((a, b) => {
+    if (a.event_at !== b.event_at) return a.event_at < b.event_at ? -1 : 1;
+    const as = typeof a.seq === "number" ? a.seq : Number.POSITIVE_INFINITY;
+    const bs = typeof b.seq === "number" ? b.seq : Number.POSITIVE_INFINITY;
+    if (as !== bs) return as - bs;
+    return a.at < b.at ? -1 : a.at > b.at ? 1 : 0;
+  });
   return out;
 }
 

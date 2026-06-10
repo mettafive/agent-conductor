@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { resolveTopLevelIndex } from "./dependencies.js";
 import { artifactsDir, findReceiptArtifact } from "./artifacts.js";
+import { mutateStatus } from "./status-store.js";
 import {
   timingEnabled,
   TimingLedger,
@@ -97,13 +98,18 @@ function statusKey(status, doc, index) {
 }
 
 // Reset a card to pending so the next pass re-hands it (reclaim path).
+// Routed through the lock + a FRESH read so the dispatcher's whole-doc write never
+// clobbers a worker beat written since the loop's top-of-pass read.
 function resetCardToPending(statusPath, status, doc, index) {
-  const key = statusKey(status, doc, index);
-  const step = (status.steps[key] = status.steps[key] || { attempt: 1 });
-  step.status = "pending";
-  if (step.gate === "checking" || step.gate === "running") step.gate = "pending";
-  delete step.completed_at;
-  saveStatus(statusPath, status);
+  mutateStatus(statusPath, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const key = statusKey(fresh, doc, index);
+    const step = (fresh.steps[key] = fresh.steps[key] || { attempt: 1 });
+    step.status = "pending";
+    if (step.gate === "checking" || step.gate === "running") step.gate = "pending";
+    delete step.completed_at;
+  });
 }
 
 // Claim a card by writing status:"running" to disk — the dispatcher is the
@@ -112,25 +118,31 @@ function resetCardToPending(statusPath, status, doc, index) {
 // so the board renders the boot/ingest window under "running", not as a "next" gap.
 // Idempotent: if already running, leave started_at untouched.
 function claimCardRunning(statusPath, status, doc, index) {
-  const key = statusKey(status, doc, index);
-  const step = (status.steps[key] = status.steps[key] || { attempt: 1 });
-  if (step.status === "running") return; // already claimed; do not reset started_at
-  step.status = "running";
-  step.started_at = step.started_at || new Date().toISOString();
-  step.gate = step.gate && step.gate !== "passed" ? step.gate : "pending";
-  status.current_step = key;
-  saveStatus(statusPath, status);
+  mutateStatus(statusPath, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const key = statusKey(fresh, doc, index);
+    const step = (fresh.steps[key] = fresh.steps[key] || { attempt: 1 });
+    if (step.status === "running") return null; // already claimed; no write, no started_at reset
+    step.status = "running";
+    step.started_at = step.started_at || new Date().toISOString();
+    step.gate = step.gate && step.gate !== "passed" ? step.gate : "pending";
+    fresh.current_step = key;
+  });
 }
 
 // Mark a card failed (breaker tripped — stop re-handing forever).
 function blockCard(statusPath, status, doc, index, note) {
-  const key = statusKey(status, doc, index);
-  const step = (status.steps[key] = status.steps[key] || { attempt: 1 });
-  step.status = "failed";
-  step.gate = "failed";
-  step.completed_at = new Date().toISOString();
-  step.dispatch_note = note;
-  saveStatus(statusPath, status);
+  mutateStatus(statusPath, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const key = statusKey(fresh, doc, index);
+    const step = (fresh.steps[key] = fresh.steps[key] || { attempt: 1 });
+    step.status = "failed";
+    step.gate = "failed";
+    step.completed_at = new Date().toISOString();
+    step.dispatch_note = note;
+  });
 }
 
 // FIX 1.1: did the card's work LAND? gate accepted (passed) AND the receipt
@@ -158,12 +170,15 @@ function workLanded(statusPath, status, doc, index) {
 // learning fold/insight (a complete side-effect) is best-effort and may be
 // skipped when the worker raced ahead of its own `complete`.
 function finalizeAccepted(statusPath, status, doc, index) {
-  const key = statusKey(status, doc, index);
-  const step = (status.steps[key] = status.steps[key] || { attempt: 1 });
-  step.status = "done";
-  step.gate = "passed";
-  step.completed_at = step.completed_at || new Date().toISOString();
-  saveStatus(statusPath, status);
+  mutateStatus(statusPath, (fresh) => {
+    if (!fresh) return null;
+    fresh.steps = fresh.steps || {};
+    const key = statusKey(fresh, doc, index);
+    const step = (fresh.steps[key] = fresh.steps[key] || { attempt: 1 });
+    step.status = "done";
+    step.gate = "passed";
+    step.completed_at = step.completed_at || new Date().toISOString();
+  });
 }
 
 // ----- dependency graph (model-free fact-checks only) -----

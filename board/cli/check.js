@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
 import { appendAutoHeartbeat } from "./heartbeats.js";
+import { mutateStatus } from "./status-store.js";
 import { recordCheckerResult, resolveStep, statusEntry, discoverConductor } from "./complete.js";
 import { artifactForFile, artifactReadSources, isReadableArtifactPath, receiptArtifactName } from "./artifacts.js";
 
@@ -194,9 +195,12 @@ export async function runCheck(args) {
     return false;
   }
 
-  entry.gate = "checking";
-  appendAutoHeartbeat(status, resolved.loopPath, stepId, `Checking: ${resolved.step.title || stepId}`);
-  fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+  mutateStatus(statusPath, (fresh) => {
+    if (!fresh) return null;
+    const e = statusEntry(fresh, resolved.loopPath, stepId);
+    e.gate = "checking";
+    appendAutoHeartbeat(fresh, resolved.loopPath, stepId, `Checking: ${resolved.step.title || stepId}`);
+  });
 
   const { text: output, sources, artifactPaths } = collectOutput({
     args,
@@ -208,20 +212,24 @@ export async function runCheck(args) {
     step: resolved.step,
   });
   if (artifactPaths.length) {
-    entry.artifacts = [...new Set([...(Array.isArray(entry.artifacts) ? entry.artifacts : []), ...artifactPaths])];
-    fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+    mutateStatus(statusPath, (fresh) => {
+      if (!fresh) return null;
+      const e = statusEntry(fresh, resolved.loopPath, stepId);
+      e.artifacts = [...new Set([...(Array.isArray(e.artifacts) ? e.artifacts : []), ...artifactPaths])];
+    });
   }
 
   const instruction = String(resolved.step.instruction || "").trim();
   if (!output) {
     const evidence = "FAIL no output was produced.\nSUMMARY: No output was produced.";
-    status = readJson(statusPath);
-    recordCheckerResult(status, resolved, stepId, false, evidence, {
-      checker: "instruction",
-      output_sources: sources,
-      artifact_paths: artifactPaths,
+    mutateStatus(statusPath, (fresh) => {
+      if (!fresh) return null;
+      recordCheckerResult(fresh, resolved, stepId, false, evidence, {
+        checker: "instruction",
+        output_sources: sources,
+        artifact_paths: artifactPaths,
+      });
     });
-    fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
 
     console.log("");
     console.log(red(`✕ checker FAIL ${stepId}`));

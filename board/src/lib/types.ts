@@ -121,6 +121,13 @@ export interface Handoff {
 export interface HeartbeatEntry {
   at: string;
   note: string;
+  /** When the beat's EVENT actually occurred (the work moment), vs `at` which is the
+   *  write/flush time used for display. The terminal sorts by event_at so a late-flushed
+   *  beat still lands in work-order. Defaults to `at` when no distinct emit moment. */
+  event_at?: string;
+  /** Per-run monotonic sequence, assigned under the status lock at append time —
+   *  the deterministic tiebreak for beats with equal event_at. */
+  seq?: number;
   iteration?: string;
   /** the loop sub-step this beat belongs to (when bubbled from a sub-step) */
   sub?: string;
@@ -129,6 +136,10 @@ export interface HeartbeatEntry {
   finalBeat?: boolean;
   system?: boolean;
   tone?: "feedback" | "insight";
+  /** A control-state beat (pause/resume and other live system events). The terminal
+   *  renders these IMMEDIATELY, outside the typewriter backlog, so the live state
+   *  surfaces now — not after a queue of animated worker notes. */
+  control?: boolean;
   /** Opens a new activity card (one coherent unit of work: one intent, one target).
    *  This beat's note is the card title; following beats (no card) are its detail. */
   card?: boolean;
