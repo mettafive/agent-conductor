@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { EMPTY, useBoardState } from "./lib/useBoardState";
 import type { WorkflowEntry } from "./lib/useBoardState";
 import { buildModel } from "./lib/merge";
@@ -55,6 +55,35 @@ function pastRunBeats(model: BoardModel): StreamBeat[] {
 }
 
 const params = new URLSearchParams(window.location.search);
+
+/** The bridge beat between runs: a single calm line + an indeterminate LED-dot
+ *  loader in the status color, centered over the cleared board. It spans the real
+ *  reset/compose window; reduced-motion drops the dot pulse to a static row. */
+function RelaunchOverlay({ reduceMotion }: { reduceMotion: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: reduceMotion ? 0 : 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: reduceMotion ? 0 : -6 }}
+      transition={{ duration: reduceMotion ? 0.18 : 0.25, ease: "easeOut" }}
+      className="absolute inset-0 z-10 grid place-items-center"
+    >
+      <div className="flex flex-col items-center gap-3">
+        <p className="text-[14px] tracking-wide text-mist-2">Setting up your next run</p>
+        <div className="flex items-center gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="h-1.5 w-1.5 rounded-full bg-mint"
+              animate={reduceMotion ? { opacity: 0.6 } : { opacity: [0.25, 1, 0.25] }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 1.1, repeat: Infinity, ease: "easeInOut", delay: i * 0.18 }}
+            />
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export function App() {
   const { workflows, order, conn } = useBoardState();
@@ -229,6 +258,52 @@ export function App() {
     prevLiveRunId.current = liveModel.runId;
   }, [liveModel.runId, order, workflows, selectedWf]);
 
+  // ── Improve & Run transition (Part B) ──────────────────────────────────────
+  // A continuous, eased relaunch: board sweeps away → a "setting up" beat spans
+  // the real reset window → the fresh run rides in. Never a cut; the data always
+  // wins (the overlay dismisses the moment the fresh run is live, and a hard cap
+  // guarantees it never traps the board). prefers-reduced-motion → clean crossfade.
+  const reduceMotion = useReducedMotion();
+  const [relaunch, setRelaunch] = useState<{ phase: "sweep" | "setup"; fromRunId?: string; setupSince: number } | null>(null);
+  const startRelaunch = useCallback(() => {
+    setSelectedWf(null); // unpin so the running integration feed can lead
+    setRelaunch({ phase: "sweep", fromRunId: liveModel.runId, setupSince: 0 });
+  }, [liveModel.runId]);
+
+  // Phase 1 → 2: the board has eased away; bring up the setup beat.
+  useEffect(() => {
+    if (relaunch?.phase !== "sweep") return;
+    const t = setTimeout(
+      () => setRelaunch((r) => (r ? { ...r, phase: "setup", setupSince: Date.now() } : r)),
+      reduceMotion ? 0 : 350,
+    );
+    return () => clearTimeout(t);
+  }, [relaunch?.phase, reduceMotion]);
+
+  // The fresh loop is live once a new run_id appears or an integration feed is running.
+  const freshRunLive =
+    !!relaunch &&
+    ((!!liveModel.runId && liveModel.runId !== relaunch.fromRunId) ||
+      order.some((n) => workflows[n]?.snap?.variant === "integration" && statusOf(workflows[n]) === "running"));
+
+  // Phase 2 → hand off: dismiss when the fresh run is live AND the readability floor
+  // (~700ms) has elapsed — so the line reads, but never lingers past the real work.
+  useEffect(() => {
+    if (relaunch?.phase !== "setup" || !freshRunLive) return;
+    const floor = reduceMotion ? 0 : 700;
+    const wait = Math.max(0, floor - (Date.now() - relaunch.setupSince));
+    const t = setTimeout(() => setRelaunch(null), wait);
+    return () => clearTimeout(t);
+  }, [relaunch?.phase, relaunch?.setupSince, freshRunLive, reduceMotion]);
+
+  // Data wins, always: a hard cap dismisses the overlay even if the fresh run never
+  // materialises (e.g. integration failed and the run halted) — never trap the board.
+  useEffect(() => {
+    if (!relaunch) return;
+    const cap = setTimeout(() => setRelaunch(null), 12000);
+    return () => clearTimeout(cap);
+  }, [relaunch]);
+
   useEffect(() => {
     const url = new URL(window.location.href);
     activeWf ? url.searchParams.set("wf", activeWf) : url.searchParams.delete("wf");
@@ -355,15 +430,30 @@ export function App() {
           )}
 
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            {boardStarted ? (
-              <WorkflowKanban
-                model={model}
-                notes={model.developerNotes}
-                elapsed={elapsed}
-              />
-            ) : (
-              <WaitingState model={model} statusPath={liveSnap.statusPath} />
-            )}
+            <motion.div
+              className="h-full"
+              animate={relaunch ? { opacity: 0, y: reduceMotion ? 0 : -8 } : { opacity: 1, y: 0 }}
+              transition={
+                relaunch
+                  ? { duration: reduceMotion ? 0.18 : 0.35, ease: "easeOut" } // sweep away
+                  : reduceMotion
+                    ? { duration: 0.18 }
+                    : { type: "spring", stiffness: 360, damping: 26 } // ride back in with a settle
+              }
+            >
+              {boardStarted ? (
+                <WorkflowKanban
+                  model={model}
+                  notes={model.developerNotes}
+                  elapsed={elapsed}
+                />
+              ) : (
+                <WaitingState model={model} statusPath={liveSnap.statusPath} />
+              )}
+            </motion.div>
+            <AnimatePresence>
+              {relaunch && <RelaunchOverlay reduceMotion={!!reduceMotion} />}
+            </AnimatePresence>
           </div>
 
           {!viewing &&
@@ -396,6 +486,7 @@ export function App() {
             model={model}
             insightCount={freshInsightCount}
             onOpenInsights={() => setShowInsights(true)}
+            onRelaunch={startRelaunch}
           />
 
           <HeartbeatMonitor

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import type { BoardModel, BoardStep, Column as Col, DeveloperNote } from "../lib/types";
 import { fmtDur } from "../lib/format";
 import { clockSince } from "../lib/view";
@@ -1251,12 +1251,16 @@ export function RunCompleteBanner({
   model,
   insightCount = 0,
   onOpenInsights,
+  onRelaunch,
 }: {
   model: BoardModel;
   /** Fresh-insight count for this run (App-computed); shown as an inline badge. */
   insightCount?: number;
   /** Opens the insights modal. */
   onOpenInsights?: () => void;
+  /** Fires on click to drive the App-level relaunch transition (board sweep →
+   *  setup beat → fresh run rides in). The POST below still launches the run. */
+  onRelaunch?: () => void;
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1284,6 +1288,7 @@ export function RunCompleteBanner({
     if (starting) return;
     setStarting(true);
     setError(null);
+    onRelaunch?.(); // kick off the board sweep → setup beat the instant the click lands
     try {
       const res = await fetch(`/api/workflow/${encodeURIComponent(model.workflow)}/start-run`, {
         method: "POST",
@@ -1351,7 +1356,7 @@ export function RunCompleteBanner({
                   type="button"
                   disabled={starting}
                   onClick={() => void startRun()}
-                  className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-colors hover:bg-mint/25 disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
+                  className="shrink-0 rounded-md border border-mint/40 bg-mint/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-mint transition-[colors,transform] hover:bg-mint/25 active:scale-[0.97] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-dim"
                 >
                   {starting ? "Starting..." : buttonLabel}
                 </button>
@@ -1843,6 +1848,10 @@ function WorkflowCard({
   // shim so the existing `setOpen((v) => !v)` call sites keep working; the actual
   // toggle is owned by the board (the arg is ignored — it just flips this card).
   const setOpen = (_next?: boolean | ((v: boolean) => boolean)) => onToggle?.();
+  // The "BAM": integration (shaping) cards land with a spring-overshoot when they
+  // arrive after a relaunch — the one moment of impact. Reduced motion → plain fade.
+  const reduceMotion = useReducedMotion();
+  const bam = step.phase === "shaping" && !reduceMotion;
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [insightModalOpen, setInsightModalOpen] = useState(false);
   const [conditionModalOpen, setConditionModalOpen] = useState(false);
@@ -1907,10 +1916,10 @@ function WorkflowCard({
       <motion.div
         layout
         layoutId={`workflow-card-${step.id}`}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        initial={bam ? { opacity: 0, scale: 0.96 } : { opacity: 0 }}
+        animate={bam ? { opacity: 1, scale: 1 } : { opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={MOVE}
+        transition={bam ? { ...MOVE, scale: { type: "spring", stiffness: 520, damping: 18 } } : MOVE}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
