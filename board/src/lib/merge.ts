@@ -336,7 +336,9 @@ function buildModelImpl(snap: Snapshot): BoardModel {
       attempt: st.attempt ?? 1,
       started_at: st.started_at,
       completed_at: st.completed_at,
-      phase: "workflow",
+      // "shaping" for the integration cards that rewrite the plan (carried as
+      // kind from the raw step); the work cards are "workflow". Read distinct.
+      phase: s.kind === "shaping" ? "shaping" : "workflow",
       branchTaken: st.branch_taken,
       output_value: st.output,
       criteria: buildCriteria(s, st.gate_detail),

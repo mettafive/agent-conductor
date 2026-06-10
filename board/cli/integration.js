@@ -231,6 +231,9 @@ function integrationWorkflow(openItems) {
       instruction: phase.instruction,
       requires: index === 0 ? [] : [index - 1],
       phase_key: phase.key,
+      // These cards SHAPE the plan (rewrite the card list) rather than do work.
+      // The board reads `kind` into phase "shaping" and renders them distinct.
+      kind: "shaping",
     })),
   };
 }

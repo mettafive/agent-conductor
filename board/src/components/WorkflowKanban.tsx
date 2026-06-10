@@ -1967,6 +1967,14 @@ function WorkflowCard({
         <div className="flex items-center gap-2.5">
           <Led state={step.column} />
           <span className="min-w-0 flex-1 truncate text-[16px] text-chalk">{step.title}</span>
+          {step.phase === "shaping" && (
+            <span
+              title="shaping — rewrites the plan before the work runs"
+              className="flex shrink-0 items-center gap-1 rounded-full border border-iris/40 bg-iris/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-iris"
+            >
+              shaping
+            </span>
+          )}
           {isReady && (
             <span
               title="next — dependencies met, queued to go"
@@ -2213,7 +2221,11 @@ export function WorkflowKanban({
 }) {
   const [settledView, setSettledView] = useState<"summary" | "board">("board");
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
-  const allRawSteps = model.steps.filter((s) => s.phase === "workflow");
+  // Render work AND shaping cards on the board (shaping = the integration cards
+  // that lead the run); only the auto-injected Phase-0 "improve" cards are kept
+  // off the main board. On an ordinary work feed there are no shaping cards, so
+  // this is identical to the old workflow-only filter.
+  const allRawSteps = model.steps.filter((s) => s.phase !== "improve");
   const rawSteps = allRawSteps.filter((s) => !s.retired);
   const rawSettled = model.overallStatus === "done" || model.overallStatus === "failed";
   const steps = useDwellSteps(rawSteps, rawSteps.length > 0, false);
@@ -2244,7 +2256,7 @@ export function WorkflowKanban({
   const displayAllSteps = settled
     ? allSteps
     : latchedSettled
-      ? settledSnapshot.model.steps.filter((s) => s.phase === "workflow")
+      ? settledSnapshot.model.steps.filter((s) => s.phase !== "improve")
       : allSteps;
   const displayNotes = settled ? notes : latchedSettled ? settledSnapshot.notes : notes;
   const cols: Col[] = displaySteps.some((s) => s.column === "failed") ? [...BASE_COLS, "failed"] : BASE_COLS;

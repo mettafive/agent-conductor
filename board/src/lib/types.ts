@@ -21,6 +21,9 @@ export interface ConductorStep {
   summary?: string;
   firstLine: string;
   isCondition: boolean;
+  /** general card kind label carried from the raw step (e.g. "shaping" for the
+   *  integration cards that rewrite the plan). Undefined for ordinary work cards. */
+  kind?: string;
   retired?: boolean;
   retired_by?: string;
   output?: string;
@@ -206,8 +209,9 @@ export interface BoardStep extends ConductorStep {
   completed_at?: string;
   /** present on auto-injected _improve::* / _validate Phase 0 cards */
   improve?: ImproveMeta;
-  /** "improve" for the Phase 0 self-improvement cards, else "workflow" */
-  phase: "improve" | "workflow";
+  /** "improve" for the Phase 0 self-improvement cards, "shaping" for the
+   *  integration cards that rewrite the plan, else "workflow" (the work cards). */
+  phase: "improve" | "workflow" | "shaping";
   branchTaken?: string;
   output_value?: unknown;
   criteria: GateCriterion[];

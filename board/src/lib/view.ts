@@ -76,7 +76,9 @@ function latestBeatStep(workflow: BoardStep[]): BoardStep | null {
  *  it never snaps to a dead "preparing…" while cards are being written, and Esc lands here.
  *  Only with zero heartbeats anywhere (truly nothing yet) do we fall through to idle/last. */
 export function followStep(model: BoardModel): BoardStep | null {
-  const workflow = model.steps.filter((s) => s.phase === "workflow");
+  // Work AND shaping cards are followable (shaping = the integration cards that
+  // lead the run); only Phase-0 improve cards are handled by the special case below.
+  const workflow = model.steps.filter((s) => s.phase === "workflow" || s.phase === "shaping");
   return (
     workflow.find((s) => s.column === "running") ??
     workflow.find((s) => s.id === model.currentStep && s.heartbeat.length > 0) ??
