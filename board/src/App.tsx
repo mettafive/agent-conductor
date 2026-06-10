@@ -66,7 +66,11 @@ function RelaunchOverlay({ reduceMotion }: { reduceMotion: boolean }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: reduceMotion ? 0 : -6 }}
       transition={{ duration: reduceMotion ? 0.18 : 0.25, ease: "easeOut" }}
-      className="absolute inset-0 z-10 grid place-items-center"
+      // Top-anchored (a stable vh offset), NOT vertically centered: the board
+      // container is flex-1, so it resizes when the run-complete banner appears/
+      // disappears underneath — a centered overlay would jump with it. Anchoring to
+      // the container's stable top keeps "Setting up…" rock-steady through the sweep.
+      className="absolute inset-x-0 top-0 bottom-0 z-10 flex items-start justify-center pt-[32vh]"
     >
       <div className="flex flex-col items-center gap-3">
         <p className="text-[14px] tracking-wide text-mist-2">Setting up your next run</p>
@@ -525,7 +529,12 @@ export function App() {
             done={
               viewingPast
                 ? true
-                : liveModel.overallStatus === "done" || liveModel.overallStatus === "failed"
+                : // Only the WORK run's completion shows "Board complete" — not a
+                  // compile/integration feed finishing (and being held), which would
+                  // pop the closing line prematurely between integration and the run.
+                  !!activeWf &&
+                  isRunFeed(activeWf) &&
+                  (liveModel.overallStatus === "done" || liveModel.overallStatus === "failed")
             }
             knowledge={viewingPast ? (viewedModel as BoardModel).knowledge : liveModel.knowledge}
             doneCount={viewingPast ? (viewedModel as BoardModel).done : liveModel.done}

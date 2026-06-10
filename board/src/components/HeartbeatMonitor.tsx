@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Arrival, StreamBeat } from "../lib/heartbeatStream";
@@ -382,6 +382,19 @@ function ExpandedMonitor({
   let lastVisibleKey: string | undefined;
   for (const b of shown) if (b.key === typingKey || typedRef.current.has(b.key)) lastVisibleKey = b.key;
 
+  // Phase dividers: the stream spans every feed (compile → integration → run), so
+  // when consecutive VISIBLE beats cross from one workflow to another (e.g.
+  // "Integrating insights" → the skill run), drop a labelled divider. The history
+  // then reads as clear phases — you can see exactly where integration ended and
+  // the run began. (Parked beats are skipped so the boundary lands on real rows.)
+  const rows: { b: StreamBeat; divider: string | null }[] = [];
+  let prevWf: string | undefined;
+  for (const b of shown) {
+    if (b.key !== typingKey && !typedRef.current.has(b.key)) continue; // parked — hidden
+    rows.push({ b, divider: prevWf !== undefined && b.workflow !== prevWf ? b.workflow : null });
+    prevWf = b.workflow;
+  }
+
   // Pump: when nothing is typing, pull the oldest parked beat in. Also clears a
   // stale rider whose beat a run reset removed, so the queue never gets stuck.
   useEffect(() => {
@@ -524,14 +537,16 @@ function ExpandedMonitor({
           </div>
         ) : (
           <div ref={contentRef}>
-          {shown.map((b) => {
-            // Parked (queued behind the rider) — a not-yet-typed beat that isn't
-            // the current rider stays hidden from its FIRST render, so it rides in
-            // when it's its turn instead of flashing its full text.
-            if (b.key !== typingKey && !typedRef.current.has(b.key)) return null;
-            return (
+          {rows.map(({ b, divider }) => (
+            <Fragment key={b.key}>
+            {divider && (
+              <div className="my-2 flex select-none items-center gap-2 text-dim">
+                <span className="h-px flex-1 bg-line/60" />
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em]">{divider}</span>
+                <span className="h-px flex-1 bg-line/60" />
+              </div>
+            )}
             <div
-              key={b.key}
               className={`flex items-start gap-2.5 rounded py-1 ${
                 b.tone === "feedback" || b.tone === "insight" || b.insight ? "-mx-1 bg-amber/[0.06] px-1" : ""
               }`}
@@ -577,8 +592,8 @@ function ExpandedMonitor({
                 </button>
               )}
             </div>
-            );
-          })}
+            </Fragment>
+          ))}
           {done && (
             // The closing line — after every beat (and the last insight). The run
             // is over and the board is yours again.
