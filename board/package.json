@@ -1,6 +1,6 @@
 {
   "name": "conductor-board",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "description": "A portable spec and live Kanban board for orchestrating AI agent workflows.",
   "license": "MIT",
   "author": "mettafive",
