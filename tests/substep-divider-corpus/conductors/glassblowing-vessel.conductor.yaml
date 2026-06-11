@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: glassblowing-vessel
+description: >
+  glassblowing vessel — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-vessels
+    instruction: |
+      Scope the vessels to process. Frontload every vessel as a pending iteration.
+    output: vessels
+    gate:
+      - check: "npx conductor-board check scope-vessels"
+      - "Every vessel captured before any work begins"
+
+  - id: glassblowing-vessel-loop
+    type: loop
+    over: vessels
+    as: vessel
+    requires: [scope-vessels]
+    steps:
+      - id: gather-gob
+        instruction: |
+          gather gob: gather, gob.
+        gate:
+          - check: "npx conductor-board check gather-gob"
+          - name: "gather gob is correct"
+            check: "node verify-unit.mjs gather-gob --out out/gather-gob.json"
+      - id: shape-form
+        instruction: |
+          shape form: shape, marver block.
+        gate:
+          - check: "npx conductor-board check shape-form"
+          - name: "shape form is correct"
+            check: "node verify-unit.mjs shape-form --out out/shape-form.json"
+      - id: color-apply
+        instruction: |
+          color apply: color, frit roll.
+        gate:
+          - check: "npx conductor-board check color-apply"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: anneal
+        instruction: |
+          anneal: anneal, lehr.
+        gate:
+          - check: "npx conductor-board check anneal"
+          - name: "anneal is correct"
+            check: "node verify-unit.mjs anneal --out out/anneal.json"

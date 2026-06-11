@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: moderation-queue
+description: >
+  moderation queue — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-posts
+    instruction: |
+      Scope the posts to process. Frontload every post as a pending iteration.
+    output: posts
+    gate:
+      - check: "npx conductor-board check scope-posts"
+      - "Every post captured before any work begins"
+
+  - id: moderation-queue-loop
+    type: loop
+    over: posts
+    as: post
+    requires: [scope-posts]
+    steps:
+      - id: read-post
+        instruction: |
+          read post: read post, load content.
+        gate:
+          - check: "npx conductor-board check read-post"
+          - name: "read post is correct"
+            check: "node verify-unit.mjs read-post --out out/read-post.json"
+      - id: classify-policy
+        instruction: |
+          classify policy: classify, policy match.
+        gate:
+          - check: "npx conductor-board check classify-policy"
+          - name: "classify policy is correct"
+            check: "node verify-unit.mjs classify-policy --out out/classify-policy.json"
+      - id: context-check
+        instruction: |
+          context check: context, nuance.
+        gate:
+          - check: "npx conductor-board check context-check"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: action-post
+        instruction: |
+          action post: action, remove keep.
+        gate:
+          - check: "npx conductor-board check action-post"
+          - name: "action post is correct"
+            check: "node verify-unit.mjs action-post --out out/action-post.json"

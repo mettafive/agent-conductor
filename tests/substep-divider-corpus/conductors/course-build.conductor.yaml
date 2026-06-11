@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: course-build
+description: >
+  course build — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-lessons
+    instruction: |
+      Scope the lessons to process. Frontload every lesson as a pending iteration.
+    output: lessons
+    gate:
+      - check: "npx conductor-board check scope-lessons"
+      - "Every lesson captured before any work begins"
+
+  - id: course-build-loop
+    type: loop
+    over: lessons
+    as: lesson
+    requires: [scope-lessons]
+    steps:
+      - id: outline-lesson
+        instruction: |
+          outline lesson: outline lesson, learning objectives.
+        gate:
+          - check: "npx conductor-board check outline-lesson"
+          - name: "outline lesson is correct"
+            check: "node verify-unit.mjs outline-lesson --out out/outline-lesson.json"
+      - id: write-content
+        instruction: |
+          write content: write content, lesson body.
+        gate:
+          - check: "npx conductor-board check write-content"
+          - name: "write content is correct"
+            check: "node verify-unit.mjs write-content --out out/write-content.json"
+      - id: quiz
+        instruction: |
+          quiz: quiz, assessment.
+        gate:
+          - check: "npx conductor-board check quiz"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: transcript
+        instruction: |
+          transcript: transcript, captions.
+        gate:
+          - check: "npx conductor-board check transcript"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: publish-lesson
+        instruction: |
+          publish lesson: publish, lms.
+        gate:
+          - check: "npx conductor-board check publish-lesson"
+          - name: "publish lesson is correct"
+            check: "node verify-unit.mjs publish-lesson --out out/publish-lesson.json"

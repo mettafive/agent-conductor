@@ -19,6 +19,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyPauseResume } from "../cli/pause-core.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BOARD = path.resolve(HERE, "..");
@@ -70,7 +71,8 @@ const test = (name, fn) => scenarios.push({ name, fn });
 test("PT1 /pause flips to paused + freezes the clock", async () => {
   const tmp = tmpdir(); const port = portCounter++;
   const runningSince = new Date(Date.now() - 3000).toISOString(); // running for ~3s
-  const { scoped, status } = seed(tmp, "pone", { workflow: "pone", status: "running", running_since: runningSince, elapsed_ms: 1000, steps: { "0": { status: "running" } } });
+  const { scoped, status } = seed(tmp, "pone", { workflow: "pone", status: "running", running_since: runningSince, elapsed_ms: 1000, steps: { "0": { status: "running" }, "1": { status: "pending" } } });
+  fs.writeFileSync(path.join(scoped, "workflow.json"), JSON.stringify({ conductor: "3.0.0", name: "pone", steps: [{ title: "A", requires: [] }, { title: "B", requires: [0] }] }, null, 2));
   await startBoard(scoped, port);
   const r = await req("POST", port, "/api/workflow/pone/pause");
   assert(r.status === 200 && r.json?.status === "paused", `pause should 200 paused: ${JSON.stringify(r.json)}`);
@@ -115,15 +117,43 @@ test("PT3 idempotent: pause-while-paused and resume-while-running are no-ops", a
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+test("PT4 final-card pause is acknowledged but does not enter paused", () => {
+  const status = {
+    workflow: "pfinal",
+    status: "running",
+    running_since: new Date(Date.now() - 3000).toISOString(),
+    elapsed_ms: 1000,
+    current_step: 1,
+    steps: {
+      "0": { status: "done" },
+      "1": { status: "running", heartbeat: [] },
+    },
+  };
+  const doc = { steps: [{ title: "Done", requires: [] }, { title: "Final", requires: [0] }] };
+  const applied = applyPauseResume(status, "pause", doc);
+  assert(applied === "final-drain", `expected final-drain, got ${applied}`);
+  assert(status.status === "running", "final-card pause must not put the run into paused");
+  assert(typeof status.running_since === "string", "final-card pause must not freeze the regular run timer");
+  const beat = status.steps["1"].heartbeat.at(-1)?.note || "";
+  assert(/run will complete instead of holding/.test(beat), `expected final-drain heartbeat, got ${beat}`);
+});
+
 test("PT4 one pause path: dispatcher DRAINS, the endpoint/CLI ANNOUNCE (shared core)", () => {
   const disp = fs.readFileSync(path.join(BOARD, "cli", "dispatch.js"), "utf8");
   // drain-and-hold: the dispatcher idles when paused (hands nothing), never kills in-flight
   assert(/status\.status === "paused"/.test(disp), "the dispatcher must honor paused (drain-and-hold)");
+  assert(/PREWARM_PAUSE_GRACE_MS/.test(disp), "pause keeps speculative prewarm probes for a short resume grace");
+  assert(/markPrewarmsPaused\(\)/.test(disp) && /reapExpiredPausedPrewarms\(\)/.test(disp), "pause marks prewarm probes and reaps them after the grace");
+  assert(/clearPrewarmPauseMarks\(\)/.test(disp), "resume clears paused prewarm grace marks");
+  assert(/allTerminalWhilePaused/.test(disp) && /finish\(pausedStatus\)/.test(disp), "pause on the final running card must still allow run completion after drain");
   // …but it NO LONGER announces — the late narration is gone from the dispatcher
   assert(!/prevDispatchStatus/.test(disp) && !/emitControlBeat/.test(disp), "the dispatcher no longer narrates pause/resume (the click receiver does)");
   // the shared core owns the announcement: notes + the control beat + the one write
   const core = fs.readFileSync(path.join(BOARD, "cli", "pause-core.js"), "utf8");
   assert(/still running will finish, then holding/.test(core), "pause-core names the in-flight count");
+  assert(/Pause requested on the final running card/.test(core), "pause-core explains final-card pause will complete instead of holding");
+  assert(/pauseWouldCompleteAfterDrain/.test(core), "pause-core detects the final running batch");
+  assert(/return "final-drain"/.test(core), "final-card pause must acknowledge without entering paused");
   assert(/Resuming — dispatching/.test(core), "pause-core names the next card on resume");
   assert(/control: true/.test(core) && /export function applyPauseResume/.test(core), "pause-core emits a control beat in the single applyPauseResume path");
   // BOTH callers use the same locked path
@@ -140,7 +170,11 @@ test("PT4 one pause path: dispatcher DRAINS, the endpoint/CLI ANNOUNCE (shared c
   assert(/\{activeDispatch && \(/.test(kanban), "the button gates on the shared activeDispatch (hasActiveDispatch) signal, not a bare flag");
   const liveness = fs.readFileSync(path.join(BOARD, "src", "lib", "liveness.ts"), "utf8");
   assert(/export function hasActiveDispatch/.test(liveness), "hasActiveDispatch is the one shared definition");
-  assert(/setPending\(action\)/.test(kanban) && /Pausing…/.test(kanban), "the button registers the click optimistically (Pausing…/Resuming…)");
+  assert(/setPending\(pauseAction\)/.test(kanban) && /pausePending/.test(kanban), "the button registers the click optimistically");
+  assert(/pauseInFlightRef/.test(kanban), "pause/resume click path has a synchronous in-flight guard");
+  assert(/body\.status === "final-drain"/.test(kanban), "final-card pause clears the optimistic button state without needing a resume");
+  assert(/w-\[92px\]/.test(kanban) && /key=\{pauseVisual\}/.test(kanban) && /AnimatePresence mode="wait"/.test(kanban), "pause button is compact and crossfades pause/resume content");
+  assert(/elapsed\?: string \| null/.test(kanban) && /finished\{elapsed \?/.test(kanban), "completion banner uses the same elapsed timer as the header");
 });
 
 // ── runner ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: warehouse-pick
+description: >
+  warehouse pick — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-orders
+    instruction: |
+      Scope the orders to process. Frontload every order as a pending iteration.
+    output: orders
+    gate:
+      - check: "npx conductor-board check scope-orders"
+      - "Every order captured before any work begins"
+
+  - id: warehouse-pick-loop
+    type: loop
+    over: orders
+    as: order
+    requires: [scope-orders]
+    steps:
+      - id: read-order
+        instruction: |
+          read order: read order, line items.
+        gate:
+          - check: "npx conductor-board check read-order"
+          - name: "read order is correct"
+            check: "node verify-unit.mjs read-order --out out/read-order.json"
+      - id: plan-route
+        instruction: |
+          plan route: plan route, pick path.
+        gate:
+          - check: "npx conductor-board check plan-route"
+          - name: "plan route is correct"
+            check: "node verify-unit.mjs plan-route --out out/plan-route.json"
+      - id: batch-merge
+        instruction: |
+          batch merge: batch, wave pick.
+        gate:
+          - check: "npx conductor-board check batch-merge"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: confirm-pick
+        instruction: |
+          confirm pick: confirm pick, mark fulfilled.
+        gate:
+          - check: "npx conductor-board check confirm-pick"
+          - name: "confirm pick is correct"
+            check: "node verify-unit.mjs confirm-pick --out out/confirm-pick.json"

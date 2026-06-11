@@ -1,0 +1,43 @@
+conductor: 2.0.0
+name: grant-application
+description: >
+  grant application — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: read-rfp
+    instruction: |
+      read rfp: read rfp, requirements.
+    gate:
+      - check: "npx conductor-board check read-rfp"
+      - name: "read rfp is correct"
+        check: "node verify-unit.mjs read-rfp --out out/read-rfp.json"
+  - id: draft-proposal
+    instruction: |
+      draft proposal: draft proposal, narrative.
+    requires: [read-rfp]
+    gate:
+      - check: "npx conductor-board check draft-proposal"
+      - name: "draft proposal is correct"
+        check: "node verify-unit.mjs draft-proposal --out out/draft-proposal.json"
+  - id: budget-justify
+    instruction: |
+      budget justify: budget justification, cost narrative.
+    requires: [draft-proposal]
+    gate:
+      - check: "npx conductor-board check budget-justify"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: impact-metrics
+    instruction: |
+      impact metrics: impact metrics, outcomes.
+    requires: [budget-justify]
+    gate:
+      - check: "npx conductor-board check impact-metrics"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: submit-grant
+    instruction: |
+      submit grant: submit, file application.
+    requires: [impact-metrics]
+    gate:
+      - check: "npx conductor-board check submit-grant"
+      - name: "submit grant is correct"
+        check: "node verify-unit.mjs submit-grant --out out/submit-grant.json"

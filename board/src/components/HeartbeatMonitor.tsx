@@ -4,12 +4,19 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { Arrival, StreamBeat } from "../lib/heartbeatStream";
 import type { KnowledgeEntry } from "../lib/types";
 import { plainNote } from "../lib/heartbeat";
+import { displayName, lifecyclePhase } from "../lib/identity";
 import { AnimatedHeart } from "./AnimatedHeart";
 import { TypewriterText } from "./TypewriterText";
 
 export type MonitorMode = "min" | "expanded";
 
 const MODE_KEY = "cb-monitor";
+
+function workflowDividerLabel(workflow: string): string {
+  const phase = lifecyclePhase(workflow);
+  const name = displayName(workflow);
+  return phase ? `${name} · ${phase}` : name;
+}
 
 function clock(iso: string): string {
   const d = new Date(iso);
@@ -39,6 +46,34 @@ export function loadMonitorMode(): MonitorMode {
 }
 
 type Conn = "connecting" | "live" | "lost";
+
+function beatMs(iso?: string): number {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+function usePageVisibility() {
+  const [state, setState] = useState(() => ({
+    visible: typeof document === "undefined" ? true : document.visibilityState !== "hidden",
+    resumeAtMs: 0,
+  }));
+
+  useEffect(() => {
+    const onVisibility = () => {
+      const visible = document.visibilityState !== "hidden";
+      setState((prev) => ({
+        visible,
+        // If the tab was backgrounded, any beat that arrived before the user
+        // returned is old news. Render it settled instead of replaying a queue.
+        resumeAtMs: visible && !prev.visible ? Date.now() : prev.resumeAtMs,
+      }));
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  return state;
+}
 
 function beatTextClass(b?: Pick<StreamBeat, "tone" | "note" | "system" | "insight">): string {
   if (!b) return "text-mist";
@@ -71,6 +106,7 @@ function ConnDot({ conn }: { conn?: Conn }) {
 type ShownInsight = {
   title: string;
   note?: string;
+  id?: string;
   current?: string;
   proposed?: string;
   scope?: string;
@@ -88,7 +124,8 @@ function insightFor(b: StreamBeat, knowledge?: KnowledgeEntry[]): ShownInsight {
     (seed ? knowledge?.find((e) => e.title?.startsWith(seed.slice(0, 24))) : undefined);
   return {
     title: k?.title ?? b.insight?.title ?? seed,
-    note: k?.note,
+    id: k?.id ?? b.insight?.id,
+    note: k?.note ?? k?.detail,
     current: k?.current,
     proposed: k?.proposed,
     scope: k?.scope ?? b.insight?.scope,
@@ -102,9 +139,10 @@ function insightFor(b: StreamBeat, knowledge?: KnowledgeEntry[]): ShownInsight {
  *  Passed" pings are dropped); insights carry their full captured detail, not just
  *  the chip. Scoped to the beats the terminal currently holds — the last run, not
  *  any setup/lifecycle feed. */
-function buildRunDigest(beats: StreamBeat[], knowledge?: KnowledgeEntry[]): string {
-  const real = beats.filter((b) => !b.system && plainNote(b.note).trim());
-  const workflow = real[0]?.workflow ?? beats[0]?.workflow ?? "workflow";
+function buildRunDigest(beats: StreamBeat[], knowledge?: KnowledgeEntry[], currentWorkflow?: string, currentRunId?: string): string {
+  const scopedBeats = currentWorkflow ? beats.filter((b) => b.workflow === currentWorkflow) : beats;
+  const real = scopedBeats.filter((b) => !b.system && plainNote(b.note).trim());
+  const workflow = currentWorkflow ?? real[0]?.workflow ?? scopedBeats[0]?.workflow ?? "workflow";
   const lines: string[] = [`# Run heartbeats — ${workflow}`, ""];
   for (const b of real) {
     const card = b.title ? `${b.title} — ` : "";
@@ -113,17 +151,35 @@ function buildRunDigest(beats: StreamBeat[], knowledge?: KnowledgeEntry[]): stri
   }
   const seen = new Set<string>();
   const insights: ShownInsight[] = [];
-  for (const b of beats) {
+  for (const b of scopedBeats) {
     if (!b.insight) continue;
     const ins = insightFor(b, knowledge);
-    if (seen.has(ins.title)) continue;
-    seen.add(ins.title);
+    const key = ins.id ?? ins.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
     insights.push(ins);
+  }
+  for (const k of knowledge ?? []) {
+    if (currentRunId && k.source_run !== currentRunId) continue;
+    const key = k.id ?? k.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const legacyNote = (k as KnowledgeEntry & { note?: string }).note;
+    insights.push({
+      id: k.id,
+      title: k.title,
+      note: legacyNote ?? k.detail,
+      current: k.current,
+      proposed: k.proposed,
+      scope: k.scope,
+      step: k.step ?? String(k.source_card_title ?? k.source_card ?? ""),
+      observed: k.observed,
+    });
   }
   if (insights.length) {
     lines.push("", `## Insights captured this run (${insights.length})`, "");
     for (const ins of insights) {
-      lines.push(`### ${ins.title}`);
+      lines.push(`### ${ins.id ? `${ins.id}: ` : ""}${ins.title}`);
       if (ins.note) lines.push(ins.note);
       if (ins.current) lines.push(`- was:  ${ins.current}`);
       if (ins.proposed) lines.push(`- now:  ${ins.proposed}`);
@@ -218,6 +274,9 @@ interface Props {
   done?: boolean;
   /** the knowledge store — lets an insight beat open its full captured detail in a modal */
   knowledge?: KnowledgeEntry[];
+  /** Active workflow/run scope for the clipboard digest. */
+  currentWorkflow?: string;
+  currentRunId?: string;
   /** the ONE view identity — when it changes (a different run/view), the typing cache is
    *  reset so the previous run's beats render settled instead of re-typing. */
   streamIdentity?: string;
@@ -236,8 +295,11 @@ export function HeartbeatMonitor({
   stallSeconds,
   done,
   knowledge,
+  currentWorkflow,
+  currentRunId,
   streamIdentity,
 }: Props) {
+  const page = usePageVisibility();
   const streamKey = arrival?.beat.key;
   // The prominent single line is the agent's "what's happening" sentence — its own
   // update notes are PRIMARY (the agent's voice), so the collapsed monitor surfaces the
@@ -285,7 +347,7 @@ export function HeartbeatMonitor({
         >
           {latest ? (
             <span className={`min-w-0 flex-1 whitespace-normal break-words font-mono text-[14px] leading-relaxed ${beatTextClass(latest)}`}>
-              {latest.key === streamKey ? (
+              {latest.key === streamKey && page.visible && (!page.resumeAtMs || beatMs(latest.at) > page.resumeAtMs) ? (
                 <TypewriterText text={plainNote(latest.note)} />
               ) : (
                 plainNote(latest.note)
@@ -313,7 +375,11 @@ export function HeartbeatMonitor({
       stallSeconds={stallSeconds}
       done={done}
       knowledge={knowledge}
+      currentWorkflow={currentWorkflow}
+      currentRunId={currentRunId}
       streamIdentity={streamIdentity}
+      pageVisible={page.visible}
+      pageResumeAtMs={page.resumeAtMs}
     />
   );
 }
@@ -327,7 +393,11 @@ function ExpandedMonitor({
   stallSeconds,
   done,
   knowledge,
+  currentWorkflow,
+  currentRunId,
   streamIdentity,
+  pageVisible,
+  pageResumeAtMs,
 }: {
   beats: StreamBeat[];
   order: string[];
@@ -338,7 +408,11 @@ function ExpandedMonitor({
   stallSeconds?: number;
   done?: boolean;
   knowledge?: KnowledgeEntry[];
+  currentWorkflow?: string;
+  currentRunId?: string;
   streamIdentity?: string;
+  pageVisible: boolean;
+  pageResumeAtMs: number;
 }) {
   const [modalInsight, setModalInsight] = useState<ShownInsight | null>(null);
   const [height, setHeight] = useState(280);
@@ -353,7 +427,7 @@ function ExpandedMonitor({
   // insights with their full detail, in a clean markdown digest to hand to an LLM.
   const copyRun = async () => {
     try {
-      await navigator.clipboard.writeText(buildRunDigest(beats, knowledge));
+      await navigator.clipboard.writeText(buildRunDigest(beats, knowledge, currentWorkflow, currentRunId));
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -392,10 +466,38 @@ function ExpandedMonitor({
   useEffect(() => {
     setTypingKey(null); // a different view's typing queue starts clean
   }, [streamIdentity]);
+
+  // Browser timer throttling means a background tab can wake up with a backlog of
+  // already-happened beats. Do not "catch up" by replaying them at high speed when
+  // the user returns; settle everything visible so the terminal simply reflects
+  // the current state. New beats after the resume timestamp still type normally.
+  useEffect(() => {
+    if (pageVisible && pageResumeAtMs) {
+      for (const b of shown) {
+        if (beatMs(b.at) <= pageResumeAtMs) typedRef.current.add(b.key);
+      }
+      setTypingKey(null);
+    } else if (!pageVisible) {
+      for (const b of shown) typedRef.current.add(b.key);
+      setTypingKey(null);
+    }
+  }, [pageVisible, pageResumeAtMs, shown]);
+
+  if (!pageVisible) {
+    for (const b of shown) typedRef.current.add(b.key);
+  } else if (pageResumeAtMs) {
+    for (const b of shown) {
+      if (beatMs(b.at) <= pageResumeAtMs) typedRef.current.add(b.key);
+    }
+  }
   // Control beats (pause/resume etc.) never enter the typing queue — they render
   // immediately so the live state surfaces now, not after a backlog of typed notes.
   const nextToType = shown.find((b) => b.key !== typingKey && !typedRef.current.has(b.key) && !b.control) ?? null;
   const catchingUp = !!nextToType; // a newer beat is parked behind the rider
+  const multiInsightCount = (note: string) => {
+    const match = String(note || "").match(/^Applied (\d+) insights\./);
+    return match ? Number(match[1]) : 0;
+  };
   // The last VISIBLE beat (the rider, or the last one that finished typing) —
   // parked beats are hidden. The idle "live" cursor rides INLINE at the end of
   // this beat's row, not on a row of its own (which jumped as it came and went).
@@ -411,7 +513,7 @@ function ExpandedMonitor({
   let prevWf: string | undefined;
   for (const b of shown) {
     if (!b.control && b.key !== typingKey && !typedRef.current.has(b.key)) continue; // parked — hidden (control beats always show)
-    rows.push({ b, divider: prevWf !== undefined && b.workflow !== prevWf ? b.workflow : null });
+    rows.push({ b, divider: prevWf !== undefined && b.workflow !== prevWf ? workflowDividerLabel(b.workflow) : null });
     prevWf = b.workflow;
   }
 
@@ -533,7 +635,9 @@ function ExpandedMonitor({
         title="Click to minimize (Ctrl+`)"
         className="group/bar flex cursor-pointer items-center gap-2 border-b border-line/70 px-3 py-2 transition-colors hover:bg-panel/40"
       >
-        <AnimatedHeart lastBeatIso={lastBeatIso} size={13} stallSeconds={stallSeconds} done={done} />
+        <span className="-translate-y-0.5">
+          <AnimatedHeart lastBeatIso={lastBeatIso} size={13} stallSeconds={stallSeconds} done={done} />
+        </span>
         <ConnDot conn={conn} />
         <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-mist-2">
           Updates
@@ -560,10 +664,9 @@ function ExpandedMonitor({
           {rows.map(({ b, divider }) => (
             <Fragment key={b.key}>
             {divider && (
-              <div className="my-2 flex select-none items-center gap-2 text-dim">
-                <span className="h-px flex-1 bg-line/60" />
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em]">{divider}</span>
-                <span className="h-px flex-1 bg-line/60" />
+              <div className="my-3 flex select-none items-center gap-3 text-mist-2">
+                <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.16em]">{divider}</span>
+                <span className="h-px flex-1 bg-line-2/80" />
               </div>
             )}
             <div
@@ -574,10 +677,11 @@ function ExpandedMonitor({
               <span className="shrink-0 select-none text-dim">{clock(b.at)}</span>
               <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${beatTextClass(b)}`}>
                 {b.key === typingKey ? (
-                  <TypewriterText
-                    text={plainNote(b.note)}
-                    fast={catchingUp}
-                    onDone={() => {
+	                  <TypewriterText
+	                    text={plainNote(b.note)}
+	                    speed={multiInsightCount(b.note) > 2 ? 21 : 30}
+	                    fast={catchingUp}
+	                    onDone={() => {
                       typedRef.current.add(b.key);
                       setTypingKey(null);
                     }}
@@ -632,37 +736,50 @@ function ExpandedMonitor({
           </div>
         )}
       </div>
-      {/* Scrolled-up controls, stacked bottom-center: "Copy heartbeats" sits ABOVE
+      {/* Scrolled-up controls, stacked bottom-center: "Copy run notes" sits ABOVE
           "Jump to latest". Copy is available whenever you've scrolled up OR the run
           has finished, so a completed run is one click from your clipboard. */}
       <AnimatePresence>
         {(showJump || done) && shown.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            layout
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1], layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
             className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2"
           >
-            <button
+            <motion.button
+              layout
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1], layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
               onClick={copyRun}
               title="Copy this run's heartbeats + insights as markdown — for handing to an LLM"
-              className={`rounded-full border px-3 py-1 text-[10px] shadow-lg backdrop-blur transition-colors ${
+              className={`h-8 rounded-full border px-4 text-[11px] shadow-lg backdrop-blur transition-colors ${
                 copied
                   ? "border-mint/50 bg-mint/15 text-mint"
                   : "border-line-2 bg-ink/90 text-mist-2 hover:bg-panel/60 hover:text-chalk"
               }`}
             >
-              {copied ? "Copied ✓" : "Copy heartbeats from this run"}
-            </button>
-            {showJump && (
-              <button
-                onClick={jumpToLatest}
-                className="rounded-full border border-cyan/40 bg-ink/90 px-3 py-1 text-[10px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
-              >
-                ↓ Jump to latest
-              </button>
-            )}
+              {copied ? "Copied ✓" : "Copy run notes"}
+            </motion.button>
+            <AnimatePresence mode="popLayout">
+              {showJump && (
+                <motion.button
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1], layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } }}
+                  onClick={jumpToLatest}
+                  className="h-8 rounded-full border border-cyan/40 bg-ink/90 px-4 text-[11px] text-cyan shadow-lg backdrop-blur hover:bg-cyan/10"
+                >
+                  ↓ Jump to latest
+                </motion.button>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>

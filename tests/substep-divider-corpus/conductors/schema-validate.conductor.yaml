@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: schema-validate
+description: >
+  schema validate — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-configs
+    instruction: |
+      Scope the configs to process. Frontload every config as a pending iteration.
+    output: configs
+    gate:
+      - check: "npx conductor-board check scope-configs"
+      - "Every config captured before any work begins"
+
+  - id: schema-validate-loop
+    type: loop
+    over: configs
+    as: config
+    requires: [scope-configs]
+    steps:
+      - id: load-config
+        instruction: |
+          load config: load config, parse file.
+        gate:
+          - check: "npx conductor-board check load-config"
+          - name: "load config is correct"
+            check: "node verify-unit.mjs load-config --out out/load-config.json"
+      - id: validate-schema
+        instruction: |
+          validate schema: validate schema, conform.
+        gate:
+          - check: "npx conductor-board check validate-schema"
+          - name: "validate schema is correct"
+            check: "node verify-unit.mjs validate-schema --out out/validate-schema.json"
+      - id: cross-ref
+        instruction: |
+          cross ref: cross reference, resolve refs.
+        gate:
+          - check: "npx conductor-board check cross-ref"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: report-config
+        instruction: |
+          report config: report, verdict.
+        gate:
+          - check: "npx conductor-board check report-config"
+          - name: "report config is correct"
+            check: "node verify-unit.mjs report-config --out out/report-config.json"

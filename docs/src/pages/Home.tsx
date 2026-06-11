@@ -23,6 +23,7 @@ export function Home() {
         <div className="flex flex-wrap items-center justify-center gap-2.5">
           <Pillar icon={<Icon name="check" size={14} />} label="Verified cards" />
           <Pillar icon={<Heart size={14} />} label="Live updates" />
+          <Pillar icon={<Icon name="clock" size={14} />} label="Prewarmed workers" />
           <Pillar icon={<Icon name="loop" size={14} />} label="Self-improving" />
         </div>
 
@@ -30,8 +31,8 @@ export function Home() {
           Conduct your agents.
         </h1>
         <p className="mt-4 max-w-xl text-pretty text-lg leading-relaxed text-mist-2">
-          Every card is checked against its own instruction — and a live board
-          you read like a story and steer as it works.
+          From a plain skill to a live, checked run: setup, insight integration,
+          worker dispatch, and improvement loops in one board you can read like a story.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
           <Link
@@ -49,7 +50,7 @@ export function Home() {
         </div>
         <div className="mt-6 flex items-center gap-2 font-mono text-sm text-mist">
           <span className="text-dim">$</span>
-          <span className="text-mist-2">npx conductor-board</span>
+          <span className="text-mist-2">npx conductor-board run SKILL.md</span>
           <span className="h-4 w-px animate-pulse bg-mist" />
         </div>
 
@@ -90,18 +91,18 @@ export function Home() {
         {[
           {
             icon: "check" as const,
-            title: "Verified against instructions",
-            body: "Every card is independently verified against its own instruction. Better instructions give the checker a sharper target.",
+            title: "Setup you can watch",
+            body: "A fresh skill opens the board before migration begins: Create Cards, Map Dependencies, Validate Workflow, then the work board eases in.",
           },
           {
             icon: "loop" as const,
-            title: "Nothing gets skipped",
-            body: "A loop can't close while any planned iteration is incomplete; every failed check forces fix-and-retry. Coverage is structural.",
+            title: "Integration before work",
+            body: "Open insights appear as a minimal preflight, get folded into the plan, and hand off to the regular Kanban without a second confirm.",
           },
           {
             icon: "clock" as const,
-            title: "A run you steer",
-            body: "Codex-style updates read like a story: what the agent learned, decided, changed, or handed off. Comments become directives the next run must apply — or defer with a reason.",
+            title: "Warm agents, clean beats",
+            body: "Likely-next workers prewarm while dependencies finish, updates stay scoped to the active run, and the board avoids replaying old state.",
           },
         ].map((f) => (
           <Reveal key={f.title} className="h-full">

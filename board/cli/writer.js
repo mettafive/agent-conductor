@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import crypto from "node:crypto";
+import os from "node:os";
 import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js";
 import { appendAutoHeartbeat } from "./heartbeats.js";
 import { mutateStatus, stampBeat } from "./status-store.js";
@@ -12,6 +14,7 @@ import {
   timestampRunId,
 } from "./learning.js";
 import { discoverConductor, loadConductor, mergeKnowledge, saveConductor, SCOPES } from "./knowledge.js";
+import { resolveStatusPath } from "./workflow-context.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -30,10 +33,7 @@ function flag(args, names) {
 }
 
 function statusPathOf(args) {
-  const p = flag(args, ["--path", "-p"]);
-  if (typeof p === "string") return path.resolve(process.cwd(), p);
-  const dir = flag(args, ["--dir"]);
-  return path.resolve(process.cwd(), typeof dir === "string" ? dir : ".conductor", "status.json");
+  return resolveStatusPath(args);
 }
 
 function positionals(args) {
@@ -92,17 +92,35 @@ function pidAlive(pid) {
   }
 }
 
+function repoKey(cwd = process.cwd()) {
+  return crypto.createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 24);
+}
+
+function registryPath(cwd = process.cwd()) {
+  return path.join(os.homedir(), ".conductor", "servers", `${repoKey(cwd)}.json`);
+}
+
+function readBoardInfo(serverJsonPath) {
+  try {
+    return JSON.parse(fs.readFileSync(serverJsonPath, "utf8"));
+  } catch {
+    try {
+      return JSON.parse(fs.readFileSync(registryPath(), "utf8"));
+    } catch {
+      return null;
+    }
+  }
+}
+
 async function visibleBoardGuard(sp, workflowName) {
   const serverJsonPath = path.join(path.dirname(sp), "server.json");
-  let info;
-  try {
-    info = JSON.parse(fs.readFileSync(serverJsonPath, "utf8"));
-  } catch {
+  const info = readBoardInfo(serverJsonPath);
+  if (!info) {
     return {
       ok: false,
       message:
         `visible board is not initialized for this workflow — run ` +
-        `conductor-board init-board .conductor/workflow.json before execution, ` +
+        `conductor-board init-board ${path.relative(process.cwd(), path.join(path.dirname(sp), "workflow.json"))} before execution, ` +
         `or pass --headless / CONDUCTOR_HEADLESS=1 only for unattended runs.`,
     };
   }

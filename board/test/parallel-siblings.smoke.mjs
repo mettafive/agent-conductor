@@ -10,6 +10,8 @@
  *   PSI2 normalizeWorkflow carries kind/rationale onto the workflow.json steps.
  *   PSI3 the compose prompt carries the parallel-sibling nudge + the reframed fold rule.
  *   PSI4 the checker prompt carries the kind:"parallel" carve-out.
+ *   PSI5 accepted upstream work is preserved, and final cards assemble without
+ *        re-checking upstream gated content unless the skill explicitly asks.
  *
  * Run:  node test/parallel-siblings.smoke.mjs    (from board/)
  */
@@ -82,6 +84,24 @@ test("PSI4 the checker prompt carries the kind:\"parallel\" carve-out", () => {
   assert(/no sibling's output feeding\s+another/.test(src), "carve-out verifies independence, not folds");
   assert(/too-tiny rule still applies to\s+unmarked small cards/.test(src), "the too-tiny rule still bites unmarked small cards");
   assert(/cardinality rule still fails a generic or large collection/.test(src), "the cardinality rule still fails a lost-multiplicity collection");
+});
+
+test("PSI5 prompts preserve accepted upstream work and keep final assembly lean", () => {
+  const decompose = fs.readFileSync(path.join(BOARD, "cli", "decompose.js"), "utf8");
+  const runCard = fs.readFileSync(path.join(BOARD, "cli", "run-card.js"), "utf8");
+
+  assert(/Preserve accepted upstream work/.test(decompose), "composer teaches accepted-upstream preservation");
+  assert(/Do not ask a card to overwrite, remove, weaken, or\s+re-author upstream work/.test(decompose), "composer forbids accidental upstream overwrite/re-authoring");
+  assert(/final assembly, handoff, publish, or closeout card/.test(decompose), "composer identifies final/closeout cards");
+  assert(/Earlier cards already pass their own gates/.test(decompose), "composer frames final cards as trusting prior gates");
+  assert(/Do not make the final card re-check,\s+re-judge, or rewrite upstream content quality/.test(decompose), "composer avoids cake-on-cake final cards");
+
+  assert(/a final assembly, handoff, publish, or closeout card asks the worker to\s+re-check, re-judge, deeply re-verify, or rewrite upstream content/.test(decompose), "checker rejects redundant final re-checking");
+  assert(/a later card overwrites, removes, weakens, or re-authors accepted upstream\s+work/.test(decompose), "checker rejects accidental damage to accepted upstream work");
+
+  assert(/# Preservation rule — accepted upstream work is trusted input/.test(runCard), "worker brief has the preservation section");
+  assert(/Do not overwrite, remove,\s+weaken, or re-author accepted upstream content/.test(runCard), "worker brief forbids damaging accepted inputs");
+  assert(/verify in\s+your receipt that unrelated accepted content is still present/.test(runCard), "worker verifies preservation when editing existing artifacts");
 });
 
 // ── runner ───────────────────────────────────────────────────────────────────

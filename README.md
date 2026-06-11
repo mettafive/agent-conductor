@@ -2,6 +2,8 @@
 
 **Turn any agent skill into an independently checked, watchable workflow.**
 
+Current CLI: **conductor-board 3.3.19**.
+
 A skill becomes cards on a Kanban board. Every card is independently verified
 against its own instruction. Write better instructions, get better verification.
 No separate checker configuration needed.
@@ -11,11 +13,14 @@ No separate checker configuration needed.
 Agent Conductor takes a skill or runbook and turns it into a `workflow.json`.
 The agent executes each card, keeps `.conductor/status.json` current, and a local
 board shows the run live: pending, running, checking, done. Conductor also learns
-across runs: insights and directives accumulate in `knowledge.json` and can be
+across runs: worker insights and human comments accumulate in `knowledge.json` and can be
 integrated back into the cards before a repeat run.
 
 Visibility is the default. Conductor is for watching agent work happen, not for
-silent execution. Use headless mode only for unattended environments such as CI,
+silent execution. A fresh skill opens the board before setup starts; setup cards
+compile and validate the plan; open insights, if any, appear as a minimal
+integration preflight; then the regular Kanban fades in and real workers run the
+cards. Use headless mode only for unattended environments such as CI,
 cron, cloud/no-display, or when the user explicitly asks for headless/background
 execution.
 
@@ -103,16 +108,17 @@ npx conductor-board cards .conductor/cards.json
 npx conductor-board validate .conductor/workflow.json
 ```
 
-Before executing cards, initialize the visible board:
+For normal use, run the skill in one command:
 
 ```bash
-npx conductor-board init-board .conductor/workflow.json
+npx conductor-board run SKILL.md
 ```
 
-Headless is opt-in:
+That command compiles if needed, applies open insights if present, opens the
+board, dispatches bounded workers, and archives the run. Headless is opt-in:
 
 ```bash
-npx conductor-board init-board .conductor/workflow.json --headless
+npx conductor-board run SKILL.md --headless
 ```
 
 ## Autonomous Execution
@@ -131,6 +137,10 @@ not bypass verification.
   workers up to a concurrency cap (`--cap`), refills slots as workers finish,
   and reclaims dead workers by watching the worker process. `status.json` stays
   the source of truth.
+- Prewarm is default-on through `run`: likely-next card workers are warmed while
+  dependencies are still running, setup warms its next phases, and the final-card
+  window warms the integration composer for the next Improve & Run loop. Prewarm
+  probes do no work and write no status.
 - `fold-card <card-index>` copies a finished card's receipt and referenced files
   into the run directory the moment it is done.
 
@@ -155,7 +165,13 @@ per-card phase timing and writes a run-level aggregate to a timing file.
 npx conductor-board
 ```
 
-Then point your agent at [`CONDUCTOR.md`](./CONDUCTOR.md) or
+Or run a skill end to end:
+
+```bash
+npx conductor-board run SKILL.md
+```
+
+For agent-authored flows, point the agent at [`CONDUCTOR.md`](./CONDUCTOR.md) or
 [`setup.conductor.json`](./setup.conductor.json).
 
 Useful commands:

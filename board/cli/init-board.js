@@ -7,6 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runStatusInit } from "./writer.js";
 import { ensureBoard, getHealth as getHealthShared, openBrowser as openBrowserShared, canonicalUrl } from "./ensure-board.js";
+import { resolveWorkflowContext } from "./workflow-context.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -156,6 +157,48 @@ function markBrowserOpened(serverJsonPath, url, registry) {
   }
 }
 
+function claimActiveBoard(serverJsonPath, registry, { port, url, pid, workflow, statusPath, workflowPath, conductorDir, health } = {}) {
+  const now = new Date().toISOString();
+  const workflows = health?.workflows ? Object.keys(health.workflows) : undefined;
+  const nextFields = {
+    port,
+    url,
+    pid,
+    conductor_root: conductorDir,
+    status_path: statusPath,
+    workflow_path: workflowPath,
+    active_workflow: workflow,
+    active_status_path: statusPath,
+    active_workflow_path: workflowPath,
+    active_conductor_root: conductorDir,
+    active_claimed_at: now,
+  };
+  if (workflows) nextFields.workflows = workflows;
+
+  try {
+    const previous = fs.existsSync(serverJsonPath) ? readJson(serverJsonPath) : {};
+    writeJson(serverJsonPath, {
+      ...previous,
+      ...Object.fromEntries(Object.entries(nextFields).filter(([, v]) => v !== undefined && v !== null)),
+    });
+  } catch {
+    /* best effort */
+  }
+
+  try {
+    const previous = fs.existsSync(registry) ? readJson(registry) : {};
+    writeJson(registry, {
+      ...previous,
+      ...Object.fromEntries(Object.entries(nextFields).filter(([, v]) => v !== undefined && v !== null)),
+      repo: path.resolve(process.cwd()),
+      registry_key: repoKey(),
+      updated_at: now,
+    });
+  } catch {
+    /* best effort */
+  }
+}
+
 function browserAlreadyOpened(serverJsonPath, registry) {
   try {
     const info = fs.existsSync(registry) ? readJson(registry) : readJson(serverJsonPath);
@@ -255,6 +298,10 @@ export async function openRunBoard(statusPath, workflowPath, { headless = false,
     conductor_root: health0.conductor_root || conductorDir,
     status_path: statusPath,
     workflow_path: workflowPath,
+    active_workflow: workflow,
+    active_status_path: statusPath,
+    active_workflow_path: workflowPath,
+    active_conductor_root: conductorDir,
   });
 
   // Wait for the SERVED baton: poll /health until THIS feed is discovered + renderable.
@@ -263,6 +310,16 @@ export async function openRunBoard(statusPath, workflowPath, { headless = false,
   // so registry propagation never trips a false "unserved" on a slow machine.
   const health = await waitForWorkflow(ensured.url, workflow, conductorDir, 10000);
   const served = healthHasWorkflow(health, workflow);
+  claimActiveBoard(serverJsonPath, registry, {
+    port,
+    url: ensured.url,
+    pid: health?.pid || health0.pid,
+    workflow,
+    statusPath,
+    workflowPath,
+    conductorDir,
+    health,
+  });
   if (ensured.spawned && !served) {
     return { ok: false, healthy: true, served: false, spawned: true, url: ensured.url, browserUrl: null, workflow, health, workflows: health?.workflows || {} };
   }
@@ -287,15 +344,28 @@ export async function openRunBoard(statusPath, workflowPath, { headless = false,
 export async function ensureBoardVisible(statusPath, { headless = false, port = 3042, starting = false } = {}) {
   const ensured = await ensureBoard(port, { statusPath });
   if (!headless && ensured.health) {
-    // `starting:true` opens with ?starting=1 so the board shows the honest "starting…"
-    // first frame (surface on served, never empty/stale) until the first phase feed is live.
+    // `starting:true` opens with ?wf=<target>&starting=1 so the board shows the
+    // honest "starting…" first frame for THIS workflow. Without the wf seed, a
+    // warm board can briefly render an old fallback workflow before the new
+    // compile feed is discovered.
     const u = new URL(canonicalUrl(port));
-    if (starting) u.searchParams.set("starting", "1");
+    if (starting) {
+      u.searchParams.set("wf", path.basename(path.dirname(path.resolve(statusPath))));
+      u.searchParams.set("starting", "1");
+    }
     const url = u.toString();
     openBrowser(url);
     try {
       const serverJsonPath = path.join(path.dirname(path.resolve(statusPath)), "server.json");
       markBrowserOpened(serverJsonPath, url, registryPath());
+      claimActiveBoard(serverJsonPath, registryPath(), {
+        port,
+        url: canonicalUrl(port),
+        pid: ensured.health.pid,
+        statusPath,
+        conductorDir: path.dirname(path.resolve(statusPath)),
+        health: ensured.health,
+      });
     } catch { /* best-effort — prevents a duplicate tab from the later openRunBoard */ }
   }
   return ensured;
@@ -303,11 +373,7 @@ export async function ensureBoardVisible(statusPath, { headless = false, port = 
 
 export async function runInitBoard(args) {
   const [workflowArg] = positionals(args);
-  const workflowPath = path.resolve(process.cwd(), workflowArg || ".conductor/workflow.json");
-  const statusPath = path.resolve(
-    process.cwd(),
-    String(flag(args, ["--path", "-p"], ".conductor/status.json")),
-  );
+  const { workflowPath, statusPath } = resolveWorkflowContext(args, { workflowArg });
   const port = Number(flag(args, ["--port"], 3042)) || 3042;
   const headless = args.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
 

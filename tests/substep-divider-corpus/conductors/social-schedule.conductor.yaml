@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: social-schedule
+description: >
+  social schedule — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-posts
+    instruction: |
+      Scope the posts to process. Frontload every post as a pending iteration.
+    output: posts
+    gate:
+      - check: "npx conductor-board check scope-posts"
+      - "Every post captured before any work begins"
+
+  - id: social-schedule-loop
+    type: loop
+    over: posts
+    as: post
+    requires: [scope-posts]
+    steps:
+      - id: draft-post
+        instruction: |
+          draft post: draft post, compose.
+        gate:
+          - check: "npx conductor-board check draft-post"
+          - name: "draft post is correct"
+            check: "node verify-unit.mjs draft-post --out out/draft-post.json"
+      - id: attach-media
+        instruction: |
+          attach media: attach media, image video.
+        gate:
+          - check: "npx conductor-board check attach-media"
+          - name: "attach media is correct"
+            check: "node verify-unit.mjs attach-media --out out/attach-media.json"
+      - id: hashtag
+        instruction: |
+          hashtag: hashtag, tags.
+        gate:
+          - check: "npx conductor-board check hashtag"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: best-time
+        instruction: |
+          best time: best time, optimal slot.
+        gate:
+          - check: "npx conductor-board check best-time"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: schedule-post
+        instruction: |
+          schedule post: schedule, queue post.
+        gate:
+          - check: "npx conductor-board check schedule-post"
+          - name: "schedule post is correct"
+            check: "node verify-unit.mjs schedule-post --out out/schedule-post.json"

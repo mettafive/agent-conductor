@@ -1,0 +1,54 @@
+conductor: 2.0.0
+name: support-triage
+description: >
+  support triage — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-tickets
+    instruction: |
+      Scope the tickets to process. Frontload every ticket as a pending iteration.
+    output: tickets
+    gate:
+      - check: "npx conductor-board check scope-tickets"
+      - "Every ticket captured before any work begins"
+
+  - id: support-triage-loop
+    type: loop
+    over: tickets
+    as: ticket
+    requires: [scope-tickets]
+    steps:
+      - id: read-ticket
+        instruction: |
+          read ticket: read ticket, load ticket.
+        gate:
+          - check: "npx conductor-board check read-ticket"
+          - name: "read ticket is correct"
+            check: "node verify-unit.mjs read-ticket --out out/read-ticket.json"
+      - id: classify
+        instruction: |
+          classify: classify, categorize.
+        gate:
+          - check: "npx conductor-board check classify"
+          - name: "classify is correct"
+            check: "node verify-unit.mjs classify --out out/classify.json"
+      - id: sentiment
+        instruction: |
+          sentiment: sentiment, urgency.
+        gate:
+          - check: "npx conductor-board check sentiment"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: route
+        instruction: |
+          route: route, assign queue.
+        gate:
+          - check: "npx conductor-board check route"
+          - name: "route is correct"
+            check: "node verify-unit.mjs route --out out/route.json"
+      - id: draft-reply
+        instruction: |
+          draft reply: draft reply, respond.
+        gate:
+          - check: "npx conductor-board check draft-reply"
+          - name: "draft reply is correct"
+            check: "node verify-unit.mjs draft-reply --out out/draft-reply.json"

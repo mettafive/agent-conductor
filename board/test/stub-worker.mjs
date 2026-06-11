@@ -17,6 +17,8 @@
  *                             dispatcher must resolve this to DONE, not reclaim.
  *   STUB_TEARDOWN=N           after completing, leave N live child processes for a
  *                             beat (teardown noise) to exercise the ceiling count.
+ *   STUB_DELAY_MS=N           sleep before doing normal card work.
+ *   STUB_PREWARM_LOG=<file>   append prewarm probe input metadata.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -24,9 +26,29 @@ import { spawnSync, spawn } from "node:child_process";
 
 const brief = fs.readFileSync(0, "utf8");
 
+if (process.env.CONDUCTOR_PREWARM === "1") {
+  if (process.env.STUB_PREWARM_LOG) {
+    fs.mkdirSync(path.dirname(process.env.STUB_PREWARM_LOG), { recursive: true });
+    fs.appendFileSync(
+      process.env.STUB_PREWARM_LOG,
+      JSON.stringify({
+        at: new Date().toISOString(),
+        hasCardBrief: /# Your card: index/.test(brief),
+        input: brief.slice(0, 240),
+      }) + "\n",
+    );
+  }
+  const delay = Number(process.env.STUB_PREWARM_DELAY_MS) || 0;
+  if (delay > 0) spawnSync("sleep", [String(delay / 1000)]);
+  process.exit(/# Your card: index/.test(brief) ? 3 : 0);
+}
+
 if (process.env.STUB_NOOP === "1") {
   process.exit(0); // never reports → dispatcher reclaims the card
 }
+
+const delayMs = Number(process.env.STUB_DELAY_MS) || 0;
+if (delayMs > 0) spawnSync("sleep", [String(delayMs / 1000)]);
 
 const idxM = brief.match(/# Your card: index (\d+)/);
 const receiptM = brief.match(/Write your primary markdown receipt to EXACTLY this path[^\n]*\n\n\s+([^\n]+)/);

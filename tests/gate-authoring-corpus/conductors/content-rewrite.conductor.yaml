@@ -1,0 +1,41 @@
+conductor: 2.0.0
+name: content-rewrite
+description: >
+  Rewrite each article for clarity while preserving every factual claim and all internal links.
+
+steps:
+  - id: collect-articles
+    instruction: |
+      Collect the articles to rewrite. For each, extract its factual claims and the set of internal links
+      into the grounding bundle — the rewrite must preserve these.
+    output: articles
+    gate:
+      - check: "npx conductor-board check collect-articles"
+      - name: "Original facts + links extracted for each article"
+        check: "node verify.mjs links-preserved --out fixtures/content-rewrite/content-rewrite.out.json --ground fixtures/content-rewrite/content-rewrite.ground.json"
+
+  - id: content-rewrite-loop
+    type: loop
+    over: articles
+    as: article
+    requires: [collect-articles]
+    steps:
+      - id: rewrite-article
+        instruction: |
+          Rewrite <article> for clarity.
+        gate:
+          - check: "npx conductor-board check rewrite-article"
+          - name: "Every original internal link still present"
+            check: "node verify.mjs links-preserved --out fixtures/content-rewrite/<item>.out.json --ground fixtures/content-rewrite/<item>.ground.json"
+          - name: "No factual claim was added or contradicted"
+            check: "node verify.mjs facts-preserved --out fixtures/content-rewrite/<item>.out.json --ground fixtures/content-rewrite/<item>.ground.json"
+          - "Reads measurably clearer to a layperson AND an expert wouldn't object to any rephrasing as having changed the meaning."
+
+  - id: content-rewrite-finish
+    instruction: |
+      Confirm every article rewritten with links+facts preserved.
+    requires: [content-rewrite-loop]
+    gate:
+      - check: "npx conductor-board check content-rewrite-finish"
+      - name: "All articles covered, none lost facts/links"
+        check: "node verify.mjs coverage-complete --out fixtures/content-rewrite/content-rewrite.out.json --ground fixtures/content-rewrite/content-rewrite.ground.json"

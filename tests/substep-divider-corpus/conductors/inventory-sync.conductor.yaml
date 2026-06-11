@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: inventory-sync
+description: >
+  inventory sync — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-skus
+    instruction: |
+      Scope the skus to process. Frontload every sku as a pending iteration.
+    output: skus
+    gate:
+      - check: "npx conductor-board check scope-skus"
+      - "Every sku captured before any work begins"
+
+  - id: inventory-sync-loop
+    type: loop
+    over: skus
+    as: sku
+    requires: [scope-skus]
+    steps:
+      - id: read-stock
+        instruction: |
+          read stock: read stock, warehouse count.
+        gate:
+          - check: "npx conductor-board check read-stock"
+          - name: "read stock is correct"
+            check: "node verify-unit.mjs read-stock --out out/read-stock.json"
+      - id: update-listing
+        instruction: |
+          update listing: update listing, set quantity.
+        gate:
+          - check: "npx conductor-board check update-listing"
+          - name: "update listing is correct"
+            check: "node verify-unit.mjs update-listing --out out/update-listing.json"
+      - id: low-stock-alert
+        instruction: |
+          low stock alert: low stock, reorder alert.
+        gate:
+          - check: "npx conductor-board check low-stock-alert"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: confirm
+        instruction: |
+          confirm: confirm, verify count.
+        gate:
+          - check: "npx conductor-board check confirm"
+          - name: "confirm is correct"
+            check: "node verify-unit.mjs confirm --out out/confirm.json"

@@ -13,6 +13,7 @@ export const HEARTBEAT_OPTIONS: { seconds: number; label: string }[] = [
 ];
 
 const KEY = "cb-hb-interval";
+const PREWARM_KEY = "cb-prewarm-agents";
 
 export function loadHeartbeatInterval(): number {
   try {
@@ -26,6 +27,23 @@ export function loadHeartbeatInterval(): number {
 export function saveHeartbeatInterval(seconds: number): void {
   try {
     localStorage.setItem(KEY, String(seconds));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadPrewarmAgents(): boolean {
+  try {
+    const v = localStorage.getItem(PREWARM_KEY);
+    return v == null ? true : v !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function savePrewarmAgents(enabled: boolean): void {
+  try {
+    localStorage.setItem(PREWARM_KEY, enabled ? "1" : "0");
   } catch {
     /* ignore */
   }

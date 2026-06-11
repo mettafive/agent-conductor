@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: tide-mill-schedule
+description: >
+  tide mill schedule — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-tides
+    instruction: |
+      Scope the tides to process. Frontload every tide as a pending iteration.
+    output: tides
+    gate:
+      - check: "npx conductor-board check scope-tides"
+      - "Every tide captured before any work begins"
+
+  - id: tide-mill-schedule-loop
+    type: loop
+    over: tides
+    as: tide
+    requires: [scope-tides]
+    steps:
+      - id: predict-tide
+        instruction: |
+          predict tide: predict tide, tidal table.
+        gate:
+          - check: "npx conductor-board check predict-tide"
+          - name: "predict tide is correct"
+            check: "node verify-unit.mjs predict-tide --out out/predict-tide.json"
+      - id: plan-grind
+        instruction: |
+          plan grind: plan grind, milling window.
+        gate:
+          - check: "npx conductor-board check plan-grind"
+          - name: "plan grind is correct"
+            check: "node verify-unit.mjs plan-grind --out out/plan-grind.json"
+      - id: sluice-set
+        instruction: |
+          sluice set: sluice, pond level.
+        gate:
+          - check: "npx conductor-board check sluice-set"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: log-output
+        instruction: |
+          log output: log output, flour yield.
+        gate:
+          - check: "npx conductor-board check log-output"
+          - name: "log output is correct"
+            check: "node verify-unit.mjs log-output --out out/log-output.json"

@@ -9,6 +9,8 @@
  *   F1-C teardown noise at cap 1: each worker leaves a fat live subtree for a
  *        beat after its card is done → the ceiling is NOT tripped by that
  *        teardown, every card completes, no DISPATCHER ABORT.
+ *   F1-D prewarm: a likely-next child gets a no-work warm probe while its
+ *        dependency is running; the probe never receives the real card brief.
  *
  * Run:  node test/dispatch.smoke.mjs    (from board/)
  */
@@ -54,13 +56,15 @@ const readStatus = (s) => JSON.parse(fs.readFileSync(s, "utf8"));
 const stepStatus = (st, k) => st.steps[k]?.status;
 const dispatch = (tmp, wf, status, cap, env) =>
   cli(["dispatch", "--path", status, "--workflow", wf, "--cap", String(cap)], tmp, { CONDUCTOR_WORKER_CMD: `node ${STUB}`, CONDUCTOR_HEADLESS: "1", ...env });
+const dispatchPrewarm = (tmp, wf, status, cap, env) =>
+  cli(["dispatch", "--path", status, "--workflow", wf, "--cap", String(cap), "--prewarm", "--prewarm-cap", "1"], tmp, { CONDUCTOR_WORKER_CMD: `node ${STUB}`, CONDUCTOR_HEADLESS: "1", ...env });
 
 const scenarios = [];
 const test = (name, fn) => scenarios.push({ name, fn });
 
 test("F1-A landed-but-no-complete → DONE, no reclaim, attempt stays 1", () => {
   const tmp = tmpdir();
-  const { wf, status } = seed(tmp, "f1a", [{ title: "Solo", instruction: "Do it.", requires: [] }]);
+  const { wf, status } = seed(tmp, "f1a", [{ title: "Write Demo Note", instruction: "Write the demo note.", requires: [] }]);
   const r = dispatch(tmp, wf, status, 1, { STUB_LAND_NO_COMPLETE: "1" });
   assert(r.code === 0, `dispatch should finish 0:\n${r.out}`);
   const st = readStatus(status);
@@ -73,7 +77,7 @@ test("F1-A landed-but-no-complete → DONE, no reclaim, attempt stays 1", () => 
 
 test("F1-B genuine crash (no artifact) → reclaims, breaks after max_attempts", () => {
   const tmp = tmpdir();
-  const { wf, status } = seed(tmp, "f1b", [{ title: "Solo", instruction: "Do it.", requires: [] }], 2);
+  const { wf, status } = seed(tmp, "f1b", [{ title: "Write Demo Note", instruction: "Write the demo note.", requires: [] }], 2);
   const r = dispatch(tmp, wf, status, 1, { STUB_NOOP: "1" });
   assert(r.code === 0, `dispatch should finish 0:\n${r.out}`);
   assert(/RECLAIM/.test(r.out), `a genuine crash MUST still reclaim (legitimate path):\n${r.out}`);
@@ -95,6 +99,29 @@ test("F1-C teardown noise at cap 1 → no DISPATCHER ABORT, all cards done", () 
   assert(r.code === 0, `dispatch should finish 0:\n${r.out}`);
   const st = readStatus(status);
   for (const k of ["0", "1", "2"]) assert(stepStatus(st, k) === "done", `card ${k} should be done (got ${stepStatus(st, k)}):\n${r.out}`);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("F1-D prewarm warms likely-next card without leaking the card brief", () => {
+  const tmp = tmpdir();
+  const log = path.join(tmp, "prewarm.jsonl");
+  const steps = [
+    { title: "Prepare", instruction: "Prepare the input.", requires: [] },
+    { title: "Use Prepared Input", instruction: "Use the prepared input.", requires: [0] },
+  ];
+  const { wf, status } = seed(tmp, "f1d", steps);
+  const r = dispatchPrewarm(tmp, wf, status, 1, {
+    STUB_DELAY_MS: "800",
+    STUB_PREWARM_LOG: log,
+  });
+  assert(r.code === 0, `dispatch should finish 0:\n${r.out}`);
+  assert(/~ PREWARM/.test(r.out), `expected prewarm probe:\n${r.out}`);
+  assert(/~ PREWARM-HIT/.test(r.out), `expected warmed card to be consumed at handout:\n${r.out}`);
+  const lines = fs.readFileSync(log, "utf8").trim().split(/\n+/).map((line) => JSON.parse(line));
+  assert(lines.length >= 1, "prewarm log should contain at least one probe");
+  assert(lines.every((line) => line.hasCardBrief === false), `prewarm must not receive real card brief: ${JSON.stringify(lines)}`);
+  const st = readStatus(status);
+  assert(stepStatus(st, "0") === "done" && stepStatus(st, "1") === "done", `both cards should be done:\n${r.out}`);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

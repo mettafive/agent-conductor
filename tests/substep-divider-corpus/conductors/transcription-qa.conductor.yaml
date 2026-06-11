@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: transcription-qa
+description: >
+  transcription qa — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-files
+    instruction: |
+      Scope the files to process. Frontload every file as a pending iteration.
+    output: files
+    gate:
+      - check: "npx conductor-board check scope-files"
+      - "Every file captured before any work begins"
+
+  - id: transcription-qa-loop
+    type: loop
+    over: files
+    as: file
+    requires: [scope-files]
+    steps:
+      - id: auto-transcribe
+        instruction: |
+          auto transcribe: auto transcribe, asr.
+        gate:
+          - check: "npx conductor-board check auto-transcribe"
+          - name: "auto transcribe is correct"
+            check: "node verify-unit.mjs auto-transcribe --out out/auto-transcribe.json"
+      - id: human-correct
+        instruction: |
+          human correct: human correct, proofread.
+        gate:
+          - check: "npx conductor-board check human-correct"
+          - name: "human correct is correct"
+            check: "node verify-unit.mjs human-correct --out out/human-correct.json"
+      - id: speaker-label
+        instruction: |
+          speaker label: speaker label, diarization.
+        gate:
+          - check: "npx conductor-board check speaker-label"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: finalize-transcript
+        instruction: |
+          finalize transcript: finalize, publish transcript.
+        gate:
+          - check: "npx conductor-board check finalize-transcript"
+          - name: "finalize transcript is correct"
+            check: "node verify-unit.mjs finalize-transcript --out out/finalize-transcript.json"

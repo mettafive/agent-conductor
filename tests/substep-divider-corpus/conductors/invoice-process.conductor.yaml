@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: invoice-process
+description: >
+  invoice process — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-invoices
+    instruction: |
+      Scope the invoices to process. Frontload every invoice as a pending iteration.
+    output: invoices
+    gate:
+      - check: "npx conductor-board check scope-invoices"
+      - "Every invoice captured before any work begins"
+
+  - id: invoice-process-loop
+    type: loop
+    over: invoices
+    as: invoice
+    requires: [scope-invoices]
+    steps:
+      - id: ocr-extract
+        instruction: |
+          ocr extract: ocr, extract fields.
+        gate:
+          - check: "npx conductor-board check ocr-extract"
+          - name: "ocr extract is correct"
+            check: "node verify-unit.mjs ocr-extract --out out/ocr-extract.json"
+      - id: reconcile-total
+        instruction: |
+          reconcile total: reconcile, line items sum.
+        gate:
+          - check: "npx conductor-board check reconcile-total"
+          - name: "reconcile total is correct"
+            check: "node verify-unit.mjs reconcile-total --out out/reconcile-total.json"
+      - id: tax-lines
+        instruction: |
+          tax lines: tax line, vat.
+        gate:
+          - check: "npx conductor-board check tax-lines"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: enter-system
+        instruction: |
+          enter system: enter system, post to ledger.
+        gate:
+          - check: "npx conductor-board check enter-system"
+          - name: "enter system is correct"
+            check: "node verify-unit.mjs enter-system --out out/enter-system.json"

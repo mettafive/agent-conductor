@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: backup-verify
+description: >
+  backup verify — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-backups
+    instruction: |
+      Scope the backups to process. Frontload every backup as a pending iteration.
+    output: backups
+    gate:
+      - check: "npx conductor-board check scope-backups"
+      - "Every backup captured before any work begins"
+
+  - id: backup-verify-loop
+    type: loop
+    over: backups
+    as: backup
+    requires: [scope-backups]
+    steps:
+      - id: locate-backup
+        instruction: |
+          locate backup: locate, find backup.
+        gate:
+          - check: "npx conductor-board check locate-backup"
+          - name: "locate backup is correct"
+            check: "node verify-unit.mjs locate-backup --out out/locate-backup.json"
+      - id: restore-test
+        instruction: |
+          restore test: restore test, restore.
+        gate:
+          - check: "npx conductor-board check restore-test"
+          - name: "restore test is correct"
+            check: "node verify-unit.mjs restore-test --out out/restore-test.json"
+      - id: checksum
+        instruction: |
+          checksum: checksum, hash compare.
+        gate:
+          - check: "npx conductor-board check checksum"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: report-status
+        instruction: |
+          report status: report, verdict.
+        gate:
+          - check: "npx conductor-board check report-status"
+          - name: "report status is correct"
+            check: "node verify-unit.mjs report-status --out out/report-status.json"

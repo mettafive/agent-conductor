@@ -1,0 +1,38 @@
+conductor: 2.0.0
+name: backup-verification
+description: >
+  Verify each backup is restorable and matches the source checksum.
+
+steps:
+  - id: list-backups
+    instruction: |
+      List backups; capture each backup's source checksum into the grounding bundle.
+    output: backups
+    gate:
+      - check: "npx conductor-board check list-backups"
+      - name: "Source checksums captured"
+        check: "node verify.mjs restore-matches --out fixtures/backup-verification/backup-verification.out.json --ground fixtures/backup-verification/backup-verification.ground.json"
+
+  - id: backup-verification-loop
+    type: loop
+    over: backups
+    as: backup
+    requires: [list-backups]
+    steps:
+      - id: verify-backup
+        instruction: |
+          Verify <backup>.
+        gate:
+          - check: "npx conductor-board check verify-backup"
+          - name: "Restored data checksum equals the source checksum"
+            check: "node verify.mjs restore-matches --out fixtures/backup-verification/<item>.out.json --ground fixtures/backup-verification/<item>.ground.json"
+          - "The restore was an actual restore test, not just a file-exists check."
+
+  - id: backup-verification-finish
+    instruction: |
+      Confirm every backup restorable + matching.
+    requires: [backup-verification-loop]
+    gate:
+      - check: "npx conductor-board check backup-verification-finish"
+      - name: "All backups verified"
+        check: "node verify.mjs coverage-complete --out fixtures/backup-verification/backup-verification.out.json --ground fixtures/backup-verification/backup-verification.ground.json"

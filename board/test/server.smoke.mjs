@@ -29,7 +29,12 @@ const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 
 class AssertError extends Error {}
 const assert = (c, m) => { if (!c) throw new AssertError(m); };
-const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), "srv-smoke-"));
+const tmpRoots = [];
+const tmpdir = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "srv-smoke-"));
+  tmpRoots.push(dir);
+  return dir;
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let portCounter = 47000 + Math.floor(Math.random() * 1500);
 const nextPort = () => portCounter++;
@@ -48,7 +53,7 @@ function req(method, port, urlPath, body) {
 }
 
 const WF = (name) => ({ conductor: "3.0.0", name, description: "server bridge test.",
-  steps: [{ title: "Solo", instruction: "Do solo and write a receipt.", requires: [] }] });
+  steps: [{ title: "Write Demo Note", instruction: "Write the demo note and write a receipt.", requires: [] }] });
 
 function seed(tmp, slug, { openInsight = false, withCards = true } = {}) {
   const scoped = path.join(tmp, ".conductor", slug);
@@ -60,9 +65,9 @@ function seed(tmp, slug, { openInsight = false, withCards = true } = {}) {
   fs.writeFileSync(wf, JSON.stringify(WF(slug), null, 2));
   const future = Date.now() / 1000 + 5;
   fs.utimesSync(wf, future, future); // newer than skill → compile reuse, no recompile
-  if (withCards) fs.writeFileSync(path.join(scoped, "cards.json"), JSON.stringify([{ title: "Solo", instruction: "Do solo and write a receipt." }], null, 2));
+  if (withCards) fs.writeFileSync(path.join(scoped, "cards.json"), JSON.stringify([{ title: "Write Demo Note", instruction: "Write the demo note and write a receipt." }], null, 2));
   fs.writeFileSync(path.join(scoped, "migration-meta.json"), JSON.stringify({ skill_path: skill }, null, 2));
-  if (openInsight) fs.writeFileSync(path.join(scoped, "knowledge.json"), JSON.stringify({ items: [{ id: "k1", status: "open", scope: "this-conductor", title: "T", current: "a", proposed: "b", step: "Solo" }] }, null, 2));
+  if (openInsight) fs.writeFileSync(path.join(scoped, "knowledge.json"), JSON.stringify({ items: [{ id: "k1", status: "open", scope: "this-conductor", title: "T", current: "a", proposed: "b", step: "Write Demo Note" }] }, null, 2));
   // status-init so the server has a status to serve.
   spawnSync("node", [CLI, "status-init", wf, "--path", path.join(scoped, "status.json")], { encoding: "utf8" });
   return { scoped, wf, status: path.join(scoped, "status.json"), skill };
@@ -100,7 +105,6 @@ test("POST start-run launches the run, returns immediately, one click completes 
   assert(latency < 2500, `POST must return immediately (non-blocking), took ${latency}ms`);
   // a SINGLE post drives the run to completion (no second confirm).
   assert(await pollCardDone(status, "0", 25000), `the one click must dispatch + complete the run:\n${JSON.stringify(readStatus(status).steps)}`);
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 test("no 500 wall: a failing integration returns 200 (launched) and work never runs", async () => {
@@ -114,7 +118,6 @@ test("no 500 wall: a failing integration returns 200 (launched) and work never r
   // work must NOT complete on a half-integrated plan; give it a moment.
   await sleep(4000);
   assert(readStatus(status).steps["0"]?.status !== "done", `work must not run on a failed integration:\n${JSON.stringify(readStatus(status).steps)}`);
-  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 test("dead path gone: server has no initRuntimeStatus reset-only path; endpoint only launches", async () => {
@@ -135,5 +138,6 @@ for (const s of scenarios) {
 // 0 strays: kill the board servers + any spawned run/stub.
 for (const c of servers) { try { process.kill(-c.pid, "SIGKILL"); } catch {} try { c.kill("SIGKILL"); } catch {} }
 spawnSync("pkill", ["-f", "srv-smoke|stub-worker"]);
+for (const dir of tmpRoots) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} }
 console.log(`\n  ${bold("Summary:")} ${green(`${passed} passed`)}, ${failed ? red(`${failed} failed`) : dim("0 failed")} / ${scenarios.length}\n`);
 process.exit(failed ? 1 : 0);

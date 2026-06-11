@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: translation-pass
+description: >
+  Translate each segment preserving meaning, numbers, and untranslatable terms.
+
+steps:
+  - id: load-segments
+    instruction: |
+      Load source segments + a glossary of do-not-translate terms into the grounding bundle.
+    output: segments
+    gate:
+      - check: "npx conductor-board check load-segments"
+      - name: "Source + glossary loaded"
+        check: "node verify.mjs nums-preserved --out fixtures/translation-pass/translation-pass.out.json --ground fixtures/translation-pass/translation-pass.ground.json"
+
+  - id: translation-pass-loop
+    type: loop
+    over: segments
+    as: segment
+    requires: [load-segments]
+    steps:
+      - id: translate-segment
+        instruction: |
+          Translate <segment>.
+        gate:
+          - check: "npx conductor-board check translate-segment"
+          - name: "All numbers/units preserved exactly"
+            check: "node verify.mjs nums-preserved --out fixtures/translation-pass/<item>.out.json --ground fixtures/translation-pass/<item>.ground.json"
+          - name: "Glossary do-not-translate terms left intact"
+            check: "node verify.mjs glossary-kept --out fixtures/translation-pass/<item>.out.json --ground fixtures/translation-pass/<item>.ground.json"
+          - "Meaning preserved with natural target-language phrasing, not a literal word-for-word calque."
+
+  - id: translation-pass-finish
+    instruction: |
+      Confirm every segment translated faithfully.
+    requires: [translation-pass-loop]
+    gate:
+      - check: "npx conductor-board check translation-pass-finish"
+      - name: "All segments translated"
+        check: "node verify.mjs coverage-complete --out fixtures/translation-pass/translation-pass.out.json --ground fixtures/translation-pass/translation-pass.ground.json"

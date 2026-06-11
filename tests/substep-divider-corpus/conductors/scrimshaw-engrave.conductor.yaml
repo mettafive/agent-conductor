@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: scrimshaw-engrave
+description: >
+  scrimshaw engrave — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-pieces
+    instruction: |
+      Scope the pieces to process. Frontload every piece as a pending iteration.
+    output: pieces
+    gate:
+      - check: "npx conductor-board check scope-pieces"
+      - "Every piece captured before any work begins"
+
+  - id: scrimshaw-engrave-loop
+    type: loop
+    over: pieces
+    as: piece
+    requires: [scope-pieces]
+    steps:
+      - id: design-transfer
+        instruction: |
+          design transfer: design transfer, trace pattern.
+        gate:
+          - check: "npx conductor-board check design-transfer"
+          - name: "design transfer is correct"
+            check: "node verify-unit.mjs design-transfer --out out/design-transfer.json"
+      - id: engrave
+        instruction: |
+          engrave: engrave, scribe lines.
+        gate:
+          - check: "npx conductor-board check engrave"
+          - name: "engrave is correct"
+            check: "node verify-unit.mjs engrave --out out/engrave.json"
+      - id: ink-rub
+        instruction: |
+          ink rub: ink, pigment rub.
+        gate:
+          - check: "npx conductor-board check ink-rub"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: seal-piece
+        instruction: |
+          seal piece: seal, finish.
+        gate:
+          - check: "npx conductor-board check seal-piece"
+          - name: "seal piece is correct"
+            check: "node verify-unit.mjs seal-piece --out out/seal-piece.json"

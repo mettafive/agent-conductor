@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: warranty-claim
+description: >
+  warranty claim — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-claims
+    instruction: |
+      Scope the claims to process. Frontload every claim as a pending iteration.
+    output: claims
+    gate:
+      - check: "npx conductor-board check scope-claims"
+      - "Every claim captured before any work begins"
+
+  - id: warranty-claim-loop
+    type: loop
+    over: claims
+    as: claim
+    requires: [scope-claims]
+    steps:
+      - id: verify-coverage
+        instruction: |
+          verify coverage: verify coverage, policy check.
+        gate:
+          - check: "npx conductor-board check verify-coverage"
+          - name: "verify coverage is correct"
+            check: "node verify-unit.mjs verify-coverage --out out/verify-coverage.json"
+      - id: assess-damage
+        instruction: |
+          assess damage: assess damage, evaluate.
+        gate:
+          - check: "npx conductor-board check assess-damage"
+          - name: "assess damage is correct"
+            check: "node verify-unit.mjs assess-damage --out out/assess-damage.json"
+      - id: cost-estimate
+        instruction: |
+          cost estimate: cost estimate, repair quote.
+        gate:
+          - check: "npx conductor-board check cost-estimate"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: decide-claim
+        instruction: |
+          decide claim: decide, approve deny.
+        gate:
+          - check: "npx conductor-board check decide-claim"
+          - name: "decide claim is correct"
+            check: "node verify-unit.mjs decide-claim --out out/decide-claim.json"

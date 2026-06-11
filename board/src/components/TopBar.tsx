@@ -25,8 +25,8 @@ export function TopBar({
           className="h-2.5 w-2.5 shrink-0 rotate-45 rounded-[2px] bg-mint shadow-[0_0_10px_rgba(52,211,153,0.5)]"
           aria-hidden
         />
-        <span className="text-[13px] font-semibold tracking-tight text-chalk">Conductor</span>
-        <span className="font-mono text-[10px] tabular-nums text-dim">v{__APP_VERSION__}</span>
+        <span className="translate-y-px text-[13px] font-semibold tracking-tight text-chalk">Conductor</span>
+        <span className="translate-y-px font-mono text-[10px] tabular-nums text-dim">v{__APP_VERSION__}</span>
       </div>
 
       {/* RIGHT: reserved — never put run-specific things here. */}

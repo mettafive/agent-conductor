@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: sentiment-analysis
+description: >
+  Score each review's sentiment; label matches the text and scale is valid.
+
+steps:
+  - id: load-reviews
+    instruction: |
+      Load reviews + the sentiment scale definition into the grounding bundle.
+    output: reviews
+    gate:
+      - check: "npx conductor-board check load-reviews"
+      - name: "Reviews + scale loaded"
+        check: "node verify.mjs sentiment-grounded --out fixtures/sentiment-analysis/sentiment-analysis.out.json --ground fixtures/sentiment-analysis/sentiment-analysis.ground.json"
+
+  - id: sentiment-analysis-loop
+    type: loop
+    over: reviews
+    as: review
+    requires: [load-reviews]
+    steps:
+      - id: score-review
+        instruction: |
+          Score <review>.
+        gate:
+          - check: "npx conductor-board check score-review"
+          - name: "Score is on the valid scale"
+            check: "node verify.mjs scale-valid --out fixtures/sentiment-analysis/<item>.out.json --ground fixtures/sentiment-analysis/<item>.ground.json"
+          - name: "Label is consistent with the review text"
+            check: "node verify.mjs sentiment-grounded --out fixtures/sentiment-analysis/<item>.out.json --ground fixtures/sentiment-analysis/<item>.ground.json"
+          - "Sarcasm/mixed reviews handled, not naively keyword-counted."
+
+  - id: sentiment-analysis-finish
+    instruction: |
+      Confirm every review scored validly + grounded.
+    requires: [sentiment-analysis-loop]
+    gate:
+      - check: "npx conductor-board check sentiment-analysis-finish"
+      - name: "All reviews scored"
+        check: "node verify.mjs coverage-complete --out fixtures/sentiment-analysis/sentiment-analysis.out.json --ground fixtures/sentiment-analysis/sentiment-analysis.ground.json"

@@ -1,0 +1,22 @@
+conductor: 2.0.0
+name: ab-test-readout
+description: >
+  Report A/B result with correct significance math from the raw event counts.
+
+steps:
+  - id: load-counts
+    instruction: |
+      Load raw per-variant event counts into the grounding bundle.
+    gate:
+      - check: "npx conductor-board check load-counts"
+      - name: "Raw counts captured"
+        check: "node verify.mjs stats-correct --out fixtures/ab-test-readout/ab-test-readout.out.json --ground fixtures/ab-test-readout/ab-test-readout.ground.json"
+  - id: readout
+    instruction: |
+      Write the A/B readout.
+    requires: [load-counts]
+    gate:
+      - check: "npx conductor-board check readout"
+      - name: "Significance + lift recompute correctly from the counts"
+        check: "node verify.mjs stats-correct --out fixtures/ab-test-readout/ab-test-readout.out.json --ground fixtures/ab-test-readout/ab-test-readout.ground.json"
+      - "Caveats (peeking, sample ratio mismatch, segment effects) are surfaced, not buried."

@@ -4,6 +4,8 @@ The CLI and live local Kanban board for [Agent Conductor](../README.md).
 It watches `.conductor/status.json`, reads `.conductor/workflow.json`, and
 shows a workflow moving through **Pending → Running → Checking → Done**.
 
+Current published version: **3.3.19**.
+
 ```bash
 npx conductor-board
 ```
@@ -28,14 +30,19 @@ so only a new or edited skill pays the first compile. See
 
 - **Worker, auto-chosen and printed.** `CONDUCTOR_WORKER_CMD` → `claude` →
   `codex` → loud error. The chosen runtime and its descendant cap are printed
-  (`worker: claude (cap 5)`), so a fallback is never silent. Each runtime owns
-  its own safe cap (Claude 5, Codex larger), so Codex no longer trips a
-  Claude-tuned cap.
+  (`worker: claude (cap 200)`), so a fallback is never silent. The default cap
+  is high enough for honest card work and still low enough to catch a runaway.
+- **Prewarm, default on.** Likely-next cards get no-work warm probes while their
+  dependencies are still running. Setup warms Map Dependencies, Validate Workflow,
+  and the first work card; the final-card window warms the integration composer
+  for a likely Improve & Run loop. Disable with `--no-prewarm` or
+  `CONDUCTOR_PREWARM=0`.
 - **Integration leads, on the same board.** If the skill carries open insights,
-  the integration ("shaping") cards run first — rewriting the plan — then the
-  work cards flow, in one continuous run with no second confirm. A failed
-  integration is a visible failed shaping card that halts the run cleanly; work
-  never runs on a half-integrated plan.
+  the minimal integration preflight runs first — rewriting the plan — then the
+  work cards flow, in one continuous run with no second confirm. Detailed
+  integration progress stays in the update terminal. A failed integration is a
+  visible failed shaping card that halts the run cleanly; work never runs on a
+  half-integrated plan.
 - **One continuous surface.** The board opens at compile start (you watch the
   compile cards move pending → running → done) and the active feed auto-advances
   compile → integration → run on the same window — `?wf=<skill>` loads the run
@@ -67,7 +74,7 @@ npx conductor-board backfill-summaries .conductor/status.json
 
 # autonomous execution plane (opt-in; runs beside the manual flow above)
 npx conductor-board run-card 0 --path .conductor/status.json --workflow .conductor/workflow.json   # run one eligible card in a bounded worker
-npx conductor-board dispatch  --path .conductor/status.json --workflow .conductor/workflow.json --cap 6  # fan out eligible cards, refill + reclaim
+npx conductor-board dispatch  --path .conductor/status.json --workflow .conductor/workflow.json --cap 6 --prewarm  # fan out eligible cards, warm next cards, refill + reclaim
 npx conductor-board pause     --path .conductor/status.json   # hold the run (dispatcher idles, work-timer freezes)
 npx conductor-board resume    --path .conductor/status.json   # resume (work-timer continues)
 ```
@@ -85,7 +92,7 @@ or disable Codex with `CONDUCTOR_DECOMPOSE_CODEX=0` and use `OPENAI_API_KEY`.
 There is no heuristic fallback.
 
 Conductor learns across runs: agents post insights with `suggest`, which (with
-human directives and comments) accumulate in `knowledge.json`. `run` applies the
+human comments) accumulate in `knowledge.json`. `run` applies the
 open items automatically — the integration ("shaping") cards lead the next run on
 the same board, then the work cards follow — so there is no separate confirm
 step. (`integrate` still exists to apply them by hand.) Applying is crash-safe: a
@@ -107,6 +114,9 @@ below are what it drives, available individually for one-phase-at-a-time use:
   re-spawned a detached child (e.g. `claude -p`) leaves no orphan. It refills as
   workers finish and reclaims a worker that dies. It is not a model — quality is
   still gated by each card's own checker.
+- `--prewarm` starts speculative no-work probes for likely-next cards and the
+  integration composer. `run` enables it by default; direct `dispatch` keeps it
+  explicit.
 - `fold-card` folds a finished card's artifacts into the run snapshot off the
   critical path; the run-end consolidation is idempotent.
 
@@ -129,6 +139,8 @@ default, and default behavior is byte-identical without it.
 - Shows a completion timeline when a run finishes, with one row per card in
   completion order.
 - Archives completed and failed runs under `.conductor/history/`.
+- Keeps the update terminal scoped to the active workflow or preflight, so old
+  runs cannot replay stale beats when you navigate or refresh.
 
 ## Workflow Format
 
@@ -211,6 +223,11 @@ the final Kanban columns.
 The bottom bar is intentionally minimal: a heart icon, one streaming update line,
 and card progress.
 
+Setup and integration are preflight surfaces. Setup shows Create Cards, Map
+Dependencies, and Validate Workflow before the regular Kanban appears.
+Integration shows only the active insight-application cards; the detailed
+what/why notes stream in the update terminal.
+
 ## Options
 
 | Flag | Default | Description |
@@ -233,6 +250,8 @@ npm run build
 npm run test:features      # 50+ scenarios across every main verb
 npm run test:run           # the `run` command: state model, worker adapter, board
 npm run test:integration   # crash-safe apply + open detection
+npm run test:lifecycle     # setup/integration/run handoff, prewarm, scoped stream
+npm run test:dispatch      # reclaim, done-at-acceptance, prewarm
 npm run test:shaping       # the shaping/work card label survives the parser
 npm run test:loops
 npm start

@@ -11,6 +11,7 @@ import { stampBeat } from "./status-store.js";
 
 const stepStatusOf = (status, i) =>
   (status.steps && status.steps[String(i)] && status.steps[String(i)].status) || "pending";
+const TERMINAL = new Set(["done", "failed", "blocked"]);
 
 /** Indices of cards the dispatcher has in flight right now (status.json is authoritative). */
 export function runningIndices(status) {
@@ -31,10 +32,21 @@ export function nextEligible(status, doc) {
   return elig;
 }
 
+/** True when pause can only drain already-running work; no later pending card can be held. */
+export function pauseWouldCompleteAfterDrain(status) {
+  const entries = Object.values(status?.steps || {});
+  if (!entries.length) return false;
+  const nonTerminal = entries.filter((s) => s && !TERMINAL.has(s.status || "pending"));
+  return nonTerminal.length > 0 && nonTerminal.every((s) => s.status === "running");
+}
+
 /** The one heartbeat line: pause names the in-flight COUNT; resume names the next card. */
 export function pauseResumeNote(action, status, doc) {
   if (action === "pause") {
     const n = runningIndices(status).length;
+    if (n > 0 && pauseWouldCompleteAfterDrain(status)) {
+      return `Pause requested on the final running card${n === 1 ? "" : "s"} — it will finish, then the run will complete instead of holding.`;
+    }
     return n > 0
       ? `Pausing — ${n} card${n === 1 ? "" : "s"} still running will finish, then holding.`
       : "Pausing before the next card.";
@@ -71,13 +83,18 @@ export function appendControlBeat(status, stepIndex, note) {
 
 /**
  * Flip status + fold the clock + emit the control beat — IN PLACE, inside the caller's
- * locked mutator. Returns "paused"/"running" when applied, or null for a no-op (so the
- * caller can skip the write). Idempotent: pause-while-paused / resume-while-running → null.
+ * locked mutator. Returns "paused"/"running" when applied, "final-drain" when a
+ * final-card pause is acknowledged without entering paused, or null for a no-op.
+ * Idempotent: pause-while-paused / resume-while-running → null.
  */
 export function applyPauseResume(status, action, doc) {
   if (!status) return null;
   if (action === "pause") {
     if (status.status !== "running") return null;
+    if (pauseWouldCompleteAfterDrain(status)) {
+      appendControlBeat(status, anchorFor(action, status, doc), pauseResumeNote(action, status, doc));
+      return "final-drain";
+    }
     if (typeof status.running_since === "string") {
       const ran = Date.now() - Date.parse(status.running_since);
       if (Number.isFinite(ran) && ran > 0) {

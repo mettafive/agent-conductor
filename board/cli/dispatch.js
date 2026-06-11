@@ -13,6 +13,9 @@ import {
   buildReport,
   emitPaths,
 } from "./timing.js";
+import { resolveWorkflowContext } from "./workflow-context.js";
+import { selectAdapter, prewarmLine } from "./worker-adapters.js";
+import { clearWorkerGroups, registerWorkerGroup, unregisterWorkerGroup } from "./worker-ledger.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -49,6 +52,11 @@ const HELP = `
                            stamp per-card boundaries + emit a leak-map table to
                            .conductor/timing-<run_id>.md + .json. Default OFF =
                            byte-identical behavior. PURE instrumentation.
+    --prewarm              Opt-in frontier prewarm probes. Starts a no-work
+                           Claude/Codex/env probe for likely-next cards while
+                           their dependencies are still running, then launches
+                           the real worker only after gate acceptance.
+    --prewarm-cap <n>      Max concurrent prewarm probes (default: --cap).
     --help, -h             this help
 
   Safety: every launched run-card runs detached in its OWN process group; the
@@ -69,6 +77,14 @@ function flag(args, names) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function commandExists(cmd) {
+  try {
+    return spawnSync(cmd, ["--version"], { encoding: "utf8", stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
 }
 
 // ----- status helpers (status.json is the source of truth / the real lock) -----
@@ -234,6 +250,27 @@ function pidAlive(pid) {
   }
 }
 
+function prewarmPrompt({ workflow, index, title }) {
+  return [
+    "Conductor worker prewarm probe.",
+    "Do not inspect files, write files, run tools, update status, or do card work.",
+    `Workflow: ${workflow || "(unknown)"}`,
+    `Likely next card index: ${index}`,
+    `Likely next card title: ${title || "(untitled)"}`,
+    "Reply exactly: READY",
+  ].join("\n");
+}
+
+function integrationPrewarmPrompt({ workflow }) {
+  return [
+    "Conductor integration prewarm probe.",
+    "Do not inspect files, write files, run tools, update status, compose patches, or do integration work.",
+    `Workflow: ${workflow || "(unknown)"}`,
+    "The current run is near its final card. A future Improve & Run may ask you to apply open insights.",
+    "Reply exactly: READY",
+  ].join("\n");
+}
+
 // SIGKILL a worker's whole subtree: its process GROUP plus every descendant pid
 // found by a pgrep -P walk. The group kill ALONE misses a worker that re-spawned
 // a grandchild in its OWN detached group — run-card spawns `claude -p`/`codex`
@@ -312,17 +349,9 @@ export async function runDispatch(args) {
     return true;
   }
 
-  const p = flag(args, ["--path", "-p"]);
-  const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
-  const wfArg = flag(args, ["--workflow", "--conductor", "-c"]);
+  const { statusPath, workflowPath } = resolveWorkflowContext(args);
   const cwd = process.cwd();
-
-  let workflowPath = null;
-  if (typeof wfArg === "string") workflowPath = path.resolve(cwd, wfArg);
-  else {
-    const guess = path.join(path.dirname(statusPath), "workflow.json");
-    if (fs.existsSync(guess)) workflowPath = guess;
-  }
+  const root = path.dirname(statusPath);
   if (!workflowPath || !fs.existsSync(workflowPath)) {
     console.error(red(`no workflow.json found (pass --workflow). looked next to ${statusPath}`));
     return false;
@@ -347,8 +376,15 @@ export async function runDispatch(args) {
     Number(process.env.CONDUCTOR_MAX_CONCURRENCY) ||
     Number(doc.max_concurrency) ||
     6;
+  const prewarmEnabled = args.includes("--prewarm") || process.env.CONDUCTOR_PREWARM === "1";
+  const prewarmCapArg = flag(args, ["--prewarm-cap"]);
+  const prewarmCap = prewarmEnabled
+    ? (Number(typeof prewarmCapArg === "string" ? prewarmCapArg : NaN) || cap)
+    : 0;
+  const PREWARM_PAUSE_GRACE_MS = Number(process.env.CONDUCTOR_PREWARM_PAUSE_GRACE_MS || 3 * 60 * 1000);
+  const prewarmAdapter = prewarmEnabled ? selectAdapter() : null;
   const maxAttempts = Number(doc.max_attempts) || 5;
-  const GLOBAL_DESCENDANT_CEILING = cap * 8;
+  const GLOBAL_DESCENDANT_CEILING = (cap + prewarmCap) * 8;
 
   // ----- THE TIMEKEEPER (pure instrumentation, opt-in: --timing AND CONDUCTOR_TIMING=1) -----
   // Default OFF => no ledger, no extra writes, behavior byte-identical.
@@ -365,6 +401,8 @@ export async function runDispatch(args) {
 
   // ----- in-flight map: cardIndex -> { proc, pgid, startedAt, ... } -----
   const inFlight = new Map();
+  const prewarmed = new Map();
+  let integrationPrewarm = null;
   // per-card hand/reclaim accounting (the breaker)
   const handCount = new Map();
   let maxProcsObserved = 0;
@@ -379,6 +417,11 @@ export async function runDispatch(args) {
     for (const [, info] of inFlight) {
       if (info.pgid) killGroup(info.pgid);
     }
+    for (const [, info] of prewarmed) {
+      if (info.pgid && !info.exited) killGroup(info.pgid);
+    }
+    if (integrationPrewarm?.pgid && !integrationPrewarm.exited) killGroup(integrationPrewarm.pgid);
+    clearWorkerGroups(root);
   }
   function abortLoud(reason) {
     if (aborting) return;
@@ -403,6 +446,9 @@ export async function runDispatch(args) {
   console.log(`  ${bold("status:  ")} ${statusPath}`);
   console.log(`  ${bold("workflow:")} ${workflowPath}`);
   console.log(`  ${bold("cap:     ")} ${cap} concurrent run-card workers (max_attempts ${maxAttempts})`);
+  if (prewarmEnabled) {
+    console.log(`  ${bold("prewarm:")} ${prewarmCap} frontier probe${prewarmCap === 1 ? "" : "s"} (${prewarmLine(prewarmAdapter)})`);
+  }
   console.log(dim(`  ceiling: abort if total descendants exceed ${GLOBAL_DESCENDANT_CEILING}`));
   console.log("");
 
@@ -442,6 +488,12 @@ export async function runDispatch(args) {
       },
     );
     const pgid = child.pid;
+    registerWorkerGroup(root, {
+      pgid,
+      kind: "run-card",
+      index,
+      run_id: runId,
+    });
     const info = {
       proc: child,
       pgid,
@@ -464,6 +516,7 @@ export async function runDispatch(args) {
       info.exitSignal = signal;
       info.exitedAt = Date.now();
       info.tailOut = out.slice(-600);
+      unregisterWorkerGroup(root, pgid);
       // TIMEKEEPER: t_exit (close handler) + exit_code. measured. Then fold the
       // worker-side sidecar (best-effort) the run-card worker dropped on disk.
       if (ledger) {
@@ -475,6 +528,7 @@ export async function runDispatch(args) {
     child.on("error", () => {
       info.exited = true;
       info.exitError = true;
+      unregisterWorkerGroup(root, pgid);
       scheduleDispatch("worker-error");
     });
 
@@ -482,6 +536,200 @@ export async function runDispatch(args) {
       `  ${green("-> HAND-OUT")} card ${index} ${dim(`"${(doc.steps[index]?.title || "").slice(0, 50)}"`)} ` +
         `${dim(`(pgid ${pgid}, attempt ${handCount.get(index)})`)}`,
     );
+  }
+
+  function cancelPrewarm(index, reason = "cancel") {
+    const info = prewarmed.get(index);
+    if (!info) return false;
+    info.assigned = true;
+    if (info.pgid && !info.exited) killGroup(info.pgid);
+    if (info.pgid) unregisterWorkerGroup(root, info.pgid);
+    prewarmed.delete(index);
+    if (reason === "assign" && ledger) ledger.markPrewarmAssigned(index);
+    return true;
+  }
+
+  function cancelAllPrewarm(reason = "cancel") {
+    for (const index of [...prewarmed.keys()]) cancelPrewarm(index, reason);
+  }
+
+  function markPrewarmsPaused() {
+    const now = Date.now();
+    for (const [, info] of prewarmed) {
+      if (!info.pausedAt) info.pausedAt = now;
+    }
+  }
+
+  function clearPrewarmPauseMarks() {
+    for (const [, info] of prewarmed) delete info.pausedAt;
+  }
+
+  function reapExpiredPausedPrewarms() {
+    const now = Date.now();
+    for (const [index, info] of [...prewarmed]) {
+      if (!info.pausedAt) continue;
+      if (now - info.pausedAt >= PREWARM_PAUSE_GRACE_MS) cancelPrewarm(index, "pause-timeout");
+    }
+  }
+
+  function launchPrewarm(index) {
+    if (!prewarmEnabled || !prewarmAdapter?.prewarm || prewarmed.has(index) || inFlight.has(index)) return;
+    const step = doc.steps[index] || {};
+    const prompt = prewarmPrompt({ workflow: doc.name, index, title: step.title });
+    const spec = prewarmAdapter.prewarm(prompt, { extraDir: path.dirname(statusPath) });
+    if (!spec?.cmd) return;
+    if (ledger) ledger.markPrewarmStart(index, step.title || "");
+    const child = spawn(spec.cmd, spec.argv || [], {
+      cwd,
+      env: { ...process.env, CONDUCTOR_HEADLESS: "1", CONDUCTOR_PREWARM: "1" },
+      detached: true,
+      stdio: ["pipe", "ignore", "ignore"],
+    });
+    const info = {
+      proc: child,
+      pgid: child.pid,
+      startedAt: Date.now(),
+      exited: false,
+      assigned: false,
+    };
+    prewarmed.set(index, info);
+    registerWorkerGroup(root, {
+      pgid: child.pid,
+      kind: "prewarm",
+      index,
+      run_id: runId,
+    });
+    if (spec.input != null) {
+      child.stdin.write(spec.input);
+      child.stdin.end();
+    } else {
+      child.stdin.end();
+    }
+    child.on("close", (code, signal) => {
+      info.exited = true;
+      info.exitCode = code;
+      info.exitSignal = signal;
+      info.exitedAt = Date.now();
+      unregisterWorkerGroup(root, child.pid);
+      if (!info.assigned && code === 0 && ledger) ledger.markPrewarmReady(index);
+      scheduleDispatch("prewarm-exit");
+    });
+    child.on("error", () => {
+      info.exited = true;
+      info.exitError = true;
+      unregisterWorkerGroup(root, child.pid);
+      scheduleDispatch("prewarm-error");
+    });
+    console.log(
+      `  ${dim("~ PREWARM")} card ${index} ${dim(`"${String(step.title || "").slice(0, 50)}"`)} ` +
+        dim(`(pgid ${child.pid})`),
+    );
+  }
+
+  function launchIntegrationPrewarm() {
+    if (!prewarmEnabled || integrationPrewarm || process.env.CONDUCTOR_DECOMPOSE_CODEX === "0") return;
+    if (!commandExists("codex")) return;
+    const prompt = integrationPrewarmPrompt({ workflow: doc.name });
+    const child = spawn(
+      "codex",
+      [
+        "exec",
+        "-",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--color",
+        "never",
+      ],
+      {
+        cwd,
+        env: {
+          ...process.env,
+          CONDUCTOR_HEADLESS: "1",
+          CONDUCTOR_PREWARM: "1",
+          CONDUCTOR_DECOMPOSE_ROLE: "integration-prewarm",
+          CONDUCTOR_DECOMPOSE_ATTEMPT: "0",
+        },
+        detached: true,
+        stdio: ["pipe", "ignore", "ignore"],
+      },
+    );
+    integrationPrewarm = {
+      proc: child,
+      pgid: child.pid,
+      startedAt: Date.now(),
+      exited: false,
+    };
+    registerWorkerGroup(root, {
+      pgid: child.pid,
+      kind: "integration-prewarm",
+      run_id: runId,
+    });
+    child.stdin.end(prompt);
+    const timer = setTimeout(() => {
+      if (integrationPrewarm?.pgid === child.pid && !integrationPrewarm.exited) killGroup(child.pid);
+    }, 90_000);
+    timer.unref();
+    child.on("close", () => {
+      clearTimeout(timer);
+      if (integrationPrewarm?.pgid === child.pid) integrationPrewarm.exited = true;
+      unregisterWorkerGroup(root, child.pid);
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      if (integrationPrewarm?.pgid === child.pid) integrationPrewarm.exited = true;
+      unregisterWorkerGroup(root, child.pid);
+    });
+    console.log(`  ${dim("~ PREWARM")} integration composer ${dim(`(pgid ${child.pid})`)}`);
+  }
+
+  function integrationPrewarmPass(status) {
+    if (!prewarmEnabled || integrationPrewarm) return;
+    const nonTerminal = [];
+    for (let i = 0; i < doc.steps.length; i++) {
+      if (!TERMINAL.has(stepStatus(status, doc, i))) nonTerminal.push(i);
+    }
+    if (nonTerminal.length !== 1) return;
+    const entry = stepEntry(status, doc, nonTerminal[0]);
+    if (entry?.status === "running" || entry?.gate === "checking") launchIntegrationPrewarm();
+  }
+
+  function prewarmPass(status) {
+    if (!prewarmEnabled || !prewarmAdapter?.prewarm || prewarmCap <= 0) return;
+
+    for (const [index, info] of [...prewarmed]) {
+      const onDisk = stepStatus(status, doc, index);
+      if (TERMINAL.has(onDisk) || inFlight.has(index)) {
+        cancelPrewarm(index, "cancel");
+      } else if (info.exited && info.exitCode !== 0) {
+        prewarmed.delete(index);
+      }
+    }
+
+    const warmActive = [...prewarmed.values()].filter((info) => !info.exited && !info.assigned).length;
+    let openWarmSlots = Math.max(0, prewarmCap - warmActive);
+    if (openWarmSlots <= 0) return;
+
+    const candidates = [];
+    for (let i = 0; i < doc.steps.length; i++) {
+      if (inFlight.has(i) || prewarmed.has(i)) continue;
+      if (stepStatus(status, doc, i) !== "pending") continue;
+      const requires = (doc.steps[i]?.requires || []).map(Number);
+      if (requires.length === 0) continue;
+      const blockers = requires.filter((dep) => stepStatus(status, doc, dep) !== "done");
+      if (!blockers.length) continue; // already eligible; handout owns this path
+      const allClose = blockers.every((dep) => {
+        const depEntry = stepEntry(status, doc, dep);
+        return depEntry?.status === "running" || depEntry?.gate === "checking" || depEntry?.gate === "passed";
+      });
+      if (allClose) candidates.push(i);
+    }
+    candidates.sort((a, b) => unblockWeight(doc, b) - unblockWeight(doc, a) || a - b);
+    for (const index of candidates) {
+      if (openWarmSlots <= 0) break;
+      launchPrewarm(index);
+      openWarmSlots--;
+    }
   }
 
   // ----- the idempotent pass -----
@@ -508,6 +756,12 @@ export async function runDispatch(args) {
     for (const [index, info] of inFlight) {
       if (info.exited || info.terminal) continue;
       if (TERMINAL.has(stepStatus(status, doc, index))) continue;
+      if (info.pgid && pidAlive(info.pgid)) {
+        totalDescendants += 1 + countDescendants(info.pgid);
+      }
+    }
+    for (const [, info] of prewarmed) {
+      if (info.exited || info.assigned) continue;
       if (info.pgid && pidAlive(info.pgid)) {
         totalDescendants += 1 + countDescendants(info.pgid);
       }
@@ -542,6 +796,7 @@ export async function runDispatch(args) {
         );
         info.terminal = true; // mark so a stray later pass is a definitive no-op
         if (info.pgid) killGroup(info.pgid); // stop the spent worker; OS reaps in bg
+        if (info.pgid) unregisterWorkerGroup(root, info.pgid);
         inFlight.delete(index); // free the slot ONCE, at acceptance
         continue;
       }
@@ -616,9 +871,26 @@ export async function runDispatch(args) {
     // mid-pause frees its slot), but no new cards go out until status flips back to
     // "running". The fs.watch on the resume write + the patrol re-fire this pass. =====
     if (status.status === "paused") {
+      // Soft pause means "drain and hold": let already-handed cards finish and
+      // do not hand out new work. Prewarm probes are speculative, not card work;
+      // keep them alive briefly for a friendly quick-resume, then reap them if
+      // the run stays paused for PREWARM_PAUSE_GRACE_MS.
+      markPrewarmsPaused();
+      reapExpiredPausedPrewarms();
+      let pausedStatus = status;
+      try { pausedStatus = readJson(statusPath); } catch { /* keep snapshot */ }
+      const allTerminalWhilePaused = doc.steps.every((_, i) => TERMINAL.has(stepStatus(pausedStatus, doc, i)));
+      if (allTerminalWhilePaused && inFlight.size === 0) {
+        finish(pausedStatus);
+        return;
+      }
       void trigger;
       return;
     }
+    clearPrewarmPauseMarks();
+
+    prewarmPass(status);
+    integrationPrewarmPass(status);
 
     // ===== HAND-OUT branch. =====
     const openSlots = cap - inFlight.size;
@@ -642,6 +914,10 @@ export async function runDispatch(args) {
 
       for (const index of eligible.slice(0, openSlots)) {
         if (inFlight.has(index)) continue;
+        const hadPrewarm = cancelPrewarm(index, "assign");
+        if (hadPrewarm) {
+          console.log(`  ${dim("~ PREWARM-HIT")} card ${index} ${dim("(probe ready before real hand-out)")}`);
+        }
         // claim guard FIRST (fast within-pass guard for the gap before spawn).
         inFlight.set(index, { proc: null, pgid: null, startedAt: Date.now(), claiming: true });
         // AUTHORITATIVE CLAIM: write status:"running" to disk SYNCHRONOUSLY, BEFORE
@@ -656,6 +932,13 @@ export async function runDispatch(args) {
         }
         launch(index); // launch() overwrites the entry with the real proc/pgid
       }
+    }
+
+    try {
+      const freshForPrewarm = readJson(statusPath);
+      prewarmPass(freshForPrewarm);
+    } catch {
+      /* next watch/patrol will retry */
     }
 
     // ===== Termination check. =====

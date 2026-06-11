@@ -1,6 +1,6 @@
 {
   "name": "agent-conductor-monorepo",
-  "version": "0.2.0",
+  "version": "3.3.19",
   "description": "A portable spec and live Kanban board for orchestrating AI agent workflows.",
   "license": "MIT",
   "author": "mettafive",

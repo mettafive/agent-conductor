@@ -1,27 +1,15 @@
 import fs from "node:fs";
-import path from "node:path";
 import { mutateStatus } from "./status-store.js";
 import { applyPauseResume } from "./pause-core.js";
+import { resolveStatusPath as resolveWorkflowStatusPath } from "./workflow-context.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const amber = (s) => `\x1b[38;5;214m${s}\x1b[0m`;
 
-function flag(args, names) {
-  for (const n of names) {
-    const i = args.indexOf(n);
-    if (i !== -1) {
-      const v = args[i + 1];
-      return v && !v.startsWith("-") ? v : true;
-    }
-  }
-  return undefined;
-}
-
 function resolveStatusPath(args) {
-  const p = flag(args, ["--path", "-p"]);
-  return path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
+  return resolveWorkflowStatusPath(args);
 }
 
 function readJson(file) {
@@ -101,6 +89,8 @@ function pauseResumeCli(args, action) {
   if (applied === "paused") {
     const secs = Math.round((readJson(statusPath).elapsed_ms || 0) / 1000);
     console.log(`  ${amber("|| PAUSED")} ${dim(`(timer frozen at ${secs}s; dispatcher will idle)`)}`);
+  } else if (applied === "final-drain") {
+    console.log(`  ${amber("|| PAUSE NOT HELD")} ${dim("(final card is already running; run will complete)")}`);
   } else if (applied === "running") {
     console.log(`  ${green("> RESUMED")} ${dim("(timer continues; dispatcher resumes handing)")}`);
   }

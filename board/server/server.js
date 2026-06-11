@@ -173,7 +173,13 @@ function latestIntegrationSummary(wf) {
 
 function safeArtifactPath(wf, relPath) {
   const root = artifactRootFor(wf);
-  const clean = String(relPath || "").replace(/^[/\\]+/, "");
+  let clean = String(relPath || "").replace(/^[/\\]+/, "");
+  // Older compile/status payloads sometimes stored artifact paths as
+  // `artifacts/foo.md`, while the artifact API is already rooted at the
+  // artifacts directory. Accept both spellings so the UI does not 404.
+  const rootName = path.basename(root);
+  if (rootName && clean === rootName) clean = "";
+  if (rootName && clean.startsWith(`${rootName}/`)) clean = clean.slice(rootName.length + 1);
   const abs = path.resolve(root, clean);
   const relative = path.relative(root, abs);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
@@ -375,7 +381,11 @@ function archiveIfDone(historyDir, snapshot, archived) {
     archived_at: new Date().toISOString(),
     done,
     total,
-    snapshot: { status, workflowJson: snapshot.workflowJson ?? null },
+    snapshot: {
+      status,
+      workflowJson: snapshot.workflowJson ?? null,
+      knowledgeJson: snapshot.knowledgeJson ?? null,
+    },
   };
 
   try {
@@ -1327,8 +1337,9 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
       const wf = findWf(decodeURIComponent(m[1]));
       if (!wf) return json(res, 404, { error: "workflow not found" });
       readBody(req).then(async (bodyStr) => {
+        let body = {};
         try {
-          if (bodyStr) JSON.parse(bodyStr); // tolerate (and validate) an optional body
+          body = bodyStr ? JSON.parse(bodyStr) : {}; // tolerate (and validate) an optional body
         } catch {
           return json(res, 400, { error: "invalid request body" });
         }
@@ -1361,9 +1372,12 @@ export function startServer({ statusPath, conductorPath: explicitConductor, port
             const logFd = fs.openSync(path.join(wf.dir, "run.log"), "a");
             stdio = ["ignore", logFd, logFd];
           } catch { /* logging is best-effort */ }
+          const runArgs = [CLI_BIN, "run", skillPath, "--dir", wf.dir, "--headless", "--port", String(listenPort)];
+          if (body?.prewarm === false) runArgs.push("--no-prewarm");
+          else runArgs.push("--prewarm");
           child = spawn(
             process.execPath,
-            [CLI_BIN, "run", skillPath, "--dir", wf.dir, "--headless", "--port", String(listenPort)],
+            runArgs,
             { cwd: projectRootForWf(wf), env: { ...process.env, CONDUCTOR_HEADLESS: "1" }, detached: true, stdio },
           );
           child.unref();

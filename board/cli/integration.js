@@ -16,7 +16,6 @@ import {
   checkWorkflowWithDependencyGuard,
   listLockedEdges,
 } from "./order.js";
-import { receiptArtifactName } from "./artifacts.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -378,9 +377,13 @@ function integrationPrompt({ skill, cards, workflow, openItems, summary, locked 
 
 For each learning item, edit the most relevant existing card's instruction to include this learning. Fold it in naturally — weave it into the instruction as if it was always there, do not append it as a footnote.
 
+Optimize for the future worker's speed and ease of use. If the insight says "the answer/source/instruction is here instead", place that source, path, command, schema, or decision rule near the start of the relevant card instruction, before the worker would otherwise search or improvise. The applied instruction should make the fast path obvious to an agent reading the card cold.
+
+Knowledge items with source "human" are user comments from the board. Treat them as intentional product direction, not weak hints. If a human comment explicitly changes an existing requirement, the new instruction should replace or narrow the old requirement so the card is executable. Do not preserve contradictory old wording just to keep the original text.
+
 If multiple learning items apply to the same card, return exactly one combined edit for that card. The patch lists every handled item in knowledge_ids and provides one final new_instruction that preserves the original instruction and integrates all listed insights. Never return competing full-text patches for the same card.
 
-For learning items tagged "efficiency", preserve the card's original goal and fold the detail in as upfront context, a known path, a known command, or a known shortcut so the next run avoids rediscovery.
+For learning items tagged "efficiency", preserve the card's original goal and fold the detail in as upfront context, a known path, a known command, a known shortcut, or a first-check rule so the next run avoids rediscovery. Do not bury the optimization after output requirements; put it at the earliest useful point in the instruction.
 
 If a learning item doesn't apply to any existing card, dismiss it with a one-line reason. Do not create cards in this integration pass.
 
@@ -392,7 +395,7 @@ You are returning patches only. Do not return a full cards array or workflow.
 Allowed change type for this version: "edit_instruction" only.
 Do not add cards. Do not remove cards. Do not rename cards. Do not reorder cards. Do not change dependencies.
 
-For each knowledge item you apply, also emit a one-sentence plain-English note of what you changed and why — the concrete application to THIS workflow, not a restatement of the insight's own text. Example: "Added synonym expansion to the research card so the next run won't miss keyword variants." Return these as applied_notes: a list of { knowledge_id, note }, one entry per applied insight.
+For each knowledge item you apply, also emit a one-sentence plain-English note of what you changed and why — the concrete application to THIS workflow, not a restatement of the insight's own text. The note should name the speed/efficiency gain when there is one. Example: "Added synonym expansion to the research card before the search instructions so the next run won't miss keyword variants or rediscover the rule." Return these as applied_notes: a list of { knowledge_id, note }, one entry per applied insight.
 
 Return JSON only:
 {
@@ -410,7 +413,7 @@ Return JSON only:
     { "id": "K-003", "reason": "Observational, not actionable." }
   ],
   "applied_notes": [
-    { "knowledge_id": "K-001", "note": "Added canonical HTTPS verification to the validate card so the next run proves the redirect, not just the page." }
+    { "knowledge_id": "K-001", "note": "Added canonical HTTPS verification near the start of the validate card so the next run proves the redirect without rediscovering that check." }
   ]
 }
 
@@ -456,6 +459,12 @@ equal the original instruction PLUS exactly the assigned insights — and nothin
 else. The card keeps everything it already required; the listed insights are the
 only additions; nothing unrelated is altered, weakened, or dropped.
 
+Exception: a knowledge item with source "human" is a user comment and may be an
+intentional override. If a human comment explicitly changes an existing
+requirement, the correct patch replaces or narrows the old requirement instead
+of preserving a contradiction. Judge whether the final instruction is executable
+and honors the user's latest direction.
+
 Read every proposed new_instruction cold, as if seeing it for the first time.
 Do not say "looks good." Do not trust that an insight was integrated because the
 patch claims so — verify the behavior is actually present in the text.
@@ -464,9 +473,16 @@ PASS a card's patch only if ALL hold:
 - Every knowledge_id listed for the card is genuinely present in the new
   instruction as real, actionable work — woven in naturally, not appended as a
   footnote.
+- Efficiency insights are placed where a future worker can use them before
+  wasting effort: early context, first-check rule, known source/path/command, or
+  shortcut near the relevant action. A buried or vague optimization is not
+  integrated.
 - Everything the original instruction required still stands — every constraint,
   output format, deliverable, warning, and example — UNLESS one of the listed
   insights explicitly directs its removal.
+- Human comments can explicitly direct a requirement change. Do not fail a patch
+  for removing or replacing old wording when that old wording conflicts with a
+  listed human comment.
 - Nothing outside the listed insights changed. No silent edits, no scope creep,
   no rewording that quietly drops a requirement.
 - The edit stays an instruction edit. It does not require adding, removing, or
@@ -480,8 +496,12 @@ concrete, specific reason — never "not relevant" or any generic justification.
 FAIL a card's patch if:
 - A listed insight is missing from the new instruction, or only gestured at
   without becoming real work.
+- An efficiency insight is technically mentioned but not positioned as a usable
+  shortcut/source/rule for the future worker.
 - Any prior requirement was lost, weakened, or contradicted without a listed
   insight directing it.
+- A human comment changes a requirement but the patch preserves both the old and
+  new wording in conflict, leaving the worker with two incompatible instructions.
 - Anything beyond the listed insights changed.
 - The edit smuggles in a structural or cardinality change.
 - An open item was neither applied nor dismissed with a concrete reason.
@@ -640,7 +660,7 @@ Each add_card patch is:
   "knowledge_ids": ["K-011"],
   "card": {
     "title": "Compress images before upload",
-    "instruction": "Compress images before upload and write .conductor/artifacts/<card-index>-<slugified-card-title>.md with commands, files changed, and verification proof."
+    "instruction": "Compress images before upload and write the primary markdown receipt at the exact path assigned by the conductor-board worker brief, with commands, files changed, and verification proof."
   },
   "requires": {
     "self": [4],
@@ -684,7 +704,7 @@ Return JSON only:
     {
       "type": "add_card",
       "knowledge_ids": ["K-011"],
-      "card": { "title": "Compress images", "instruction": "Concrete verifiable instruction requiring .conductor/artifacts/<card-index>-<slugified-card-title>.md." },
+      "card": { "title": "Compress images", "instruction": "Concrete verifiable instruction requiring the primary markdown receipt at the exact path assigned by the conductor-board worker brief." },
       "requires": { "self": [4], "dependents": [ { "card": 6, "add_requires": ["N"] } ] },
       "change": "Added missing image compression card."
     }
@@ -704,15 +724,15 @@ A good card:
 - is a concrete, independently verifiable unit of work
 - has a clear title of 40 characters or fewer
 - has a detailed instruction
-- requires one primary markdown receipt at .conductor/artifacts/<card-index>-<slugified-card-title>.md
+- requires one primary markdown receipt at the exact path assigned by the conductor-board worker brief
 - produces an artifact or action record; it is not just "think", "consider", or "review" with no output
 - is not a standalone rule, criterion, warning, invariant, or background note
 - is not too broad to check honestly and not too tiny to be useful
 - does not add a condition field, gate field, id, or dependency field inside the card object
 
-For these proposed additions, the first appended card index is ${nextIndex}. If
-the instruction uses the literal placeholder <card-index>, accept that as the
-required receipt convention.
+For these proposed additions, the first appended card index is ${nextIndex}. Fail
+instructions that invent, predict, or name the receipt file instead of deferring
+the exact path to the runtime worker brief.
 
 Return JSON only:
 {
@@ -884,6 +904,38 @@ ${JSON.stringify(survivingCards, null, 2)}`;
 
 function words(text) {
   return new Set(String(text || "").toLowerCase().match(/[a-z0-9åäö]+/g) || []);
+}
+
+function normalizedEvidenceText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9åäö]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function learningDetectableInInstruction(item, instruction) {
+  const detail = normalizedEvidenceText(item?.detail || item?.title);
+  const target = normalizedEvidenceText(instruction);
+  if (!detail || !target) return true;
+
+  const unitSignals = [...detail.matchAll(/\b(\d+)\s+(word|words|line|lines|section|sections|card|cards|file|files)\b/g)];
+  if (unitSignals.length) {
+    return unitSignals.some((match) => {
+      const [, number, unit] = match;
+      const singular = unit.replace(/s$/, "");
+      const plural = `${singular}s`;
+      const exactUnit = new RegExp(`\\b${number}\\s+(${singular}|${plural})\\b`);
+      return exactUnit.test(target);
+    });
+  }
+
+  const detailWords = [...words(detail)];
+  const signalWords = detailWords.filter((word) => word.length > 4);
+  const numericSignals = detailWords.filter((word) => /^\d+$/.test(word));
+  if (numericSignals.length && numericSignals.some((word) => words(target).has(word))) return true;
+  if (!signalWords.length) return true;
+  return signalWords.some((word) => target.includes(word));
 }
 
 function knowledgeStatus(item) {
@@ -1364,8 +1416,7 @@ function applyAddChanges({ cards, workflow, changes, addItems }) {
 
 function retiredInstruction({ index, step, knowledgeIds }) {
   const idLabel = knowledgeIds.join(", ");
-  const receipt = `.conductor/artifacts/${receiptArtifactName(index, step)}`;
-  return `This step has been retired by ${idLabel}. Produce an empty markdown receipt at ${receipt} documenting that the step is retired and no work is required, then take no other action.`;
+  return `This step has been retired by ${idLabel}. Produce an empty markdown receipt at the exact path assigned by the conductor-board worker brief documenting that the step is retired and no work is required, then take no other action.`;
 }
 
 function applyRemoveChanges({ cards, workflow, changes, removeItems }) {
@@ -2225,10 +2276,7 @@ function assertLedgerConsistency({ cards, workflow, changes, knowledge }) {
       for (const id of change.knowledge_ids || []) {
         const item = byId.get(id);
         if (!item) throw new Error(`ledger check failed: unknown knowledge item ${id}`);
-        const detail = compact(item.detail || item.title);
-        const signalWords = [...words(detail)].filter((word) => word.length > 4);
-        const shared = signalWords.filter((word) => instruction.includes(word.toLowerCase())).length;
-        if (signalWords.length && shared === 0) {
+        if (!learningDetectableInInstruction(item, instruction)) {
           throw new Error(`ledger check failed: ${id} is marked for card ${change.card} but its learning is not detectable in the shipped instruction`);
         }
       }
@@ -2371,7 +2419,7 @@ function commitIntegration(root, { runId, cards, workflow, knowledge }) {
  * the open-items filter drops them and they are never re-integrated. Returns
  * true if a marker was reconciled.
  */
-function reconcilePendingApply(root) {
+export function reconcilePendingApply(root) {
   const marker = path.join(root, PENDING_APPLY);
   const pending = readJsonMaybe(marker);
   if (!pending) return false;
@@ -2388,7 +2436,7 @@ function reconcilePendingApply(root) {
 
 export async function runIntegration(args) {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log("usage: conductor-board integrate --skill SKILL.md [--dir .conductor/<skill>] [--run-id ID]");
+    console.log("usage: conductor-board integrate --skill SKILL.md [--dir .conductor/<skill>] [--run-id ID] [--allow-local-fallback]");
     return true;
   }
   const skillArg = flag(args, ["--skill", "-s"]);
@@ -2422,6 +2470,7 @@ export async function runIntegration(args) {
   const addItems = openItems.filter(isAddChangeItem);
   const removeItems = openItems.filter(isRemoveChangeItem);
   const maxAttempts = Number(flag(args, ["--max-attempts"]) || 10);
+  const strictIntegration = !args.includes("--allow-local-fallback");
   const integrationBoard = await initIntegrationBoard(root, openItems, port);
   const progress = makeIntegrationProgress(integrationBoard);
 
@@ -2437,7 +2486,7 @@ export async function runIntegration(args) {
         openItems: instructionItems,
         summary: latestRunSummary(root),
         maxAttempts,
-        strict: args.includes("--strict"),
+        strict: strictIntegration,
         progress,
       });
       // The loop narrates what it just taught itself: ONE multi-line closing beat
@@ -2469,6 +2518,8 @@ export async function runIntegration(args) {
     applied = await applyInstructionPatches({ cards, workflow, changes: result.changes, openItems });
     assertLedgerConsistency({ cards: applied.cards, changes: result.changes, knowledge });
   } catch (e) {
+    progress({ phase: "validate", event: "phase-start" });
+    progress({ phase: "validate", event: "phase-end", passed: false, feedback: e.message, tone: "feedback" });
     console.error(red(`✗ integration rejected by guard: ${e.message}`));
     return false;
   }
@@ -2484,7 +2535,7 @@ export async function runIntegration(args) {
         workflow: nextWorkflow,
         orderItems,
         maxAttempts,
-        strict: args.includes("--strict"),
+        strict: strictIntegration,
         progress,
       });
       progress({ phase: "order", event: "phase-end", passed: true });
@@ -2531,7 +2582,7 @@ export async function runIntegration(args) {
         workflow: nextWorkflow,
         addItems,
         maxAttempts,
-        strict: args.includes("--strict"),
+        strict: strictIntegration,
         progress,
       });
       progress({ phase: "add", event: "phase-end", passed: true });
@@ -2592,7 +2643,7 @@ export async function runIntegration(args) {
         workflow: nextWorkflow,
         removeItems,
         maxAttempts,
-        strict: args.includes("--strict"),
+        strict: strictIntegration,
         progress,
       });
       progress({ phase: "remove", event: "phase-end", passed: true });

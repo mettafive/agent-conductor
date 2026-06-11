@@ -1,10 +1,22 @@
 # Conductor Spec
 
-Version: 3.1.0
+Version: 3.3.19
 
 Agent Conductor turns a skill into cards on a Kanban board. Every card is
 independently verified against its own instruction. Write better instructions,
 get better verification. No separate checker configuration is needed.
+
+The current runtime is a one-command lifecycle:
+
+```bash
+npx conductor-board run SKILL.md
+```
+
+That command opens the board before setup work starts, compiles the skill if
+needed, applies open insights as a visible preflight when they exist, dispatches
+bounded real workers, and archives the finished run. The same window moves
+through setup -> integration -> regular Kanban -> done; there is no separate
+integration board to confirm by hand.
 
 There are no explicit gate fields, no soft/hard distinction, and no approval
 steps during execution.
@@ -44,7 +56,9 @@ after dependency mapping:
 - Card identity is the array index. There is no card `id` field.
 
 Order emerges from the `requires` graph. Cards whose dependencies are satisfied
-can run; cards with no mutual dependencies can run in parallel.
+can run; cards with no mutual dependencies can run in parallel. The composer is
+calibrated to split small, explicitly named independent outputs into parallel
+siblings, while preserving one broad card for large or open-ended collections.
 
 Terminology:
 
@@ -91,6 +105,10 @@ npx conductor-board gate-result 0 --failed --evidence "missing owner-concern cov
 5. If the checker passed and an artifact exists, move the card to Done and unlock dependents.
 6. If the checker failed, keep the card incomplete so the work agent retries.
 
+A card is considered done at **gate acceptance**: once the receipt artifact is
+durable and the checker accepts it, dependents may start. The worker's real
+shutdown is backgrounded and is not on the critical path.
+
 ## Situational Work
 
 There is no system-level condition field and no branch card type. If work only
@@ -134,13 +152,19 @@ sub-steps.
 
 ## Authoring Phases
 
-The setup conductor has two authoring phases:
+The setup conductor has three visible authoring cards:
 
-1. **Card design:** read the skill and output `.conductor/cards.json` with
+1. **Create Cards:** read the skill and output `.conductor/cards.json` with
    `title` and `instruction` for each verifiable unit of work. No dependencies,
    ids, ordering fields, or gates yet.
-2. **Dependency mapping:** read the cards, add `requires` for each, and assemble
+2. **Map Dependencies:** read the cards, add `requires` for each, and assemble
    `.conductor/workflow.json`.
+3. **Validate Workflow:** validate the accepted workflow before dispatch.
+
+The board opens before Create Cards starts, so the first visible experience for
+a fresh skill is the setup board moving through those cards. Setup uses the same
+served-feed handshake as regular runs: the command waits until the board can
+serve the setup feed before continuing.
 
 Phase 1 is checked by:
 
@@ -193,6 +217,14 @@ re-hand, and a card that crashes past `max_attempts` trips a breaker and is
 marked `failed`. The dispatcher claims a card by writing `running` to disk
 before spawning the worker, so it is the single writer.
 
+Frontier prewarm is enabled by default through `run` and can be disabled with
+`--no-prewarm` or `CONDUCTOR_PREWARM=0`. Prewarm starts no-work probes for
+likely-next cards while their dependencies are still running, then kills the
+probe and launches the real worker only after the dependency is accepted. Setup
+also warms Map Dependencies, Validate Workflow, and the first work card; the
+final-card window warms the integration composer for a likely next Improve & Run
+loop. Prewarm probes never inspect files, write files, or update status.
+
 ### `fold-card` — durable per-card artifacts
 
 `conductor-board fold-card <card-index>` copies one finished card's receipt and
@@ -205,7 +237,8 @@ The top-level run carries a status:
 
 - **running** — work is in progress (or eligible to start).
 - **paused** — a manual pause (`pause`); distinct from failed. The dispatcher
-  idles and hands out no new cards until `resume`.
+  idles and hands out no new cards until `resume`. In-flight cards finish; idle
+  prewarm probes are kept briefly for a quick resume, then reaped.
 - **failed** — a card exhausted its attempts; the run stops. The board exposes a
   failed-reason modal with the failure reason and the failed step.
 - **done** — every card is terminal and the work is complete.
@@ -230,16 +263,18 @@ reclaim, breaker, or claim behavior.
 Conductor improves a workflow over repeated runs. The loop:
 
 1. **Capture.** While working, an agent posts insights with
-   `suggest "..." --scope this-conductor`. Human directives and card comments
+   `suggest "..." --scope this-conductor`. Human comments
    are captured the same way.
 2. **Accumulate.** Open items collect in `knowledge.json`. When a run is
    archived, its open notes are appended there.
 3. **Integrate.** The next `run` applies the open knowledge items automatically:
-   the integration ("shaping") cards lead the run on the same board, rewriting
-   `cards.json`/`workflow.json`, then the work cards follow — one continuous run.
-   Applying is crash-safe (a write-ahead `pending-apply.json` marker makes the
-   commit atomic), and a failed integration halts the run cleanly rather than
-   running work on a half-integrated plan. `integrate` applies them by hand.
+   a minimal **Integrating insights** preflight appears first, showing only the
+   current integration cards while detailed beats stay in the update terminal.
+   Integration rewrites `cards.json`/`workflow.json`, validates the result, then
+   the regular work cards fade in on the same board. Applying is crash-safe (a
+   write-ahead `pending-apply.json` marker makes the commit atomic), and a
+   failed integration halts the run cleanly rather than running work on a
+   half-integrated plan. `integrate` applies them by hand.
 4. **Learn per card.** `learn-card` is the post-card efficiency learner: after a
    card completes it derives an efficiency insight about how the card ran (it
    never changes what the card does).

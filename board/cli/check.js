@@ -4,7 +4,8 @@ import { dependencyBlockers, dependencyBlockerMessage } from "./dependencies.js"
 import { appendAutoHeartbeat } from "./heartbeats.js";
 import { mutateStatus } from "./status-store.js";
 import { recordCheckerResult, resolveStep, statusEntry, discoverConductor } from "./complete.js";
-import { artifactForFile, artifactReadSources, isReadableArtifactPath, receiptArtifactName } from "./artifacts.js";
+import { artifactForFile, artifactReadSources, artifactsDir, isReadableArtifactPath, receiptArtifactName } from "./artifacts.js";
+import { resolveStatusPath } from "./workflow-context.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -113,11 +114,11 @@ function collectOutput({ args, cwd, statusPath, status, stepId, entry, step }) {
   };
 }
 
-function checkerPrompt(instruction, output, receiptName) {
+function checkerPrompt(instruction, output, receiptPath, receiptName) {
   return (
     `The agent was asked: ${instruction}\n\n` +
     `Here is what was produced:\n${output}\n\n` +
-    `The output must be the card's primary markdown receipt at .conductor/artifacts/${receiptName} (format: <card-index>-<slugified-card-title>.md): the actual work product or a verifiable action record. Content/code/data cards should show the actual content, code, data, diff, or report in that markdown receipt. Action cards may pass with the markdown receipt only when it includes concrete proof such as command run, timestamp, inputs, return value, changed resource, affected rows/files/URLs, and verification query/curl/test result. If the receipt merely describes what was done without proof, FAIL immediately.\n` +
+    `The output must be the card's primary markdown receipt at ${receiptPath} (named ${receiptName}): the actual work product or a verifiable action record. Content/code/data cards should show the actual content, code, data, diff, or report in that markdown receipt. Action cards may pass with the markdown receipt only when it includes concrete proof such as command run, timestamp, inputs, return value, changed resource, affected rows/files/URLs, and verification query/curl/test result. If the receipt merely describes what was done without proof, FAIL immediately.\n` +
     "Supporting files such as images, screenshots, PDFs, JSON, CSV, HTML, or logs are not standalone primary artifacts. Evaluate them only as files referenced from the markdown receipt. For image work, the receipt should embed every produced image inline with markdown image syntax.\n" +
     "Does it satisfy the instruction? List what's done and what's missing. PASS or FAIL.\n" +
     "Then write SUMMARY: the canonical two-sentence verdict summary the dashboard displays for this card. It must be a clear, complete TWO-SENTENCE summary, for a non-technical user, of WHAT was done AND HOW you verified it (or, on FAIL, what is missing and how you checked). Two full sentences, no trailing ellipsis, never cut off mid-word.\n" +
@@ -141,7 +142,7 @@ export async function runCheck(args) {
         "  Prints the independent checker prompt for comparing the card output against\n" +
         "  its instruction. Evaluate the prompt in a clean context, then record the\n" +
         "  PASS/FAIL verdict and SUMMARY line with `conductor-board gate-result`.\n\n" +
-        "  Completion requires .conductor/artifacts/<card-index>-<slugified-card-title>.md as the primary\n" +
+        "  Completion requires the card's scoped conductor artifact receipt as the primary\n" +
         "  markdown receipt. Non-text work should reference supporting files from\n" +
         "  that receipt; image receipts should embed\n" +
         "  every produced image inline.",
@@ -150,8 +151,7 @@ export async function runCheck(args) {
   }
 
   const [stepId] = positionals(args);
-  const p = flag(args, ["--path", "-p"]);
-  const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
+  const statusPath = resolveStatusPath(args);
   if (!stepId) {
     console.error(red("usage: conductor-board check <step-id>[::iter::sub] [--output \"...\"] [--output-file file]"));
     return false;
@@ -242,7 +242,9 @@ export async function runCheck(args) {
   console.log(`checker prompt for ${stepId}`);
   if (sources.length) console.log(dim(`  output: ${sources.join(", ")}`));
   console.log("");
-  console.log(checkerPrompt(instruction, output, receiptArtifactName(stepId, resolved.step)));
+  const receiptName = receiptArtifactName(stepId, resolved.step);
+  const receiptPath = path.relative(process.cwd(), path.join(artifactsDir(statusPath), receiptName)).split(path.sep).join("/");
+  console.log(checkerPrompt(instruction, output, receiptPath, receiptName));
   console.log("");
   return true;
 }

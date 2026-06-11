@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: price-monitoring
+description: >
+  Record each product's current price from the live listing; flag real changes.
+
+steps:
+  - id: load-products
+    instruction: |
+      Load products + their last recorded prices, and fetch each live listing into the grounding bundle.
+    output: products
+    gate:
+      - check: "npx conductor-board check load-products"
+      - name: "Live listings + last prices captured"
+        check: "node verify.mjs price-on-listing --out fixtures/price-monitoring/price-monitoring.out.json --ground fixtures/price-monitoring/price-monitoring.ground.json"
+
+  - id: price-monitoring-loop
+    type: loop
+    over: products
+    as: product
+    requires: [load-products]
+    steps:
+      - id: record-price
+        instruction: |
+          Record <product>'s current price.
+        gate:
+          - check: "npx conductor-board check record-price"
+          - name: "Recorded price appears on the live listing"
+            check: "node verify.mjs price-on-listing --out fixtures/price-monitoring/<item>.out.json --ground fixtures/price-monitoring/<item>.ground.json"
+          - name: "Change flag matches the actual delta vs last price"
+            check: "node verify.mjs change-correct --out fixtures/price-monitoring/<item>.out.json --ground fixtures/price-monitoring/<item>.ground.json"
+          - "Out-of-stock / promo-price edge cases handled, not recorded as a real price drop."
+
+  - id: price-monitoring-finish
+    instruction: |
+      Confirm every product priced from its live listing.
+    requires: [price-monitoring-loop]
+    gate:
+      - check: "npx conductor-board check price-monitoring-finish"
+      - name: "All products checked"
+        check: "node verify.mjs coverage-complete --out fixtures/price-monitoring/price-monitoring.out.json --ground fixtures/price-monitoring/price-monitoring.ground.json"

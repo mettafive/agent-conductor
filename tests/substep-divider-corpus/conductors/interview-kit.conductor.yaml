@@ -1,0 +1,36 @@
+conductor: 2.0.0
+name: interview-kit
+description: >
+  interview kit — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: define-role
+    instruction: |
+      define role: define role, competencies.
+    gate:
+      - check: "npx conductor-board check define-role"
+      - name: "define role is correct"
+        check: "node verify-unit.mjs define-role --out out/define-role.json"
+  - id: write-questions
+    instruction: |
+      write questions: write questions, interview questions.
+    requires: [define-role]
+    gate:
+      - check: "npx conductor-board check write-questions"
+      - name: "write questions is correct"
+        check: "node verify-unit.mjs write-questions --out out/write-questions.json"
+  - id: scoring-rubric
+    instruction: |
+      scoring rubric: scoring rubric, evaluation guide.
+    requires: [write-questions]
+    gate:
+      - check: "npx conductor-board check scoring-rubric"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: assemble-kit
+    instruction: |
+      assemble kit: assemble, package kit.
+    requires: [scoring-rubric]
+    gate:
+      - check: "npx conductor-board check assemble-kit"
+      - name: "assemble kit is correct"
+        check: "node verify-unit.mjs assemble-kit --out out/assemble-kit.json"

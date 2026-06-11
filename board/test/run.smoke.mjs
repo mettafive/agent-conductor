@@ -110,15 +110,15 @@ const TWO = (name) => ({
   name,
   description: "two-card linear flow.",
   steps: [
-    { title: "Alpha", instruction: "Do alpha and write a receipt.", requires: [] },
-    { title: "Beta", instruction: "Do beta and write a receipt.", requires: [0] },
+    { title: "Gather Source Facts", instruction: "Gather the source facts and write a receipt.", requires: [] },
+    { title: "Write Final Summary", instruction: "Write the final summary and write a receipt.", requires: [0] },
   ],
 });
 const ONE = (name) => ({
   conductor: "3.0.0",
   name,
   description: "one-card flow.",
-  steps: [{ title: "Solo", instruction: "Do solo and write a receipt.", requires: [] }],
+  steps: [{ title: "Write Demo Note", instruction: "Write the demo note and write a receipt.", requires: [] }],
 });
 
 const scenarios = [];
@@ -145,9 +145,9 @@ test("A2 half-done: done card is NOT re-run; only the not-done card runs", () =>
   st0.steps["0"].status = "done";
   st0.steps["0"].gate = "passed";
   fs.writeFileSync(status, JSON.stringify(st0, null, 2));
-  const art0 = path.join(scoped, "artifacts", receiptName("0", "Alpha"));
+  const art0 = path.join(scoped, "artifacts", receiptName("0", "Gather Source Facts"));
   fs.mkdirSync(path.dirname(art0), { recursive: true });
-  fs.writeFileSync(art0, "# Alpha receipt (pre-existing)\nVerification: exists.");
+  fs.writeFileSync(art0, "# Gather Source Facts receipt (pre-existing)\nVerification: exists.");
   const mtime0 = fs.statSync(art0).mtimeMs;
 
   const r = runSkill(tmp, "a2", scoped);
@@ -198,7 +198,7 @@ test("A5 all-done: rerun fresh (new run_id, cards re-run)", () => {
   const first = runSkill(tmp, "a5", scoped);
   assert(first.code === 0, `first run:\n${first.out}`);
   const st1 = readStatus(status);
-  const art = path.join(scoped, "artifacts", receiptName("0", "Solo"));
+  const art = path.join(scoped, "artifacts", receiptName("0", "Write Demo Note"));
   fs.rmSync(art, { force: true }); // delete the receipt → re-run must recreate it
 
   const second = runSkill(tmp, "a5", scoped);
@@ -244,22 +244,24 @@ async function withEnv(env, fn) {
 }
 
 test("B1 claude on PATH → claude adapter, default cap 200, printed", async () => {
-  const { selectAdapter, adapterCap, workerLine } = await import("../cli/worker-adapters.js");
+  const { selectAdapter, adapterCap, workerLine, prewarmLine } = await import("../cli/worker-adapters.js");
   await withEnv({ PATH: fakeBin(["claude"]), CONDUCTOR_WORKER_CMD: undefined, CONDUCTOR_WORKER_CAP: undefined }, () => {
     const a = selectAdapter();
     assert(a && a.id === "claude", `expected claude, got ${a && a.id}`);
     assert(adapterCap(a) === 200, `expected default cap 200, got ${adapterCap(a)}`);
     assert(/^worker: claude \(cap 200\)$/.test(workerLine(a, adapterCap(a))), workerLine(a, adapterCap(a)));
+    assert(a.prewarm && /prewarm: claude/.test(prewarmLine(a)), "claude adapter should expose prewarm");
   });
 });
 
 test("B2 claude absent, codex present → codex adapter, loud note, same default cap 200", async () => {
-  const { selectAdapter, adapterCap, workerLine } = await import("../cli/worker-adapters.js");
+  const { selectAdapter, adapterCap, workerLine, prewarmLine } = await import("../cli/worker-adapters.js");
   await withEnv({ PATH: fakeBin(["codex"]), CONDUCTOR_WORKER_CMD: undefined, CONDUCTOR_WORKER_CAP: undefined }, () => {
     const a = selectAdapter();
     assert(a && a.id === "codex", `expected codex, got ${a && a.id}`);
     assert(adapterCap(a) === 200, `expected default cap 200, got ${adapterCap(a)}`);
     assert(/claude not found, using codex/.test(workerLine(a, adapterCap(a))), `expected loud note:\n${workerLine(a, adapterCap(a))}`);
+    assert(a.prewarm && /prewarm: codex/.test(prewarmLine(a)), "codex adapter should expose prewarm");
   });
 });
 
@@ -308,12 +310,47 @@ test("B3b run with no worker → fails loud, dispatches nothing", () => {
 });
 
 test("B4 CONDUCTOR_WORKER_CMD set → env adapter, conservative cap, line says so", async () => {
-  const { selectAdapter, adapterCap, workerLine } = await import("../cli/worker-adapters.js");
+  const { selectAdapter, adapterCap, workerLine, prewarmLine } = await import("../cli/worker-adapters.js");
   await withEnv({ CONDUCTOR_WORKER_CMD: "true", CONDUCTOR_WORKER_CAP: undefined }, () => {
     const a = selectAdapter();
     assert(a && a.id === "env", `expected env adapter, got ${a && a.id}`);
     assert(/worker: CONDUCTOR_WORKER_CMD \(cap \d+\)/.test(workerLine(a, adapterCap(a))), workerLine(a, adapterCap(a)));
+    assert(a.prewarm && /prewarm: CONDUCTOR_WORKER_CMD/.test(prewarmLine(a)), "env adapter should expose prewarm");
   });
+});
+
+test("B4b run defaults prewarm ON; --no-prewarm disables it", () => {
+  const onTmp = tmpdir();
+  const on = seedSkill(onTmp, "b4bon", TWO("b4bonflow"));
+  const prewarmLog = path.join(onTmp, "prewarm.log");
+  const enabled = runSkill(
+    onTmp,
+    "b4bon",
+    on.scoped,
+    [],
+    { STUB_DELAY_MS: "1000", STUB_PREWARM_LOG: prewarmLog },
+  );
+  assert(enabled.code === 0, `default prewarm run should exit 0:\n${enabled.out}`);
+  assert(/prewarm:/.test(enabled.out), `run should print prewarm as enabled by default:\n${enabled.out}`);
+  assert(/~ PREWARM/.test(enabled.out), `dispatcher should launch at least one prewarm probe:\n${enabled.out}`);
+  assert(fs.existsSync(prewarmLog), "stub should receive at least one prewarm probe");
+  fs.rmSync(onTmp, { recursive: true, force: true });
+
+  const offTmp = tmpdir();
+  const off = seedSkill(offTmp, "b4boff", TWO("b4boffflow"));
+  const offPrewarmLog = path.join(offTmp, "prewarm.log");
+  const disabled = runSkill(
+    offTmp,
+    "b4boff",
+    off.scoped,
+    ["--no-prewarm"],
+    { STUB_DELAY_MS: "1000", STUB_PREWARM_LOG: offPrewarmLog },
+  );
+  assert(disabled.code === 0, `--no-prewarm run should exit 0:\n${disabled.out}`);
+  assert(!/prewarm:/.test(disabled.out), `--no-prewarm should not print prewarm enabled:\n${disabled.out}`);
+  assert(!/~ PREWARM/.test(disabled.out), `--no-prewarm should not launch probes:\n${disabled.out}`);
+  assert(!fs.existsSync(offPrewarmLog), "stub should receive no prewarm probes when disabled");
+  fs.rmSync(offTmp, { recursive: true, force: true });
 });
 
 test("B5 per-adapter cap: K descendants killed under cap<K, survive under cap>K", () => {
@@ -427,7 +464,73 @@ test("E scoped run uses .conductor/<slug>/ end to end, no flat .conductor/ fallb
   assert(fs.existsSync(status), "scoped status.json must exist");
   assert(cardStatus(readStatus(status), "0") === "done", "scoped run should complete");
   assert(!fs.existsSync(path.join(tmp, ".conductor", "status.json")), "must NOT create a flat .conductor/status.json");
-  assert(fs.existsSync(path.join(scoped, "artifacts", receiptName("0", "Solo"))), "receipt must be in the scoped artifacts dir");
+  assert(fs.existsSync(path.join(scoped, "artifacts", receiptName("0", "Write Demo Note"))), "receipt must be in the scoped artifacts dir");
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("E2 previously-run skill: warm rerun normalizes stale receipt paths and finishes the chain", () => {
+  const tmp = tmpdir();
+  const doc = {
+    conductor: "3.0.0",
+    name: "ewarmflow",
+    description: "warm rerun with stale legacy receipt paths.",
+    steps: [
+      {
+        title: "Pick Clinic History",
+        instruction: "Pick a clinic and write the primary markdown receipt at `.conductor/artifacts/1-pick-clinic-history.md` with proof.",
+        requires: [],
+      },
+      {
+        title: "Translate Clinic History",
+        instruction: "Translate it and write the primary markdown receipt at `.conductor/artifacts/2-translate-clinic-history.md` with proof.",
+        requires: [0],
+      },
+      {
+        title: "Assemble Multiverse File",
+        instruction: "Assemble the final file and write the primary markdown receipt at `.conductor/artifacts/3-assemble-multiverse-file.md` with proof.",
+        requires: [0, 1],
+      },
+    ],
+  };
+  const { scoped, status, wf } = seedSkill(tmp, "ewarm", doc);
+
+  // Simulate a skill that has been conducted before: finished status + receipts.
+  assert(cli(["status-init", wf, "--path", status], tmp).code === 0, "status-init");
+  const prior = readStatus(status);
+  for (let i = 0; i < doc.steps.length; i++) {
+    prior.steps[String(i)].status = "done";
+    prior.steps[String(i)].gate = "passed";
+    prior.steps[String(i)].artifact = receiptName(i, doc.steps[i].title);
+    const file = path.join(scoped, "artifacts", receiptName(i, doc.steps[i].title));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `# Prior receipt ${i}\nVerification: old conducted run.`);
+  }
+  prior.status = "done";
+  prior.endedAt = new Date().toISOString();
+  fs.writeFileSync(status, JSON.stringify(prior, null, 2));
+
+  const r = runSkill(tmp, "ewarm", scoped);
+  assert(r.code === 0, `warm rerun should exit 0:\n${r.out}`);
+  assert(/rerun|fresh/.test(r.out), `should detect prior all-done state and rerun fresh:\n${r.out}`);
+  assert(/normalized receipt paths/.test(r.out), `should normalize stale cached workflow paths before dispatch:\n${r.out}`);
+
+  const st = readStatus(status);
+  assert(st.status === "done", `run should finish done:\n${JSON.stringify(st, null, 2)}`);
+  for (let i = 0; i < doc.steps.length; i++) {
+    assert(st.steps[String(i)]?.status === "done", `card ${i} should be done`);
+    assert(fs.existsSync(path.join(scoped, "artifacts", receiptName(i, doc.steps[i].title))), `scoped receipt ${i} missing`);
+  }
+  assert(!fs.existsSync(path.join(tmp, ".conductor", "artifacts")), "warm rerun must not produce flat .conductor/artifacts");
+  assert(st.run_handoff_announced === st.run_id, "run handoff heartbeat should be marked for this run");
+  const firstBeats = st.steps["0"]?.heartbeat || [];
+  assert(firstBeats.some((b) => /Dispatching is starting now/.test(String(b.note || ""))), "handoff heartbeat should be visible before dispatch");
+
+  const normalized = JSON.parse(fs.readFileSync(wf, "utf8"));
+  for (let i = 0; i < normalized.steps.length; i++) {
+    const instruction = normalized.steps[i].instruction;
+    assert(!/\.conductor\/artifacts/.test(instruction), `card ${i} still contains legacy flat artifact path: ${instruction}`);
+    assert(instruction.includes(`.conductor/ewarm/artifacts/${receiptName(i, normalized.steps[i].title)}`), `card ${i} missing scoped receipt path: ${instruction}`);
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -450,7 +553,7 @@ test("INT-F open insight + integration returns false → shaping leads, run halt
   const tmp = tmpdir();
   const { scoped, status } = seedSkill(tmp, "intf", ONE("intfflow"));
   fs.writeFileSync(path.join(scoped, "knowledge.json"), JSON.stringify({
-    items: [{ id: "k1", status: "open", scope: "this-conductor", title: "Tweak", current: "old", proposed: "new", step: "Solo" }],
+    items: [{ id: "k1", status: "open", scope: "this-conductor", title: "Tweak", current: "old", proposed: "new", step: "Write Demo Note" }],
   }, null, 2));
   // No cards.json — integration's own required-input guard makes integrateRoot
   // return false deterministically (no model needed). The point under test is

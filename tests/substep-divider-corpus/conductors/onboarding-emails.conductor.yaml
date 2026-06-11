@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: onboarding-emails
+description: >
+  onboarding emails — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-stages
+    instruction: |
+      Scope the stages to process. Frontload every stage as a pending iteration.
+    output: stages
+    gate:
+      - check: "npx conductor-board check scope-stages"
+      - "Every stage captured before any work begins"
+
+  - id: onboarding-emails-loop
+    type: loop
+    over: stages
+    as: stage
+    requires: [scope-stages]
+    steps:
+      - id: define-stage
+        instruction: |
+          define stage: define stage, trigger.
+        gate:
+          - check: "npx conductor-board check define-stage"
+          - name: "define stage is correct"
+            check: "node verify-unit.mjs define-stage --out out/define-stage.json"
+      - id: write-email
+        instruction: |
+          write email: write email, compose.
+        gate:
+          - check: "npx conductor-board check write-email"
+          - name: "write email is correct"
+            check: "node verify-unit.mjs write-email --out out/write-email.json"
+      - id: personalize
+        instruction: |
+          personalize: personalize, merge tags.
+        gate:
+          - check: "npx conductor-board check personalize"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: queue
+        instruction: |
+          queue: queue, schedule.
+        gate:
+          - check: "npx conductor-board check queue"
+          - name: "queue is correct"
+            check: "node verify-unit.mjs queue --out out/queue.json"

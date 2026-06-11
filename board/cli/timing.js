@@ -51,6 +51,9 @@ export class TimingLedger {
         t_handout: null,
         t_spawn: null,
         t_exit: null,
+        t_prewarm_start: null,
+        t_prewarm_ready: null,
+        t_prewarm_assigned: null,
         exit_code: null,
         worker: null,
       };
@@ -80,6 +83,22 @@ export class TimingLedger {
     const r = this._row(index);
     r.t_exit = ms;
     r.exit_code = exitCode;
+  }
+
+  markPrewarmStart(index, title, ms = Date.now()) {
+    const r = this._row(index);
+    if (title) r.title = title;
+    if (r.t_prewarm_start == null) r.t_prewarm_start = ms;
+  }
+
+  markPrewarmReady(index, ms = Date.now()) {
+    const r = this._row(index);
+    if (r.t_prewarm_ready == null) r.t_prewarm_ready = ms;
+  }
+
+  markPrewarmAssigned(index, ms = Date.now()) {
+    const r = this._row(index);
+    if (r.t_prewarm_assigned == null) r.t_prewarm_assigned = ms;
   }
 
   foldWorker(index, worker) {
@@ -240,17 +259,19 @@ export function buildReport(rows, meta) {
   L.push(`## Leak map (per card)`);
   L.push("");
   L.push(
-    "| card | title | dispatch_wait | launch | boot | ingest | work | teardown | wall (exit−eligible) | exit |",
+    "| card | title | prewarm | ready_before_handout | dispatch_wait | launch | boot | ingest | work | teardown | wall (exit−eligible) | exit |",
   );
-  L.push("|---|---|---|---|---|---|---|---|---|---|");
+  L.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const { row, spans, wall } of perCard) {
     const title = (row.title || "").slice(0, 28).replace(/\|/g, "/");
+    const prewarmMs = row.t_prewarm_start != null && row.t_prewarm_ready != null ? row.t_prewarm_ready - row.t_prewarm_start : null;
+    const readyBeforeHandout = row.t_prewarm_ready != null && row.t_handout != null ? row.t_handout - row.t_prewarm_ready : null;
     L.push(
-      `| ${row.index} | ${title} | ${cell(spans.dispatch_wait)} | ${cell(spans.launch)} | ${cell(spans.boot)} | ${cell(spans.ingest)} | ${cell(spans.work)} | ${cell(spans.teardown)} | ${fmtMs(wall)} | ${row.exit_code ?? "—"} |`,
+      `| ${row.index} | ${title} | ${fmtMs(prewarmMs)} | ${fmtMs(readyBeforeHandout)} | ${cell(spans.dispatch_wait)} | ${cell(spans.launch)} | ${cell(spans.boot)} | ${cell(spans.ingest)} | ${cell(spans.work)} | ${cell(spans.teardown)} | ${fmtMs(wall)} | ${row.exit_code ?? "—"} |`,
     );
   }
   L.push(
-    `| **TOTAL** | ${rows.length} cards | ${fmtMs(totals.dispatch_wait)}${totalsMeasured.dispatch_wait ? "" : " *"} | ${fmtMs(totals.launch)}${totalsMeasured.launch ? "" : " *"} | ${fmtMs(totals.boot)}${totalsMeasured.boot ? "" : " *"} | ${fmtMs(totals.ingest)}${totalsMeasured.ingest ? "" : " *"} | ${fmtMs(totals.work)}${totalsMeasured.work ? "" : " *"} | ${fmtMs(totals.teardown)}${totalsMeasured.teardown ? "" : " *"} | ${fmtMs(totalWall)} | — |`,
+    `| **TOTAL** | ${rows.length} cards | — | — | ${fmtMs(totals.dispatch_wait)}${totalsMeasured.dispatch_wait ? "" : " *"} | ${fmtMs(totals.launch)}${totalsMeasured.launch ? "" : " *"} | ${fmtMs(totals.boot)}${totalsMeasured.boot ? "" : " *"} | ${fmtMs(totals.ingest)}${totalsMeasured.ingest ? "" : " *"} | ${fmtMs(totals.work)}${totalsMeasured.work ? "" : " *"} | ${fmtMs(totals.teardown)}${totalsMeasured.teardown ? "" : " *"} | ${fmtMs(totalWall)} | — |`,
   );
   L.push("");
   L.push(`**The largest span is the leak: \`${leakKey}\` (${fmtMs(leakMs)}).**`);
@@ -288,6 +309,9 @@ export function buildReport(rows, meta) {
       title: row.title,
       exit_code: row.exit_code,
       stamps: {
+        t_prewarm_start: row.t_prewarm_start != null ? isoOf(row.t_prewarm_start) : null,
+        t_prewarm_ready: row.t_prewarm_ready != null ? isoOf(row.t_prewarm_ready) : null,
+        t_prewarm_assigned: row.t_prewarm_assigned != null ? isoOf(row.t_prewarm_assigned) : null,
         t_eligible: row.t_eligible != null ? isoOf(row.t_eligible) : null,
         t_handout: row.t_handout != null ? isoOf(row.t_handout) : null,
         t_spawn: row.t_spawn != null ? isoOf(row.t_spawn) : null,
@@ -299,6 +323,10 @@ export function buildReport(rows, meta) {
       spans: Object.fromEntries(
         SPAN_KEYS.map((k) => [k, { ms: spans[k]?.ms ?? null, measured: spans[k]?.measured ?? false }]),
       ),
+      prewarm: {
+        ms: row.t_prewarm_start != null && row.t_prewarm_ready != null ? row.t_prewarm_ready - row.t_prewarm_start : null,
+        ready_before_handout_ms: row.t_prewarm_ready != null && row.t_handout != null ? row.t_handout - row.t_prewarm_ready : null,
+      },
       bracketed: spans.bracketed,
       wall_ms: wall,
     })),

@@ -92,7 +92,8 @@ test("SV2 the handoff gates are wired to served", () => {
   const init = src("cli/init-board.js");
   assert(/waitForWorkflow\(ensured\.url, workflow, conductorDir, 10000\)/.test(init), "openRunBoard waits for the served baton (generous timeout, attach included)");
   const compile = src("cli/compile.js");
-  assert(/waitCompileServed/.test(compile) && /\(compile\)`\)/.test(compile), "the compile handoff waits for the compile feed served");
+  assert(/waitCompileServed\(port, key\)/.test(compile) && /const key = `\$\{path\.basename\(outDir\)\} \(compile\)`/.test(compile), "the compile handoff waits for the compile feed served");
+  assert(/url\.searchParams\.set\("starting", "1"\)/.test(compile), "standalone compile opens the shared cold-start board surface, not a compile-pinned URL");
   const app = src("src/App.tsx");
   assert(/advance on a SERVED signal/.test(app), "the relaunch overlay advances on a served signal");
   assert(/absent ⇒ not served/.test(app), "the overlay keys off the served (broadcast) workflows map");

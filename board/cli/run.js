@@ -5,9 +5,13 @@ import { runCompile } from "./compile.js";
 import { runStatusInit } from "./writer.js";
 import { runDispatch } from "./dispatch.js";
 import { openRunBoard, ensureBoardVisible } from "./init-board.js";
-import { integrateRoot } from "./integration.js";
+import { integrateRoot, reconcilePendingApply } from "./integration.js";
 import { scopedConductorDir } from "./learning.js";
 import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
+import { appendAutoHeartbeat } from "./heartbeats.js";
+import { mutateStatus } from "./status-store.js";
+import { normalizeWorkflowReceiptInstructions } from "./workflow-normalize.js";
+import { reapWorkerGroups } from "./worker-ledger.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -29,6 +33,11 @@ const HELP = `
   Options
     --name, -n <name>      Scoped conductor name (default: derived from the skill)
     --cap <n>              Max concurrent run-card workers (passed to dispatch)
+    --prewarm              Start frontier worker probes before cards are
+                           eligible; real card work still waits for acceptance.
+                           Default ON for run.
+    --no-prewarm           Disable frontier worker probes for this run.
+    --prewarm-cap <n>      Max concurrent prewarm probes (passed to dispatch)
     --port <n>             Board port (default: 3042)
     --force, -f            Recompile even if a compiled workflow already exists
     --headless             Don't open a browser (CI/cron/cloud). Same as
@@ -65,6 +74,47 @@ function positionals(args) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function runIdTime(value) {
+  const text = String(value || "");
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})/);
+  if (match) return Date.parse(`${match[1]}T${match[2]}:${match[3]}:${match[4]}Z`);
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function latestIntegrationSummary(root) {
+  const runs = path.join(root, "runs");
+  if (!fs.existsSync(runs)) return null;
+  const summaries = [];
+  for (const entry of fs.readdirSync(runs, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const summaryPath = path.join(runs, entry.name, "integration-summary.json");
+    try {
+      const summary = readJson(summaryPath);
+      summaries.push({ ...summary, _dir: entry.name });
+    } catch {
+      /* ignore partial/old runs */
+    }
+  }
+  summaries.sort((a, b) => runIdTime(b.run_id || b._dir) - runIdTime(a.run_id || a._dir));
+  return summaries[0] || null;
+}
+
+export function integrationNewerThanStatus(root, statusPath) {
+  const summary = latestIntegrationSummary(root);
+  if (!summary?.run_id || !fs.existsSync(statusPath)) return false;
+  let status;
+  try {
+    status = readJson(statusPath);
+  } catch {
+    return false;
+  }
+  if (status.status === "running" || status.status === "paused") return false;
+  const statusTime = runIdTime(status.run_id || status.started_at);
+  const integrationTime = runIdTime(summary.run_id);
+  return integrationTime > statusTime;
 }
 
 // Open insights carried by the skill (normalized status, matching integration's
@@ -206,6 +256,8 @@ export async function runRun(args) {
   const name = typeof flag(args, ["--name", "-n"]) === "string" ? String(flag(args, ["--name", "-n"])) : undefined;
   const port = Number(flag(args, ["--port"], 3042)) || 3042;
   const cap = flag(args, ["--cap"]);
+  const prewarmCap = flag(args, ["--prewarm-cap"]);
+  const prewarm = !args.includes("--no-prewarm") && process.env.CONDUCTOR_PREWARM !== "0";
   const force = args.includes("--force") || args.includes("-f");
   const headless = args.includes("--headless") || process.env.CONDUCTOR_HEADLESS === "1";
 
@@ -242,6 +294,20 @@ export async function runRun(args) {
     try { await ensureBoardVisible(statusPath, { headless, port, starting: true }); } catch { /* best-effort surface */ }
   }
 
+  // Recover a prior crash at the integration commit boundary before deciding
+  // whether open insights exist. If the marker says the workflow and knowledge
+  // were meant to move together, replay it now so the next run never applies the
+  // same insight twice.
+  reconcilePendingApply(outDir);
+
+  // A hard-killed dispatcher cannot run its in-memory cleanup. Reap any worker
+  // groups recorded by the previous run before resetting stranded running cards;
+  // this prevents an orphaned old worker from writing late into the resumed run.
+  const reaped = reapWorkerGroups(outDir);
+  if (reaped.killed || reaped.stale) {
+    console.log(dim(`  recovery: cleared ${reaped.killed} remembered worker group${reaped.killed === 1 ? "" : "s"}${reaped.stale ? ` (${reaped.stale} already gone)` : ""}.`));
+  }
+
   // 1. COMPILE-IF-NEEDED. The durable compiled workflow is the "already-compiled"
   //    signal: reuse it unless --force or the skill is newer (edited) than it.
   //    runCompile itself is cache-aware (compile-meta.json) — this just avoids
@@ -255,6 +321,8 @@ export async function runRun(args) {
     const compileArgs = ["--skill", skillPath, "--out-dir", outDir];
     if (name) compileArgs.push("--name", name);
     if (force) compileArgs.push("--force");
+    if (!prewarm) compileArgs.push("--no-prewarm");
+    compileArgs.push("--no-open");
     if (headless) compileArgs.push("--headless"); // so the compile path knows not to open a tab
     const ok = await runCompile(compileArgs);
     if (!ok) {
@@ -310,6 +378,11 @@ export async function runRun(args) {
     // up the updated plan, and the state model runs the integrated workflow.
   }
 
+  const normalizedReceipts = normalizeWorkflowReceiptInstructions({ workflowPath, statusPath });
+  if (normalizedReceipts) {
+    console.log(dim("  workflow: normalized receipt paths for scoped run artifacts."));
+  }
+
   let doc;
   try {
     doc = readJson(workflowPath);
@@ -325,7 +398,11 @@ export async function runRun(args) {
     priorFinished,
     integrated: openInsights.length > 0,
   });
-  if (finalMode !== decision.mode) {
+  const integrationRequiresFreshRun = openInsights.length === 0 && integrationNewerThanStatus(outDir, statusPath);
+  if (integrationRequiresFreshRun) {
+    console.log(dim("  state: recovered completed integration without a matching run — rerunning the improved plan fresh."));
+    decision = { mode: "rerun-fresh" };
+  } else if (finalMode !== decision.mode) {
     // Finished board + integration grew the plan → a genuine fresh loop: new
     // run_id, all cards pending, and the board releases its settled snapshot on
     // its own (the new run_id invalidates it).
@@ -373,11 +450,32 @@ export async function runRun(args) {
   console.log(`  ${green("board:")} ${board.browserUrl || board.url} ${dim(`(workflow: ${board.workflow}, served)`)}`);
   if (headless) console.log(dim("  (headless — not opening a browser.)"));
 
+  try {
+    mutateStatus(statusPath, (fresh) => {
+      if (!fresh) return null;
+      const runId = fresh.run_id || fresh.started_at || "current";
+      if (fresh.run_handoff_announced === runId) return null;
+      fresh.run_handoff_announced = runId;
+      const count = Array.isArray(doc.steps) ? doc.steps.length : 0;
+      const first = doc.steps?.[0]?.id && fresh.steps?.[doc.steps[0].id] ? doc.steps[0].id : "0";
+      appendAutoHeartbeat(
+        fresh,
+        null,
+        first,
+        `Workflow accepted — regular run is ready with ${count} card${count === 1 ? "" : "s"}. Dispatching is starting now.`,
+      );
+    });
+  } catch {
+    /* best-effort narration only */
+  }
+
   // 4. DISPATCH — the live run, scoped. runDispatch runs its loop and exits the
   //    process when every card is terminal, so this is the terminal step.
   console.log(dim("  dispatching…"));
   console.log("");
   const dispatchArgs = ["--path", statusPath, "--workflow", workflowPath];
   if (typeof cap === "string") dispatchArgs.push("--cap", cap);
+  if (prewarm) dispatchArgs.push("--prewarm");
+  if (typeof prewarmCap === "string") dispatchArgs.push("--prewarm-cap", prewarmCap);
   return await runDispatch(dispatchArgs);
 }

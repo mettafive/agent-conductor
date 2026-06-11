@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: geo-encode
+description: >
+  geo encode — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-addresses
+    instruction: |
+      Scope the addresses to process. Frontload every address as a pending iteration.
+    output: addresses
+    gate:
+      - check: "npx conductor-board check scope-addresses"
+      - "Every address captured before any work begins"
+
+  - id: geo-encode-loop
+    type: loop
+    over: addresses
+    as: address
+    requires: [scope-addresses]
+    steps:
+      - id: parse-address
+        instruction: |
+          parse address: parse address, normalize address.
+        gate:
+          - check: "npx conductor-board check parse-address"
+          - name: "parse address is correct"
+            check: "node verify-unit.mjs parse-address --out out/parse-address.json"
+      - id: geocode
+        instruction: |
+          geocode: geocode, lat lng, coordinates.
+        gate:
+          - check: "npx conductor-board check geocode"
+          - name: "geocode is correct"
+            check: "node verify-unit.mjs geocode --out out/geocode.json"
+      - id: confidence-flag
+        instruction: |
+          confidence flag: confidence, flag low match.
+        gate:
+          - check: "npx conductor-board check confidence-flag"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: store
+        instruction: |
+          store: store, save coordinates.
+        gate:
+          - check: "npx conductor-board check store"
+          - name: "store is correct"
+            check: "node verify-unit.mjs store --out out/store.json"

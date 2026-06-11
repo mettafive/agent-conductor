@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: scaling-audit
+description: >
+  scaling audit — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-services
+    instruction: |
+      Scope the services to process. Frontload every service as a pending iteration.
+    output: services
+    gate:
+      - check: "npx conductor-board check scope-services"
+      - "Every service captured before any work begins"
+
+  - id: scaling-audit-loop
+    type: loop
+    over: services
+    as: service
+    requires: [scope-services]
+    steps:
+      - id: collect-metrics
+        instruction: |
+          collect metrics: collect metrics, cpu memory.
+        gate:
+          - check: "npx conductor-board check collect-metrics"
+          - name: "collect metrics is correct"
+            check: "node verify-unit.mjs collect-metrics --out out/collect-metrics.json"
+      - id: analyze-load
+        instruction: |
+          analyze load: analyze load, saturation.
+        gate:
+          - check: "npx conductor-board check analyze-load"
+          - name: "analyze load is correct"
+            check: "node verify-unit.mjs analyze-load --out out/analyze-load.json"
+      - id: cost-estimate
+        instruction: |
+          cost estimate: cost estimate, spend.
+        gate:
+          - check: "npx conductor-board check cost-estimate"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: recommend-size
+        instruction: |
+          recommend size: recommend, right-size.
+        gate:
+          - check: "npx conductor-board check recommend-size"
+          - name: "recommend size is correct"
+            check: "node verify-unit.mjs recommend-size --out out/recommend-size.json"

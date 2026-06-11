@@ -1,0 +1,22 @@
+conductor: 2.0.0
+name: survey-analysis
+description: >
+  Summarize survey results; every stat recomputes from the raw responses.
+
+steps:
+  - id: load-responses
+    instruction: |
+      Load the raw survey responses into the grounding bundle.
+    gate:
+      - check: "npx conductor-board check load-responses"
+      - name: "Raw responses captured"
+        check: "node verify.mjs stat-recomputes --out fixtures/survey-analysis/survey-analysis.out.json --ground fixtures/survey-analysis/survey-analysis.ground.json"
+  - id: summarize-survey
+    instruction: |
+      Write the survey summary.
+    requires: [load-responses]
+    gate:
+      - check: "npx conductor-board check summarize-survey"
+      - name: "Every reported stat recomputes from the raw data"
+        check: "node verify.mjs stat-recomputes --out fixtures/survey-analysis/survey-analysis.out.json --ground fixtures/survey-analysis/survey-analysis.ground.json"
+      - "Free-text themes reflect the actual distribution, not cherry-picked quotes."

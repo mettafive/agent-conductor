@@ -15,19 +15,29 @@ function legacyOutputsDir(statusPath) {
   return path.join(path.dirname(statusPath), "outputs");
 }
 
+function repoArtifactsDir() {
+  return path.resolve(process.cwd(), ".conductor", "artifacts");
+}
+
 function safeInOutputs(statusPath, relOrAbs) {
   const raw = String(relOrAbs || "");
   const clean = raw.replace(/^[/\\]+/, "");
-  const roots = [artifactsDir(statusPath), legacyOutputsDir(statusPath)];
+  const roots = [artifactsDir(statusPath), legacyOutputsDir(statusPath), repoArtifactsDir()];
   let abs;
   if (path.isAbsolute(raw)) {
     abs = path.resolve(raw);
   } else if (clean.startsWith(".conductor/artifacts/") || clean.startsWith(".conductor\\artifacts\\")) {
-    abs = path.resolve(path.dirname(statusPath), "..", clean);
+    const name = clean.replace(/^\.conductor[\\/]artifacts[\\/]/, "");
+    abs = path.resolve(artifactsDir(statusPath), name);
+    if (!fs.existsSync(abs)) {
+      const repoAbs = path.resolve(process.cwd(), clean);
+      if (fs.existsSync(repoAbs)) abs = repoAbs;
+    }
   } else if (clean.startsWith(".conductor/outputs/") || clean.startsWith(".conductor\\outputs\\")) {
-    abs = path.resolve(path.dirname(statusPath), "..", clean);
+    const name = clean.replace(/^\.conductor[\\/]outputs[\\/]/, "");
+    abs = path.resolve(legacyOutputsDir(statusPath), name);
   } else if (clean.startsWith("artifacts/") || clean.startsWith("artifacts\\")) {
-    abs = path.resolve(artifactsDir(statusPath), clean);
+    abs = path.resolve(artifactsDir(statusPath), clean.replace(/^artifacts[\\/]/, ""));
   } else if (clean.startsWith("outputs/") || clean.startsWith("outputs\\")) {
     abs = path.resolve(legacyOutputsDir(statusPath), clean.replace(/^outputs[\\/]/, ""));
   } else {
@@ -35,6 +45,10 @@ function safeInOutputs(statusPath, relOrAbs) {
     if (!fs.existsSync(abs)) {
       const legacyAbs = path.resolve(legacyOutputsDir(statusPath), clean);
       if (fs.existsSync(legacyAbs)) abs = legacyAbs;
+    }
+    if (!fs.existsSync(abs)) {
+      const repoAbs = path.resolve(repoArtifactsDir(), clean);
+      if (fs.existsSync(repoAbs)) abs = repoAbs;
     }
   }
   for (const root of roots) {

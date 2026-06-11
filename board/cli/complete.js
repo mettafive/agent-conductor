@@ -13,6 +13,7 @@ import {
 } from "./artifacts.js";
 import { callModel, extractJson } from "./decompose.js";
 import { accumulateAndFreeze } from "./pause.js";
+import { resolveStatusPath } from "./workflow-context.js";
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
@@ -59,15 +60,14 @@ export async function runComplete(args) {
       "usage: conductor-board complete <step-id>\n" +
         "       conductor-board complete <loop-id>::<iteration>::<sub-step>\n\n" +
         "  Consumes the independent checker verdict recorded by `check` or `gate-result`.\n" +
-        "  PASS plus .conductor/artifacts/<card-index>-<slugified-card-title>.md moves the card to done.\n" +
+        "  PASS plus the primary markdown receipt at the runtime-assigned path moves the card to done.\n" +
         "  Supporting files must be referenced from that markdown receipt.\n" +
         "  FAIL stores checker feedback, increments the\n" +
         "  attempt counter, and keeps the card running until max_attempts is exhausted.",
     );
     return true;
   }
-  const p = flag(args, ["--path", "-p"]);
-  const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
+  const statusPath = resolveStatusPath(args);
   const stepId = args.find((a) => !a.startsWith("-"));
 
   if (!stepId) {
@@ -329,8 +329,7 @@ export async function runGateResult(args) {
     return true;
   }
 
-  const p = flag(args, ["--path", "-p"]);
-  const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
+  const statusPath = resolveStatusPath(args);
   const stepId = args.find((a) => !a.startsWith("-"));
   const passed = args.includes("--passed");
   const failed = args.includes("--failed");
@@ -399,8 +398,7 @@ export async function runFeedback(args) {
     );
     return true;
   }
-  const p = flag(args, ["--path", "-p"]);
-  const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
+  const statusPath = resolveStatusPath(args);
   const stepId = args.find((a) => !a.startsWith("-"));
   if (!stepId) {
     console.error(red("usage: conductor-board feedback <step-id>[::iter::sub]"));

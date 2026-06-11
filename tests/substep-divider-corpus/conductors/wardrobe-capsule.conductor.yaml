@@ -1,0 +1,36 @@
+conductor: 2.0.0
+name: wardrobe-capsule
+description: >
+  wardrobe capsule — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: inventory-closet
+    instruction: |
+      inventory closet: inventory, audit closet.
+    gate:
+      - check: "npx conductor-board check inventory-closet"
+      - name: "inventory closet is correct"
+        check: "node verify-unit.mjs inventory-closet --out out/inventory-closet.json"
+  - id: select-capsule
+    instruction: |
+      select capsule: select capsule, core pieces.
+    requires: [inventory-closet]
+    gate:
+      - check: "npx conductor-board check select-capsule"
+      - name: "select capsule is correct"
+        check: "node verify-unit.mjs select-capsule --out out/select-capsule.json"
+  - id: color-palette
+    instruction: |
+      color palette: color palette, coordinate.
+    requires: [select-capsule]
+    gate:
+      - check: "npx conductor-board check color-palette"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: gap-list
+    instruction: |
+      gap list: gap list, shopping gaps.
+    requires: [color-palette]
+    gate:
+      - check: "npx conductor-board check gap-list"
+      - name: "gap list is correct"
+        check: "node verify-unit.mjs gap-list --out out/gap-list.json"

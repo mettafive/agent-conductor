@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: compliance-training
+description: >
+  compliance training — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-modules
+    instruction: |
+      Scope the modules to process. Frontload every module as a pending iteration.
+    output: modules
+    gate:
+      - check: "npx conductor-board check scope-modules"
+      - "Every module captured before any work begins"
+
+  - id: compliance-training-loop
+    type: loop
+    over: modules
+    as: module
+    requires: [scope-modules]
+    steps:
+      - id: build-module
+        instruction: |
+          build module: build module, content.
+        gate:
+          - check: "npx conductor-board check build-module"
+          - name: "build module is correct"
+            check: "node verify-unit.mjs build-module --out out/build-module.json"
+      - id: add-quiz
+        instruction: |
+          add quiz: add quiz, knowledge check.
+        gate:
+          - check: "npx conductor-board check add-quiz"
+          - name: "add quiz is correct"
+            check: "node verify-unit.mjs add-quiz --out out/add-quiz.json"
+      - id: track-completion
+        instruction: |
+          track completion: track completion, attestation.
+        gate:
+          - check: "npx conductor-board check track-completion"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: publish-module
+        instruction: |
+          publish module: publish, assign.
+        gate:
+          - check: "npx conductor-board check publish-module"
+          - name: "publish module is correct"
+            check: "node verify-unit.mjs publish-module --out out/publish-module.json"

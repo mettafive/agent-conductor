@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: payroll-run
+description: >
+  payroll run — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-employees
+    instruction: |
+      Scope the employees to process. Frontload every employee as a pending iteration.
+    output: employees
+    gate:
+      - check: "npx conductor-board check scope-employees"
+      - "Every employee captured before any work begins"
+
+  - id: payroll-run-loop
+    type: loop
+    over: employees
+    as: employee
+    requires: [scope-employees]
+    steps:
+      - id: compute-gross
+        instruction: |
+          compute gross: compute gross, hours pay.
+        gate:
+          - check: "npx conductor-board check compute-gross"
+          - name: "compute gross is correct"
+            check: "node verify-unit.mjs compute-gross --out out/compute-gross.json"
+      - id: apply-deductions
+        instruction: |
+          apply deductions: deductions, withholding.
+        gate:
+          - check: "npx conductor-board check apply-deductions"
+          - name: "apply deductions is correct"
+            check: "node verify-unit.mjs apply-deductions --out out/apply-deductions.json"
+      - id: benefits
+        instruction: |
+          benefits: benefits, 401k, pension.
+        gate:
+          - check: "npx conductor-board check benefits"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: issue-payment
+        instruction: |
+          issue payment: issue payment, pay.
+        gate:
+          - check: "npx conductor-board check issue-payment"
+          - name: "issue payment is correct"
+            check: "node verify-unit.mjs issue-payment --out out/issue-payment.json"

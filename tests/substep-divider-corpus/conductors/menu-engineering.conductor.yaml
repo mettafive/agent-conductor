@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: menu-engineering
+description: >
+  menu engineering — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-dishes
+    instruction: |
+      Scope the dishes to process. Frontload every dish as a pending iteration.
+    output: dishes
+    gate:
+      - check: "npx conductor-board check scope-dishes"
+      - "Every dish captured before any work begins"
+
+  - id: menu-engineering-loop
+    type: loop
+    over: dishes
+    as: dish
+    requires: [scope-dishes]
+    steps:
+      - id: cost-recipe
+        instruction: |
+          cost recipe: cost recipe, ingredient cost.
+        gate:
+          - check: "npx conductor-board check cost-recipe"
+          - name: "cost recipe is correct"
+            check: "node verify-unit.mjs cost-recipe --out out/cost-recipe.json"
+      - id: price-dish
+        instruction: |
+          price dish: price dish, set price.
+        gate:
+          - check: "npx conductor-board check price-dish"
+          - name: "price dish is correct"
+            check: "node verify-unit.mjs price-dish --out out/price-dish.json"
+      - id: margin-flag
+        instruction: |
+          margin flag: margin, profitability.
+        gate:
+          - check: "npx conductor-board check margin-flag"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: update-menu
+        instruction: |
+          update menu: update menu, publish.
+        gate:
+          - check: "npx conductor-board check update-menu"
+          - name: "update menu is correct"
+            check: "node verify-unit.mjs update-menu --out out/update-menu.json"

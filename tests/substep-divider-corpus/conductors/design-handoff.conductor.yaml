@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: design-handoff
+description: >
+  design handoff — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-screens
+    instruction: |
+      Scope the screens to process. Frontload every screen as a pending iteration.
+    output: screens
+    gate:
+      - check: "npx conductor-board check scope-screens"
+      - "Every screen captured before any work begins"
+
+  - id: design-handoff-loop
+    type: loop
+    over: screens
+    as: screen
+    requires: [scope-screens]
+    steps:
+      - id: export-assets
+        instruction: |
+          export assets: export assets, slice.
+        gate:
+          - check: "npx conductor-board check export-assets"
+          - name: "export assets is correct"
+            check: "node verify-unit.mjs export-assets --out out/export-assets.json"
+      - id: spec-redlines
+        instruction: |
+          spec redlines: redline, spacing spec.
+        gate:
+          - check: "npx conductor-board check spec-redlines"
+          - name: "spec redlines is correct"
+            check: "node verify-unit.mjs spec-redlines --out out/spec-redlines.json"
+      - id: token-map
+        instruction: |
+          token map: design token, variable map.
+        gate:
+          - check: "npx conductor-board check token-map"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: publish-handoff
+        instruction: |
+          publish handoff: publish handoff, share.
+        gate:
+          - check: "npx conductor-board check publish-handoff"
+          - name: "publish handoff is correct"
+            check: "node verify-unit.mjs publish-handoff --out out/publish-handoff.json"

@@ -280,18 +280,19 @@ Do not suggest changes to what the card does. The goal is fixed.
 
 This workflow runs again and again on different content each time — a different subject, slug, or family per run. Any insight you record becomes a permanent part of the card's instruction and will be applied to future runs whose content you cannot see. An improvement only counts if it would help those runs too, not just a repeat of this one.
 
-Your job: determine whether the NEXT run of this card — on different content — could arrive at the same result dramatically faster.
+Your job: determine whether the NEXT run of this card — on different content — could arrive at the same result faster, with fewer wrong turns, or with less repeated setup. Favor speed and efficiency improvements. Do not record general praise, style preferences, or one-off observations.
 
 Look for improvements to the card's method, expressed so they hold for any subject:
 - Facts the card rediscovered from scratch (where its inputs live, database locations, API endpoints, CLI commands) that the instruction could tell it to read from the run's inputs/state upfront — describe the kind of input to provide, never this run's specific values.
 - Unnecessary tool calls or wrong paths tried before finding the right approach
 - Setup work that is identical every run and could be skipped
 - Information that is invariant across all runs — not merely stable for this run's subject — that could live in the instruction
+- Reusable shortcuts that would let the next worker start from the right source, command, schema, or decision rule instead of rediscovering it
 
-Express the improvement in general terms. Never name this run's specific slug, file path, number, or list — those are this run's data, not a durable lesson; state the rule they were an example of instead. If the only speed-up you can find is specific to this run's content, with no form that would help a run on different content, return { "insight": false }.
+Express the improvement as an instruction-ready optimization: name what the future worker should consult, skip, reuse, verify first, or decide earlier. Never name this run's specific slug, file path, number, or list — those are this run's data, not a durable lesson; state the rule they were an example of instead. If the only speed-up you can find is specific to this run's content, with no form that would help a run on different content, return { "insight": false }.
 
 If there is a meaningful, transferable improvement, return:
-{ "insight": true, "detail": "<one sentence describing the general method change so any future run is faster>" }
+{ "insight": true, "detail": "<one sentence describing the exact reusable shortcut/source/decision rule so any future run is faster or avoids rediscovery>" }
 
 If the card executed efficiently and there is no meaningful improvement, return:
 { "insight": false }

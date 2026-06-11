@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: license-compliance
+description: >
+  Check each dependency's license against the allowlist; verdict matches the real license.
+
+steps:
+  - id: load-packages
+    instruction: |
+      Load packages + the license allowlist; capture each package's real license text into the grounding bundle.
+    output: packages
+    gate:
+      - check: "npx conductor-board check load-packages"
+      - name: "Real license text + allowlist captured"
+        check: "node verify.mjs license-correct --out fixtures/license-compliance/license-compliance.out.json --ground fixtures/license-compliance/license-compliance.ground.json"
+
+  - id: license-compliance-loop
+    type: loop
+    over: packages
+    as: package
+    requires: [load-packages]
+    steps:
+      - id: check-license
+        instruction: |
+          Check <package>'s license.
+        gate:
+          - check: "npx conductor-board check check-license"
+          - name: "Detected license matches the package's real license file"
+            check: "node verify.mjs license-correct --out fixtures/license-compliance/<item>.out.json --ground fixtures/license-compliance/<item>.ground.json"
+          - name: "Verdict is consistent with the allowlist"
+            check: "node verify.mjs verdict-consistent --out fixtures/license-compliance/<item>.out.json --ground fixtures/license-compliance/<item>.ground.json"
+          - "Dual-licensed / custom licenses flagged for human review, not force-classified."
+
+  - id: license-compliance-finish
+    instruction: |
+      Confirm every package's license checked + correct verdict.
+    requires: [license-compliance-loop]
+    gate:
+      - check: "npx conductor-board check license-compliance-finish"
+      - name: "All packages checked"
+        check: "node verify.mjs coverage-complete --out fixtures/license-compliance/license-compliance.out.json --ground fixtures/license-compliance/license-compliance.ground.json"

@@ -31,12 +31,12 @@ export function BoardPage() {
     <Page>
       <SectionHead
         kicker="The board"
-        title="npx conductor-board"
-        sub="Watches the status file and moves every step through the columns, live."
+        title="npx conductor-board run SKILL.md"
+        sub="Opens before setup starts, moves through integration when needed, then runs the checked Kanban live."
       />
       <div className="mt-7 flex justify-center">
         <code className="rounded-lg border border-line bg-ink-2/80 px-4 py-2 font-mono text-xs text-mist-2">
-          <span className="text-dim">$</span> npx conductor-board{"  "}
+          <span className="text-dim">$</span> npx conductor-board@latest run SKILL.md{"  "}
           <span className="text-mist">→ Board live at http://localhost:3042</span>
         </code>
       </div>
@@ -70,7 +70,7 @@ export function BoardPage() {
         <SectionHead
           kicker="Self-regulation"
           title="Agents that check in"
-          sub="A pulse the agent writes to itself on long steps, shown live."
+          sub="Plain-prose worker updates, scoped to the active workflow so old runs do not replay into the current screen."
         />
         <div className="mt-12 grid items-center gap-5 lg:grid-cols-2">
           <Reveal>
@@ -104,9 +104,9 @@ export function BoardPage() {
           </Reveal>
         </div>
         <p className="mt-6 text-center text-sm text-mist">
-          An append-only audit trail — and when a beat carries an{" "}
+          An append-only audit trail — and when an update carries an{" "}
           <span className="inline-block h-1.5 w-1.5 translate-y-px rounded-full bg-amber" /> insight, it
-          becomes a post-run optimization you fold back into the conductor. The full
+          becomes a post-run optimization folded into the next Improve & Run. The full
           board tour lives in the{" "}
           <a href={`${BASE}kanban.html`} className="text-mist-2 underline-offset-2 hover:text-chalk hover:underline">
             Board guide

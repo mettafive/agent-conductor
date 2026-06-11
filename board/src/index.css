@@ -95,7 +95,7 @@
 }
 .led-gate {
   background-color: var(--color-green);
-  animation: led-gate 1.5s ease-in-out infinite;
+  animation: led-gate 1.9s ease-in-out infinite;
 }
 @keyframes led-gate {
   0%,

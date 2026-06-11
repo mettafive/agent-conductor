@@ -276,7 +276,7 @@ export function NoteThread({
   const remove = (n: DeveloperNote) => postComment(workflow, { id: n.id, step, card, text: "", action: "remove" });
 
   return (
-    <div className="space-y-1 pb-1.5">
+    <div className="space-y-1.5">
       {notes.map((n) =>
         editingId === n.id ? (
           <NoteEditor
@@ -302,16 +302,16 @@ function NoteRow({ note, onEdit, onRemove }: { note: DeveloperNote; onEdit: () =
   const edits = (note.history ?? []).filter((h) => h.action === "edited");
   const lastEdit = edits.at(-1);
   return (
-    <div className="group rounded border border-line bg-panel-2 px-2 py-1">
-      <div className="flex items-start gap-1.5 text-[10.5px] leading-snug text-mist-2">
-        <span className="text-mist">✎</span>
+    <div className="group rounded-md border border-line bg-panel-2/80 px-2.5 py-1.5">
+      <div className="flex items-start gap-2 text-[12.5px] leading-snug text-mist-2">
+        <span className="text-[11px] text-mist">✎</span>
         <span className="flex-1">{note.text}</span>
         <span className="flex shrink-0 gap-1.5 font-mono text-[9px] text-dim opacity-0 transition-opacity group-hover:opacity-100">
           <button onClick={onEdit} className="hover:text-mist">edit</button>
           <button onClick={onRemove} className="hover:text-rose">remove</button>
         </span>
       </div>
-      <div className="mt-1 flex items-center gap-1.5 border-t border-line pt-1 font-mono text-[9px]">
+      <div className="mt-1 flex items-center gap-1.5 border-t border-line/70 pt-1 font-mono text-[9px]">
         <span className="shrink-0 text-dim">comment</span>
         {note.resolution && <span className="min-w-0 flex-1 truncate text-dim" title={note.resolution}>{note.resolution}</span>}
         {edits.length > 0 && (
@@ -345,10 +345,10 @@ function NoteEditor({
   composer?: boolean;
 }) {
   return (
-    <div className={composer ? "space-y-2 rounded-lg border border-line-2 bg-ink/40 px-2.5 py-2.5" : "space-y-1.5"}>
+    <div className={composer ? "space-y-1.5 rounded-md border border-line bg-ink/35 px-2 py-2" : "space-y-1.5"}>
       <textarea
         autoFocus={!composer}
-        rows={composer ? 3 : 2}
+        rows={composer ? 2 : 2}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onFocus={(e) =>
@@ -373,14 +373,14 @@ function NoteEditor({
             : "Note on this activity… (Enter saves · Shift+Enter = new line)"
         }
         className={`w-full rounded border border-line-2 px-2 ${
-          composer ? "bg-ink/60 py-2 text-[12px]" : "bg-ink/50 py-1.5 text-[11px]"
-        } leading-snug text-mist-2 outline-none focus:border-mist/40`}
+          composer ? "bg-ink/60 py-1.5 text-[13px]" : "bg-ink/50 py-1.5 text-[12px]"
+        } leading-snug text-mist-2 outline-none placeholder:text-dim focus:border-mist/40`}
       />
       {composer ? (
         <button
           onClick={onSave}
           disabled={!draft.trim()}
-          className="w-full rounded bg-line-2 px-2.5 py-1 text-[9.5px] text-chalk transition-colors hover:bg-line-2/70 disabled:cursor-not-allowed disabled:opacity-40"
+          className="w-full rounded bg-line-2 px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-chalk transition-colors hover:bg-line-2/70 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Comment
         </button>

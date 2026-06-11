@@ -1,63 +1,4 @@
-import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Icon } from "./Icon";
-import { HEARTBEAT_OPTIONS, stallSecondsFor } from "../lib/settings";
-
-const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ["⌘", ","], label: "Open / close settings" },
-  { keys: ["Esc"], label: "Back to live · close this panel" },
-  { keys: ["Ctrl", "`"], label: "Expand / minimize updates" },
-];
-
-function Kbd({ children }: { children: string }) {
-  return (
-    <kbd className="rounded border border-line bg-ink/60 px-1.5 py-0.5 font-mono text-[11px] leading-none text-mist-2">
-      {children}
-    </kbd>
-  );
-}
-
-/** Collapsible reference of every keyboard shortcut. */
-function Shortcuts() {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="border-t border-line">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-5 pb-1 pt-3 text-left"
-      >
-        <span className="text-[11px] uppercase tracking-wide text-dim">Shortcuts</span>
-        <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: "easeOut" }} className="ml-auto text-dim">
-          <Icon name="chevronRight" size={13} />
-        </motion.span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden"
-          >
-            <div className="px-5 pb-3">
-              {SHORTCUTS.map((s) => (
-                <div key={s.label} className="flex items-center gap-3 py-1.5">
-                  <div className="flex shrink-0 items-center gap-1">
-                    {s.keys.map((k) => (
-                      <Kbd key={k}>{k}</Kbd>
-                    ))}
-                  </div>
-                  <span className="text-[12.5px] text-mist">{s.label}</span>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 /** A labelled on/off switch row. `on` = the thing is enabled (sound plays). */
 function SwitchRow({
@@ -106,19 +47,19 @@ export function Settings({
   onClose,
   ticksOn,
   chimesOn,
+  prewarmAgents,
   onToggleTicks,
   onToggleChimes,
-  heartbeatInterval,
-  onSetHeartbeatInterval,
+  onTogglePrewarmAgents,
 }: {
   open: boolean;
   onClose: () => void;
   ticksOn: boolean;
   chimesOn: boolean;
+  prewarmAgents: boolean;
   onToggleTicks: () => void;
   onToggleChimes: () => void;
-  heartbeatInterval: number;
-  onSetHeartbeatInterval: (seconds: number) => void;
+  onTogglePrewarmAgents: () => void;
 }) {
   return (
     <AnimatePresence>
@@ -160,34 +101,14 @@ export function Settings({
                 onToggle={onToggleChimes}
               />
 
-              {/* Cadence */}
-              <div className="px-5 pb-1 pt-4 text-[11px] uppercase tracking-wide text-dim">Cadence</div>
-              <div className="flex items-center gap-3 px-5 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] text-chalk">Update interval</div>
-                  <div className="mt-0.5 text-[12px] leading-snug text-dim">
-                    How often the agent checks in. Stall is flagged after ~3 missed updates
-                    (now {stallSecondsFor(heartbeatInterval)}s).
-                  </div>
-                </div>
-                <div className="flex shrink-0 overflow-hidden rounded-md border border-line">
-                  {HEARTBEAT_OPTIONS.map((o) => (
-                    <button
-                      key={o.seconds}
-                      onClick={() => onSetHeartbeatInterval(o.seconds)}
-                      className={`px-2 py-1 font-mono text-[11px] transition-colors ${
-                        heartbeatInterval === o.seconds ? "bg-line-2 text-chalk" : "text-dim hover:text-mist"
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Shortcuts */}
-              <Shortcuts />
-
+              {/* Agents */}
+              <div className="px-5 pb-1 pt-4 text-[11px] uppercase tracking-wide text-dim">Agents</div>
+              <SwitchRow
+                label="Pre-warm agents"
+                hint="Default on. Starts safe no-work probes for likely next cards so handoff is faster."
+                on={prewarmAgents}
+                onToggle={onTogglePrewarmAgents}
+              />
             </div>
           </motion.div>
         </motion.div>

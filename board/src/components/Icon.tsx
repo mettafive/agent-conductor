@@ -12,7 +12,9 @@ export type IconName =
   | "menu"
   | "muted"
   | "sound"
-  | "minus";
+  | "minus"
+  | "pause"
+  | "play";
 
 const PATHS: Record<IconName, ReactNode> = {
   check: <path d="M4 12l5 5L20 7" />,
@@ -42,6 +44,13 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   minus: <path d="M5 12h14" />,
+  pause: (
+    <>
+      <path d="M9 6v12" />
+      <path d="M15 6v12" />
+    </>
+  ),
+  play: <path d="M8 5v14l11-7-11-7Z" />,
 };
 
 /** Thin SVG icons — 1.5px stroke, no fill, currentColor. They inherit context. */

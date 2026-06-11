@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -184,11 +184,25 @@ Apply this only to a handful of explicitly named, independent deliverables — n
 open-ended or large collections (see the collection rule below). Write each sibling's
 instruction self-contained, so no sibling references another.
 
-Every card instruction must require one primary markdown receipt at
-\`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`:
+Every card instruction must require one primary markdown receipt at the exact
+receipt path assigned by the conductor-board worker brief. Do not invent,
+predict, or name the receipt file in the card instruction; the runtime worker
+brief is the only authority for the exact path:
 - content/code/data/report/table/file work must be shown inside that markdown receipt
 - action cards must write an action record in that markdown receipt, including command, return value, changed resource, and verification result
 - supporting files such as images, JSON, CSV, screenshots, PDFs, uploads, or deploys must be referenced from that markdown receipt, not treated as standalone primary artifacts. Image-producing cards must require the receipt to embed every image from that card inline with markdown image syntax, while listing the supporting file paths and verification proof.
+
+Preserve accepted upstream work. Later cards must treat dependency artifacts as
+accepted inputs: build additively, or make only the narrow edit the card
+explicitly requires. Do not ask a card to overwrite, remove, weaken, or
+re-author upstream work unless the skill explicitly asks for revision.
+
+When creating a final assembly, handoff, publish, or closeout card, keep it
+lean. Earlier cards already pass their own gates. The final card should use the
+accepted upstream outputs, write the final artifact or handoff, and account for
+which accepted outputs were included. Do not make the final card re-check,
+re-judge, or rewrite upstream content quality unless the skill explicitly asks
+for a final review, editorial rewrite, or quality audit.
 
 If work only applies in a certain situation, write the condition directly into
 the instruction. The card always executes. Its artifact must prove one of:
@@ -254,8 +268,10 @@ You receive the original SKILL.md and candidate cards.
 The composer is not trusted. Check only the skill and the cards.
 
 A good conductor card is a concrete, verifiable unit of work.
-The instruction must require one primary markdown receipt at
-\`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`. The receipt is the single source of
+The instruction must require one primary markdown receipt at the exact receipt
+path assigned by the conductor-board worker brief. The card instruction must not
+invent, predict, or name the receipt file; the runtime worker brief is the only
+authority for the exact path. The receipt is the single source of
 truth for what the card did: work product, action record, or non-text support
 reference list. Supporting files such as images, JSON, CSV, screenshots, PDFs, uploads,
 or deploys must be referenced from the markdown receipt, not treated as
@@ -271,7 +287,15 @@ FAIL if:
 - a card mixes before/after work that cannot happen at one safe start point; request a split instead
 - a card is impossible because it requires proof, results, or artifacts from a later action in the same card
 - a card instruction only says to think/analyze/consider without producing an artifact or verifiable decision
-- a card does not require the primary receipt to be \`.conductor/artifacts/<card-index>-<slugified-card-title>.md\`
+- a card does not require the primary receipt at the exact receipt path assigned by conductor-board
+- a card invents, predicts, or names a receipt file instead of deferring the exact path to the runtime worker brief
+- a final assembly, handoff, publish, or closeout card asks the worker to
+  re-check, re-judge, deeply re-verify, or rewrite upstream content that earlier
+  cards already prove, unless the skill explicitly asks for final review,
+  editorial rewrite, or quality audit. Prefer a lean final card that uses the
+  accepted upstream outputs and accounts for which outputs were included.
+- a later card overwrites, removes, weakens, or re-authors accepted upstream
+  work without an explicit revision instruction from the skill
 - a title is unclear shorthand, unexplained jargon, an acronym-heavy label, or too vague for a user watching the board
 - a title is longer than 40 characters unless shortening it would make it unclear
 - output format, deliverables, constraints, warnings, or examples from the skill were lost
@@ -407,22 +431,67 @@ function callCodexExec(prompt, { role, attempt }) {
   const model = process.env.CONDUCTOR_DECOMPOSE_MODEL;
   if (model) args.splice(1, 0, "--model", model);
 
-  const r = spawnSync("codex", args, {
-    input: prompt,
-    encoding: "utf8",
-    maxBuffer: 20 * 1024 * 1024,
-    env: {
-      ...process.env,
-      CONDUCTOR_DECOMPOSE_ROLE: role,
-      CONDUCTOR_DECOMPOSE_ATTEMPT: String(attempt),
-    },
+  const timeoutMs = Number(process.env.CONDUCTOR_CODEX_EXEC_TIMEOUT_MS) || (role === "post-card-learning" ? 45000 : 20 * 60 * 1000);
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const child = spawn("codex", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+      env: {
+        ...process.env,
+        CONDUCTOR_DECOMPOSE_ROLE: role,
+        CONDUCTOR_DECOMPOSE_ATTEMPT: String(attempt),
+      },
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        if (process.platform === "win32") child.kill("SIGTERM");
+        else process.kill(-child.pid, "SIGTERM");
+      } catch {
+        try { child.kill("SIGTERM"); } catch { /* already gone */ }
+      }
+      setTimeout(() => {
+        try {
+          if (process.platform === "win32") child.kill("SIGKILL");
+          else process.kill(-child.pid, "SIGKILL");
+        } catch {
+          try { child.kill("SIGKILL"); } catch { /* already gone */ }
+        }
+      }, 1500).unref();
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+      if (stdout.length > 20 * 1024 * 1024) stdout = stdout.slice(-20 * 1024 * 1024);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+      if (stderr.length > 2 * 1024 * 1024) stderr = stderr.slice(-2 * 1024 * 1024);
+    });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      fs.rmSync(outFile, { force: true });
+      reject(e);
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      const output = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : stdout;
+      fs.rmSync(outFile, { force: true });
+      if (timedOut) {
+        reject(new Error(`codex exec timed out after ${timeoutMs}ms for ${role}`));
+        return;
+      }
+      if (code !== 0) {
+        reject(new Error(`codex exec failed (${code ?? signal}): ${(stderr || stdout || "").trim().slice(0, 1200)}`));
+        return;
+      }
+      resolve(output);
+    });
+    child.stdin.end(prompt);
   });
-  const output = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : r.stdout;
-  fs.rmSync(outFile, { force: true });
-  if (r.status !== 0) {
-    throw new Error(`codex exec failed (${r.status}): ${(r.stderr || r.stdout || "").trim().slice(0, 1200)}`);
-  }
-  return output;
 }
 
 function callCommand(prompt, { role, attempt }) {
@@ -456,7 +525,7 @@ export async function callModel(prompt, meta) {
   const command = callCommand(prompt, meta);
   if (command !== null) return command;
   const codex = callCodexExec(prompt, meta);
-  if (codex !== null) return codex;
+  if (codex !== null) return await codex;
   return callOpenAI(prompt, meta);
 }
 

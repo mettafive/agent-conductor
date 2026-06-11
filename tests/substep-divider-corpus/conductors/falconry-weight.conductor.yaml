@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: falconry-weight
+description: >
+  falconry weight — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-birds
+    instruction: |
+      Scope the birds to process. Frontload every bird as a pending iteration.
+    output: birds
+    gate:
+      - check: "npx conductor-board check scope-birds"
+      - "Every bird captured before any work begins"
+
+  - id: falconry-weight-loop
+    type: loop
+    over: birds
+    as: bird
+    requires: [scope-birds]
+    steps:
+      - id: weigh-bird
+        instruction: |
+          weigh bird: weigh, flying weight.
+        gate:
+          - check: "npx conductor-board check weigh-bird"
+          - name: "weigh bird is correct"
+            check: "node verify-unit.mjs weigh-bird --out out/weigh-bird.json"
+      - id: assess-condition
+        instruction: |
+          assess condition: assess condition, mews check.
+        gate:
+          - check: "npx conductor-board check assess-condition"
+          - name: "assess condition is correct"
+            check: "node verify-unit.mjs assess-condition --out out/assess-condition.json"
+      - id: ration-plan
+        instruction: |
+          ration plan: ration, casting.
+        gate:
+          - check: "npx conductor-board check ration-plan"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: log-bird
+        instruction: |
+          log bird: log, weight record.
+        gate:
+          - check: "npx conductor-board check log-bird"
+          - name: "log bird is correct"
+            check: "node verify-unit.mjs log-bird --out out/log-bird.json"

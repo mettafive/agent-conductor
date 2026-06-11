@@ -1,0 +1,44 @@
+conductor: 2.0.0
+name: tax-prep
+description: >
+  tax prep — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: gather-docs
+    instruction: |
+      gather docs: gather docs, collect forms.
+    gate:
+      - check: "npx conductor-board check gather-docs"
+      - name: "gather docs is correct"
+        check: "node verify-unit.mjs gather-docs --out out/gather-docs.json"
+  - id: categorize-income
+    instruction: |
+      categorize income: categorize income, income sources.
+    requires: [gather-docs]
+    gate:
+      - check: "npx conductor-board check categorize-income"
+      - name: "categorize income is correct"
+        check: "node verify-unit.mjs categorize-income --out out/categorize-income.json"
+  - id: compute-deductions
+    instruction: |
+      compute deductions: deductions, write-offs.
+    requires: [categorize-income]
+    gate:
+      - check: "npx conductor-board check compute-deductions"
+      - name: "compute deductions is correct"
+        check: "node verify-unit.mjs compute-deductions --out out/compute-deductions.json"
+  - id: credit-check
+    instruction: |
+      credit check: tax credit, credits.
+    requires: [compute-deductions]
+    gate:
+      - check: "npx conductor-board check credit-check"
+      # divider step: no substantive gate — exists purely so the board shows this phase
+  - id: file-return
+    instruction: |
+      file return: file return, submit.
+    requires: [credit-check]
+    gate:
+      - check: "npx conductor-board check file-return"
+      - name: "file return is correct"
+        check: "node verify-unit.mjs file-return --out out/file-return.json"

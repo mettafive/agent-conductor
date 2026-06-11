@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: qa-regression
+description: >
+  qa regression — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-flows
+    instruction: |
+      Scope the flows to process. Frontload every flow as a pending iteration.
+    output: flows
+    gate:
+      - check: "npx conductor-board check scope-flows"
+      - "Every flow captured before any work begins"
+
+  - id: qa-regression-loop
+    type: loop
+    over: flows
+    as: flow
+    requires: [scope-flows]
+    steps:
+      - id: setup-fixture
+        instruction: |
+          setup fixture: setup fixture, test data.
+        gate:
+          - check: "npx conductor-board check setup-fixture"
+          - name: "setup fixture is correct"
+            check: "node verify-unit.mjs setup-fixture --out out/setup-fixture.json"
+      - id: run-flow
+        instruction: |
+          run flow: run flow, execute test.
+        gate:
+          - check: "npx conductor-board check run-flow"
+          - name: "run flow is correct"
+            check: "node verify-unit.mjs run-flow --out out/run-flow.json"
+      - id: screenshot-diff
+        instruction: |
+          screenshot diff: screenshot diff, visual regression.
+        gate:
+          - check: "npx conductor-board check screenshot-diff"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: report-result
+        instruction: |
+          report result: report, pass fail.
+        gate:
+          - check: "npx conductor-board check report-result"
+          - name: "report result is correct"
+            check: "node verify-unit.mjs report-result --out out/report-result.json"

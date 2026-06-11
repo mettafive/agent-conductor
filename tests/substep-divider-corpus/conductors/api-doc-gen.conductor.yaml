@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: api-doc-gen
+description: >
+  api doc gen — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-endpoints
+    instruction: |
+      Scope the endpoints to process. Frontload every endpoint as a pending iteration.
+    output: endpoints
+    gate:
+      - check: "npx conductor-board check scope-endpoints"
+      - "Every endpoint captured before any work begins"
+
+  - id: api-doc-gen-loop
+    type: loop
+    over: endpoints
+    as: endpoint
+    requires: [scope-endpoints]
+    steps:
+      - id: introspect
+        instruction: |
+          introspect: introspect, parse route.
+        gate:
+          - check: "npx conductor-board check introspect"
+          - name: "introspect is correct"
+            check: "node verify-unit.mjs introspect --out out/introspect.json"
+      - id: write-doc
+        instruction: |
+          write doc: write doc, document endpoint.
+        gate:
+          - check: "npx conductor-board check write-doc"
+          - name: "write doc is correct"
+            check: "node verify-unit.mjs write-doc --out out/write-doc.json"
+      - id: example-requests
+        instruction: |
+          example requests: example request, curl sample.
+        gate:
+          - check: "npx conductor-board check example-requests"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: publish-doc
+        instruction: |
+          publish doc: publish, openapi.
+        gate:
+          - check: "npx conductor-board check publish-doc"
+          - name: "publish doc is correct"
+            check: "node verify-unit.mjs publish-doc --out out/publish-doc.json"

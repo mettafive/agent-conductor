@@ -7,6 +7,7 @@ import { dependencyBlockers, dependencyBlockerMessage, resolveTopLevelIndex } fr
 import { receiptArtifactName, artifactsDir, findReceiptArtifact } from "./artifacts.js";
 import { timingEnabled, writeWorkerSidecar } from "./timing.js";
 import { selectAdapter, adapterCap, workerLine } from "./worker-adapters.js";
+import { resolveWorkflowContext } from "./workflow-context.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -139,6 +140,13 @@ ${String(step.instruction || "").trim()}
 # Inputs (the dependency artifacts you may rely on)
 ${inputBlocks}
 
+# Preservation rule — accepted upstream work is trusted input
+Dependency artifacts are accepted upstream work. Do not overwrite, remove,
+weaken, or re-author accepted upstream content unless this card explicitly asks
+you to revise it. Build additively, or make the narrowest necessary edit. If
+you edit an existing artifact that may contain prior accepted work, verify in
+your receipt that unrelated accepted content is still present.
+
 # Output location (REQUIRED)
 Write your primary markdown receipt to EXACTLY this path (relative to the working dir above):
 
@@ -161,7 +169,11 @@ Good update: "Choosing verified cards over gates because v3 no longer has gate f
 # Reporting protocol - report ONLY through these shell commands (run them, in order)
 All commands use the SAME local conductor-board CLI binary and the SAME status/workflow paths. The environment variable CONDUCTOR_HEADLESS=1 is already set for you, so these run non-interactively. The card has ALREADY been marked running for you — proceed straight to the work.
 
-1. Do the actual work and WRITE the receipt to the output path above.
+1. Do the actual work and WRITE the receipt to the output path above. Once the
+   receipt is written, do not keep polishing, narrating, or re-reading unless
+   something is missing. Post your final progress note immediately and move to
+   the checker commands below. The conductor's checker is the authoritative
+   review; your job is to hand it the finished receipt promptly.
 
 2. Print the independent checker rubric for this card (it auto-reads your receipt from disk):
    ${verb(`check ${cardIndex}`)}
@@ -423,9 +435,7 @@ export async function runRunCard(args) {
   }
 
   const [cardArg] = positionals(args);
-  const p = flag(args, ["--path", "-p"]);
-  const statusPath = path.resolve(process.cwd(), typeof p === "string" ? p : ".conductor/status.json");
-  const wfArg = flag(args, ["--workflow", "--conductor", "-c"]);
+  const { statusPath, workflowPath } = resolveWorkflowContext(args);
   const timeoutMs = Number(flag(args, ["--timeout"])) || 1200000;
   const cwd = process.cwd();
 
@@ -434,12 +444,6 @@ export async function runRunCard(args) {
     return false;
   }
 
-  let workflowPath = null;
-  if (typeof wfArg === "string") workflowPath = path.resolve(cwd, wfArg);
-  else {
-    const guess = path.join(path.dirname(statusPath), "workflow.json");
-    if (fs.existsSync(guess)) workflowPath = guess;
-  }
   if (!workflowPath || !fs.existsSync(workflowPath)) {
     console.error(red(`no workflow.json found (pass --workflow). looked next to ${statusPath}`));
     return false;

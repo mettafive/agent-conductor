@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: ikebana-arrange
+description: >
+  ikebana arrange — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-arrangements
+    instruction: |
+      Scope the arrangements to process. Frontload every arrangement as a pending iteration.
+    output: arrangements
+    gate:
+      - check: "npx conductor-board check scope-arrangements"
+      - "Every arrangement captured before any work begins"
+
+  - id: ikebana-arrange-loop
+    type: loop
+    over: arrangements
+    as: arrangement
+    requires: [scope-arrangements]
+    steps:
+      - id: select-material
+        instruction: |
+          select material: select material, branches flowers.
+        gate:
+          - check: "npx conductor-board check select-material"
+          - name: "select material is correct"
+            check: "node verify-unit.mjs select-material --out out/select-material.json"
+      - id: set-structure
+        instruction: |
+          set structure: set structure, shin soe hikae.
+        gate:
+          - check: "npx conductor-board check set-structure"
+          - name: "set structure is correct"
+            check: "node verify-unit.mjs set-structure --out out/set-structure.json"
+      - id: kenzan-fix
+        instruction: |
+          kenzan fix: kenzan, pin holder.
+        gate:
+          - check: "npx conductor-board check kenzan-fix"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: finalize-arrangement
+        instruction: |
+          finalize arrangement: finalize, display.
+        gate:
+          - check: "npx conductor-board check finalize-arrangement"
+          - name: "finalize arrangement is correct"
+            check: "node verify-unit.mjs finalize-arrangement --out out/finalize-arrangement.json"

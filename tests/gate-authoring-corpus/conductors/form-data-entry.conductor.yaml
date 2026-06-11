@@ -1,0 +1,38 @@
+conductor: 2.0.0
+name: form-data-entry
+description: >
+  Enter each form record into the system; stored values equal the source form.
+
+steps:
+  - id: load-forms
+    instruction: |
+      Load source forms into the grounding bundle (the truth stored values are checked against).
+    output: forms
+    gate:
+      - check: "npx conductor-board check load-forms"
+      - name: "Source forms captured"
+        check: "node verify.mjs stored-matches --out fixtures/form-data-entry/form-data-entry.out.json --ground fixtures/form-data-entry/form-data-entry.ground.json"
+
+  - id: form-data-entry-loop
+    type: loop
+    over: forms
+    as: form
+    requires: [load-forms]
+    steps:
+      - id: enter-form
+        instruction: |
+          Enter <form> into the system.
+        gate:
+          - check: "npx conductor-board check enter-form"
+          - name: "Stored values equal the source form (read-back)"
+            check: "node verify.mjs stored-matches --out fixtures/form-data-entry/<item>.out.json --ground fixtures/form-data-entry/<item>.ground.json"
+          - "Required fields all populated; no field left default/blank that the form filled."
+
+  - id: form-data-entry-finish
+    instruction: |
+      Confirm every form entered + read-back matches.
+    requires: [form-data-entry-loop]
+    gate:
+      - check: "npx conductor-board check form-data-entry-finish"
+      - name: "All forms entered"
+        check: "node verify.mjs coverage-complete --out fixtures/form-data-entry/form-data-entry.out.json --ground fixtures/form-data-entry/form-data-entry.ground.json"

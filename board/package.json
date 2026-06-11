@@ -1,6 +1,6 @@
 {
   "name": "conductor-board",
-  "version": "3.3.6",
+  "version": "3.3.19",
   "description": "A portable spec and live Kanban board for orchestrating AI agent workflows.",
   "license": "MIT",
   "author": "mettafive",
@@ -28,6 +28,7 @@
     "test:integration": "node test/integration.smoke.mjs",
     "test:dispatch": "node test/dispatch.smoke.mjs",
     "test:server": "node test/server.smoke.mjs",
+    "test:lifecycle": "node test/lifecycle.smoke.mjs",
     "test:heartbeat": "node test/heartbeat.smoke.mjs",
     "test:relaunch": "node test/relaunch.smoke.mjs",
     "test:loop-narrate": "node test/loop-narrate.smoke.mjs",

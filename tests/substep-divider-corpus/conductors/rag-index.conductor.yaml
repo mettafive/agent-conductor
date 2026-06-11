@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: rag-index
+description: >
+  rag index — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-docs
+    instruction: |
+      Scope the docs to process. Frontload every doc as a pending iteration.
+    output: docs
+    gate:
+      - check: "npx conductor-board check scope-docs"
+      - "Every doc captured before any work begins"
+
+  - id: rag-index-loop
+    type: loop
+    over: docs
+    as: doc
+    requires: [scope-docs]
+    steps:
+      - id: chunk-doc
+        instruction: |
+          chunk doc: chunk, split document.
+        gate:
+          - check: "npx conductor-board check chunk-doc"
+          - name: "chunk doc is correct"
+            check: "node verify-unit.mjs chunk-doc --out out/chunk-doc.json"
+      - id: embed
+        instruction: |
+          embed: embed, vectorize.
+        gate:
+          - check: "npx conductor-board check embed"
+          - name: "embed is correct"
+            check: "node verify-unit.mjs embed --out out/embed.json"
+      - id: metadata-tag
+        instruction: |
+          metadata tag: metadata, tag chunk.
+        gate:
+          - check: "npx conductor-board check metadata-tag"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: upsert-vectors
+        instruction: |
+          upsert vectors: upsert, store vectors.
+        gate:
+          - check: "npx conductor-board check upsert-vectors"
+          - name: "upsert vectors is correct"
+            check: "node verify-unit.mjs upsert-vectors --out out/upsert-vectors.json"

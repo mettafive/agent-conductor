@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: test-gen
+description: >
+  test gen — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-modules
+    instruction: |
+      Scope the modules to process. Frontload every module as a pending iteration.
+    output: modules
+    gate:
+      - check: "npx conductor-board check scope-modules"
+      - "Every module captured before any work begins"
+
+  - id: test-gen-loop
+    type: loop
+    over: modules
+    as: module
+    requires: [scope-modules]
+    steps:
+      - id: analyze-module
+        instruction: |
+          analyze module: analyze, read module.
+        gate:
+          - check: "npx conductor-board check analyze-module"
+          - name: "analyze module is correct"
+            check: "node verify-unit.mjs analyze-module --out out/analyze-module.json"
+      - id: write-tests
+        instruction: |
+          write tests: write tests, add cases.
+        gate:
+          - check: "npx conductor-board check write-tests"
+          - name: "write tests is correct"
+            check: "node verify-unit.mjs write-tests --out out/write-tests.json"
+      - id: edge-cases
+        instruction: |
+          edge cases: edge case, boundary, error path.
+        gate:
+          - check: "npx conductor-board check edge-cases"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: run-suite
+        instruction: |
+          run suite: run suite, coverage.
+        gate:
+          - check: "npx conductor-board check run-suite"
+          - name: "run suite is correct"
+            check: "node verify-unit.mjs run-suite --out out/run-suite.json"

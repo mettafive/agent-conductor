@@ -15,5 +15,15 @@ const CLS: Record<string, string> = {
 };
 
 export function Led({ state, title }: { state: string; title?: string }) {
-  return <span className={CLS[state] ?? CLS.pending} title={title} aria-hidden />;
+  const active = state === "running" || state === "checking";
+  const syncMs = 1900;
+  const delay = active ? `-${(Date.now() % syncMs) / 1000}s` : undefined;
+  return (
+    <span
+      className={CLS[state] ?? CLS.pending}
+      style={delay ? { animationDelay: delay } : undefined}
+      title={title}
+      aria-hidden
+    />
+  );
 }

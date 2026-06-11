@@ -26,7 +26,7 @@ import { Settings } from "./components/Settings";
 import { InsightsModal } from "./components/InsightsModal";
 import { HeartbeatMonitor, loadMonitorMode } from "./components/HeartbeatMonitor";
 import type { MonitorMode } from "./components/HeartbeatMonitor";
-import { loadHeartbeatInterval, saveHeartbeatInterval, stallSecondsFor } from "./lib/settings";
+import { loadHeartbeatInterval, loadPrewarmAgents, saveHeartbeatInterval, savePrewarmAgents, stallSecondsFor } from "./lib/settings";
 import type { StreamBeat } from "./lib/heartbeatStream";
 import type { BoardModel, HistoryRun, Snapshot } from "./lib/types";
 
@@ -67,6 +67,7 @@ function pastRunBeats(model: BoardModel): StreamBeat[] {
 }
 
 const params = new URLSearchParams(window.location.search);
+const INTEGRATION_DONE_DWELL_MS = 2500;
 
 /** The bridge beat between runs: a single calm line + an indeterminate LED-dot
  *  loader in the status color, centered over the cleared board. It spans the real
@@ -141,20 +142,19 @@ function RelaunchOutcomeBanner({
 
 export function App() {
   const { workflows, order, conn } = useBoardState();
-  const [selectedWf, setSelectedWf] = useState<string | null>(params.get("wf"));
+  const [selectedWf] = useState<string | null>(params.get("wf"));
   // COLD START — surface on served, never on health. When the board is opened by a run
   // (?starting=1), show an explicit "starting…" state until the first phase feed is live
   // (compile / integration / run), instead of an empty board or a stale completed run.
   const [coldStart, setColdStart] = useState(params.get("starting") === "1");
   // The workflow currently on screen — its IDENTITY sticks across status rebroadcasts.
   const stickyWfRef = useRef<string | null>(null);
-  // When an integration (shaping) feed finishes, hold the board on it for a beat so
-  // its last card (Validate) visibly settles to done before the work feed takes over.
-  const [heldIntegration, setHeldIntegration] = useState<string | null>(null);
   const [ticksOn, setTicksOn] = useState(!isTicksMuted());
   const [chimesOn, setChimesOn] = useState(!isChimesMuted());
   const [monitorMode, setMonitorMode] = useState<MonitorMode>(loadMonitorMode);
-  const [heartbeatInterval, setHeartbeatInterval] = useState(loadHeartbeatInterval);
+  const [heartbeatInterval] = useState(loadHeartbeatInterval);
+  const [prewarmAgents, setPrewarmAgents] = useState(loadPrewarmAgents);
+  const [localBeats, setLocalBeats] = useState<StreamBeat[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
   // The Navigator drawer.
@@ -169,14 +169,9 @@ export function App() {
   useEffect(() => {
     saveHeartbeatInterval(heartbeatInterval);
   }, [heartbeatInterval]);
-
-  const { beats, log, arrival } = useHeartbeatStream(workflows, order);
-  const agentLog = log;
-  const globalLastBeat = lastBeatIso(beats);
-
   useEffect(() => {
-    if (arrival && !arrival.beat.system) playTick();
-  }, [arrival]);
+    savePrewarmAgents(prewarmAgents);
+  }, [prewarmAgents]);
 
   // A "run" feed is the work workflow; "compile"/"integration" are the shaping
   // feeds. Prefer the RUN feed so the board never sticks on the migration board
@@ -187,6 +182,8 @@ export function App() {
     const v = workflows[n]?.snap?.variant;
     return v !== "compile" && v !== "integration"; // run, or untagged/legacy
   };
+  const isCompileFeed = (n: string) => workflows[n]?.snap?.variant === "compile";
+  const isIntegrationFeed = (n: string) => workflows[n]?.snap?.variant === "integration";
   // STICKY: when you're looking at a workflow, it IS the selection — a status
   // rebroadcast must not re-resolve you elsewhere. We hold the viewed IDENTITY
   // (displayName), preferring its run feed so compile → run advances WITHIN it, but
@@ -195,30 +192,36 @@ export function App() {
     stickyWfRef.current && workflows[stickyWfRef.current] ? displayName(stickyWfRef.current) : null;
   const stickyChoice = stickyId
     ? (order.find((n) => displayName(n) === stickyId && isRunFeed(n)) ??
-       order.find((n) => displayName(n) === stickyId))
-    : null;
-
-  // The deliberate ask (the ?wf seed / a navigation) resolves BY IDENTITY — preferring
-  // the run feed — so ?wf=landing-forge lands the run, and follows compile → run.
-  const selectedChoice = selectedWf
-    ? (order.find((n) => displayName(n) === displayName(selectedWf) && isRunFeed(n)) ??
-       order.find((n) => displayName(n) === displayName(selectedWf)) ??
+       order.find((n) => displayName(n) === stickyId && isCompileFeed(n)) ??
        null)
     : null;
 
+  // The deliberate ask (the ?wf seed / a navigation) resolves BY IDENTITY, but
+  // integration is a preflight overlay, not a Kanban feed. Prefer run, then compile;
+  // never select integration as the central board surface.
+  const selectedChoice = selectedWf
+    ? (order.find((n) => displayName(n) === displayName(selectedWf) && isRunFeed(n)) ??
+       order.find((n) => displayName(n) === displayName(selectedWf) && isCompileFeed(n)) ??
+       null)
+    : null;
+  const selectedSeed = selectedWf ? displayName(selectedWf) : null;
+  // When the CLI opens ?wf=<target>&starting=1, the first browser frame must be
+  // the honest starting state for that target. Do not auto-select an old run
+  // while the requested compile/run feed is still being discovered.
+  const waitingForSelectedSeed = !!(coldStart && selectedSeed && !selectedChoice);
+
   const activeWf =
-    // Highest priority: a just-finished integration feed we're holding, so its
-    // Validate card settles to done on screen before the work feed switches in.
-    (heldIntegration && workflows[heldIntegration] ? heldIntegration : null) ??
-    selectedChoice ??
-    stickyChoice ??
-    // Auto-selection (bare route / first load): only a LIVE feed may grab the wheel —
-    // a stale running/paused zombie is excluded (stale-exclusion).
-    order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running" && isFeedLive(workflows[n], now)) ??
-    order.find((n) => statusOf(workflows[n]) === "running" && isFeedLive(workflows[n], now)) ??
-    order.find((n) => isRunFeed(n)) ??
-    order[0] ??
-    null;
+    waitingForSelectedSeed
+      ? null
+      : selectedChoice ??
+        stickyChoice ??
+        // Auto-selection (bare route / first load): only a LIVE feed may grab the wheel —
+        // a stale running/paused zombie is excluded (stale-exclusion). If no live
+        // feed exists, leave activeWf null and let the newest-history fallback
+        // load below; do not pick a random idle workflow skeleton.
+        order.find((n) => isRunFeed(n) && statusOf(workflows[n]) === "running" && isFeedLive(workflows[n], now)) ??
+        order.find((n) => isCompileFeed(n) && statusOf(workflows[n]) === "running" && isFeedLive(workflows[n], now)) ??
+        null;
 
   // Remember what's on screen so the next render's sticky holds this identity.
   useEffect(() => {
@@ -228,6 +231,67 @@ export function App() {
   const liveSnap: Snapshot = (activeWf && workflows[activeWf]?.snap) || EMPTY;
   const liveModel = buildModel(liveSnap);
 
+  const preflightIdentity =
+    displayName(selectedWf ?? activeWf ?? stickyWfRef.current ?? order.find((n) => isIntegrationFeed(n)));
+  const runFeedForPreflightIdentity = order.find((n) => displayName(n) === preflightIdentity && isRunFeed(n)) ?? null;
+  const runFeedForPreflightEntry = runFeedForPreflightIdentity ? workflows[runFeedForPreflightIdentity] : undefined;
+  const runFeedHasTakenOverAfterIntegration = (integrationEntry: WorkflowEntry | undefined) => {
+    if (!integrationEntry || !runFeedForPreflightEntry || !hasWorkflowSteps(runFeedForPreflightEntry)) return false;
+    const integrationEnded = latestLifecycleMs(integrationEntry);
+    const runStarted = startedLifecycleMs(runFeedForPreflightEntry);
+    return integrationEnded > 0 && runStarted > 0 && runStarted >= integrationEnded;
+  };
+  const integrationDoneStillDwelling = (entry: WorkflowEntry | undefined) => {
+    if (!entry || statusOf(entry) !== "done") return false;
+    const ended = latestLifecycleMs(entry);
+    return ended > 0 && now - ended < INTEGRATION_DONE_DWELL_MS;
+  };
+  const integrationWf = !viewing
+    ? (order.find(
+        (n) =>
+          isIntegrationFeed(n) &&
+          displayName(n) === preflightIdentity &&
+          (
+            statusOf(workflows[n]) === "running" ||
+            statusOf(workflows[n]) === "failed" ||
+            (statusOf(workflows[n]) === "done" &&
+              (!runFeedHasTakenOverAfterIntegration(workflows[n]) || integrationDoneStillDwelling(workflows[n])))
+          ),
+      ) ?? null)
+    : null;
+  const integrationEntry = integrationWf ? workflows[integrationWf] : undefined;
+  const preflightModel = integrationEntry ? buildModel(integrationEntry.snap) : null;
+  const preflight =
+    integrationWf && integrationEntry && preflightModel
+      ? { key: integrationWf, status: statusOf(integrationEntry) ?? "running", model: preflightModel }
+      : null;
+
+  // Heartbeat terminal scope: follow the surface the user is actually watching.
+  // The server can discover many old workflows under .conductor; flattening all
+  // of them makes stale smoke-test beats reappear in the global terminal. Keep
+  // the stream pinned to preflight when it is visible, otherwise to the active
+  // run/compile feed.
+  const streamOrder = useMemo(
+    () => (preflight ? [preflight.key] : activeWf ? [activeWf] : []),
+    [preflight?.key, activeWf],
+  );
+  const streamWorkflows = useMemo(
+    () =>
+      Object.fromEntries(
+        streamOrder
+          .map((name) => [name, workflows[name]] as const)
+          .filter(([, entry]) => !!entry),
+      ) as Record<string, WorkflowEntry>,
+    [streamOrder, workflows],
+  );
+  const { beats, log, arrival } = useHeartbeatStream(streamWorkflows, streamOrder);
+  const agentLog = log;
+  const globalLastBeat = lastBeatIso(beats);
+
+  useEffect(() => {
+    if (arrival && !arrival.beat.system) playTick();
+  }, [arrival]);
+
   // Does the live workflow actually have a run streaming — steps written AND a live
   // pulse? The isFeedLive gate keeps a stale "running" feed (steps written but no recent
   // activity) from posing as the streaming board; a just-finished run stays live via its
@@ -235,7 +299,7 @@ export function App() {
   const liveStarted = !!(
     liveSnap.status &&
     typeof liveSnap.status === "object" &&
-    Object.keys((liveSnap.status as { steps?: object }).steps ?? {}).length > 0 &&
+    hasWorkflowSteps(activeWf ? workflows[activeWf] : undefined) &&
     isFeedLive(activeWf ? workflows[activeWf] : undefined, now)
   );
 
@@ -305,10 +369,10 @@ export function App() {
   // The cold-start "starting…" frame shows until the first phase feed is actually live —
   // never an empty board or a stale completed run. Cleared the moment a live feed streams.
   const viewingPastEarly = !!(viewing && viewedModel);
-  const showStarting = coldStart && !liveStarted && !viewingPastEarly;
+  const showStarting = coldStart && (waitingForSelectedSeed || !liveStarted) && !preflight && !viewingPastEarly;
   useEffect(() => {
-    if (liveStarted) setColdStart(false); // a live feed is serving content → leave "starting"
-  }, [liveStarted]);
+    if (!waitingForSelectedSeed && (liveStarted || preflight)) setColdStart(false); // a live/preflight feed is serving content → leave "starting"
+  }, [waitingForSelectedSeed, liveStarted, preflight]);
   useEffect(() => {
     if (!coldStart) return; // safety: never trap in "starting" if nothing ever streams
     const t = setTimeout(() => setColdStart(false), 30000);
@@ -320,6 +384,8 @@ export function App() {
   // beat keys) are never treated as global: they're scoped by the view they live in.
   const viewKey = viewing
     ? `history:${viewing.wf}:${viewing.runId}`
+    : preflight
+      ? `preflight:${preflight.key}:${preflight.model.runId ?? "no-run"}`
     : activeWf
       ? `live:${activeWf}:${liveModel.runId ?? "no-run"}`
       : "empty";
@@ -344,6 +410,8 @@ export function App() {
   // The board is interactive only when showing a real run (selected, or held mid-transition).
   const boardStarted = showStarting
     ? false
+    : preflight
+      ? false
     : viewing
       ? !!(viewedModel || heldViewRef.current)
       : liveStarted
@@ -354,9 +422,27 @@ export function App() {
   // (flattened from steps[].heartbeat[]); otherwise the live session stream.
   const viewingPast = !!(viewing && viewedModel);
   const monitorBeats = useMemo(
-    () => (viewingPast ? pastRunBeats(viewedModel as BoardModel) : agentLog),
-    [viewingPast, viewedModel, agentLog],
+    () => (viewingPast ? pastRunBeats(viewedModel as BoardModel) : agentLog.concat(localBeats)),
+    [viewingPast, viewedModel, agentLog, localBeats],
   );
+
+  function appendLocalBeat(note: string) {
+    const at = new Date().toISOString();
+    const workflow = (viewing && viewedModel ? viewing.wf : activeWf) ?? model.workflow ?? "settings";
+    const beat: StreamBeat = {
+      key: `local ${workflow} ${at} ${Math.random().toString(36).slice(2)}`,
+      workflow,
+      step: "settings",
+      title: "Settings",
+      at,
+      event_at: at,
+      note,
+      finalBeat: false,
+      system: true,
+      control: true,
+    };
+    setLocalBeats((prev) => prev.concat(beat).slice(-24));
+  }
 
   // The live run pinned at the top of the drawer — only while a run is genuinely streaming.
   const liveEntry: LiveEntry | null =
@@ -383,34 +469,11 @@ export function App() {
     }
   }, [workflows, order]);
 
-  // Improve & Run starts a fresh loop. A frozen ?wf pin (selectedWf) would keep
-  // the view on the work feed and hide the running integration feed — killing the
-  // "watch the insides get integrated" moment. So clear the pin the instant a
-  // fresh loop begins: an integration feed goes live, or the active feed's run_id
-  // changes. The preference (App.tsx run-feed logic) then lets integration lead.
-  // Hold a just-finished integration feed on screen for a beat (so Validate visibly
-  // settles to done), then release to let the work feed take over. Fires once per
-  // completion: only on a genuine running → done/failed transition.
-  const prevIntegStatus = useRef<Record<string, string>>({});
-  useEffect(() => {
-    for (const n of order) {
-      if (workflows[n]?.snap?.variant !== "integration") continue;
-      const cur = statusOf(workflows[n]) || "";
-      const prev = prevIntegStatus.current[n];
-      if (prev === "running" && (cur === "done" || cur === "failed")) {
-        setHeldIntegration(n);
-        setTimeout(() => setHeldIntegration((h) => (h === n ? null : h)), 1100);
-      }
-      prevIntegStatus.current[n] = cur;
-    }
-  }, [workflows, order]);
-
   // A STATUS/SSE EVENT IS NEVER A DESELECTION. A fresh run-id (a run starting) or an
   // integration feed going live under the SAME canonical workflow is the same selection
   // — not a reason to clear it. selectedWf holds the canonical identity (the stable outer
   // key, not the run-id), so it survives the new run for free: selectedChoice (App.tsx
-  // ~160) re-resolves the same identity onto the live feed, and ?wf= holds. (The only
-  // deliberate unpin is the user-initiated relaunch in startRelaunch, below.)
+  // ~160) re-resolves the same identity onto the live feed, and ?wf= holds.
 
   // ── Improve & Run transition (Part B) ──────────────────────────────────────
   // A continuous, eased relaunch: board sweeps away → a "setting up" beat spans
@@ -426,7 +489,6 @@ export function App() {
     null | "unconfirmed" | "halted-after-integration-failure"
   >(null);
   const startRelaunch = useCallback(() => {
-    setSelectedWf(null); // unpin so the running integration feed can lead
     setRelaunchOutcome(null); // a fresh attempt clears any prior named outcome
     setRelaunch({ phase: "sweep", fromRunId: liveModel.runId, setupSince: 0 });
   }, [liveModel.runId]);
@@ -460,9 +522,10 @@ export function App() {
       return false;
     });
 
-  // SUCCESS — run-running / integration-running: dismiss onto the LIVE board once the
-  // fresh run is served AND the readability floor (~700ms) has elapsed. The live board
-  // is itself the named outcome, so no banner is needed; clear any prior one.
+  // SUCCESS — run-running / integration-preflight: dismiss the relaunch overlay once
+  // a fresh phase is served AND the readability floor (~700ms) has elapsed. If the
+  // served phase is integration, the central surface is the preflight screen, not a
+  // Kanban feed takeover; once the work run starts, the normal board crossfade takes over.
   useEffect(() => {
     if (relaunch?.phase !== "setup" || !freshRunLive) return;
     const floor = reduceMotion ? 0 : 700;
@@ -658,22 +721,25 @@ export function App() {
                 <motion.div
                   key={displayKey}
                   className="h-full"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: reduceMotion ? 0.12 : 0.2, ease: "easeInOut" }}
+                  initial={{ opacity: 0, y: reduceMotion ? 0 : 10, scale: reduceMotion ? 1 : 0.992 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: reduceMotion ? 0 : -10, scale: reduceMotion ? 1 : 0.992 }}
+                  transition={{ duration: reduceMotion ? 0.12 : 0.26, ease: [0.22, 1, 0.36, 1] }}
                 >
                   {showStarting ? (
                     <StartingState />
+                  ) : preflight ? (
+                    <IntegrationPreflightState workflow={preflightIdentity} model={preflight.model} status={preflight.status} />
                   ) : boardStarted ? (
                     <WorkflowKanban
                       model={model}
                       notes={model.developerNotes}
                       elapsed={elapsed}
-                      canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
-                      activeDispatch={!viewingPast && activeDispatch}
-                      viewKey={displayKey}
-                    />
+	                      canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
+	                      activeDispatch={!viewingPast && activeDispatch}
+	                      viewKey={displayKey}
+	                      prewarmAgents={prewarmAgents}
+	                    />
                   ) : (
                     <WaitingState model={model} statusPath={liveSnap.statusPath} />
                   )}
@@ -716,13 +782,18 @@ export function App() {
               </div>
             )}
 
-          <RunCompleteBanner
-            model={model}
-            insightCount={freshInsightCount}
-            onOpenInsights={() => setShowInsights(true)}
-            onRelaunch={startRelaunch}
-            canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
-          />
+          {!preflight && (
+            <RunCompleteBanner
+              model={model}
+              elapsed={elapsed}
+              insightCount={freshInsightCount}
+              onOpenInsights={() => setShowInsights(true)}
+              onRelaunch={startRelaunch}
+              canonicalKey={(viewing && viewedModel ? viewing.wf : activeWf) ?? undefined}
+              knowledgeOverride={!viewing ? liveModel.knowledge : undefined}
+              prewarmAgents={prewarmAgents}
+            />
+          )}
 
           <HeartbeatMonitor
             beats={monitorBeats}
@@ -743,11 +814,14 @@ export function App() {
                 : // Only the WORK run's completion shows "Board complete" — not a
                   // compile/integration feed finishing (and being held), which would
                   // pop the closing line prematurely between integration and the run.
+                  !preflight &&
                   !!activeWf &&
                   isRunFeed(activeWf) &&
                   (liveModel.overallStatus === "done" || liveModel.overallStatus === "failed")
             }
             knowledge={viewingPast ? (viewedModel as BoardModel).knowledge : liveModel.knowledge}
+            currentWorkflow={(viewing && viewedModel ? viewing.wf : activeWf) ?? model.workflow}
+            currentRunId={model.runId}
             doneCount={viewingPast ? (viewedModel as BoardModel).done : liveModel.done}
             totalCount={viewingPast ? (viewedModel as BoardModel).total : liveModel.total}
           />
@@ -759,6 +833,7 @@ export function App() {
         onClose={() => setShowSettings(false)}
         ticksOn={ticksOn}
         chimesOn={chimesOn}
+        prewarmAgents={prewarmAgents}
         onToggleTicks={() => {
           const next = !ticksOn;
           setTicksMuted(!next);
@@ -769,8 +844,13 @@ export function App() {
           setChimesMuted(!next);
           setChimesOn(next);
         }}
-        heartbeatInterval={heartbeatInterval}
-        onSetHeartbeatInterval={setHeartbeatInterval}
+        onTogglePrewarmAgents={() => {
+          setPrewarmAgents((v) => {
+            const next = !v;
+            appendLocalBeat(`Agent pre-warming turned ${next ? "on" : "off"} — this applies to the next run.`);
+            return next;
+          });
+        }}
       />
       <InsightsModal
         open={showInsights}
@@ -788,6 +868,83 @@ function statusOf(entry: WorkflowEntry | undefined): string | undefined {
   return (entry?.snap.status as { status?: string } | null)?.status;
 }
 
+function latestLifecycleMs(entry: WorkflowEntry | undefined): number {
+  const status = entry?.snap.status as
+    | {
+        endedAt?: string;
+        completed_at?: string;
+        steps?: Record<string, {
+          completed_at?: string;
+          heartbeat?: { at?: string; event_at?: string }[];
+        }>;
+      }
+    | null
+    | undefined;
+  if (!status) return 0;
+  let latest = 0;
+  const visit = (iso: string | undefined) => {
+    if (!iso) return;
+    const ms = Date.parse(iso);
+    if (Number.isFinite(ms) && ms > latest) latest = ms;
+  };
+  visit(status.endedAt);
+  visit(status.completed_at);
+  for (const step of Object.values(status.steps ?? {})) {
+    visit(step.completed_at);
+    for (const beat of step.heartbeat ?? []) {
+      visit(beat.event_at);
+      visit(beat.at);
+    }
+  }
+  return latest;
+}
+
+function startedLifecycleMs(entry: WorkflowEntry | undefined): number {
+  const status = entry?.snap?.status as
+    | {
+        started_at?: string;
+        running_since?: string;
+        steps?: Record<string, { started_at?: string }>;
+      }
+    | null
+    | undefined;
+  if (!status) return 0;
+  const candidates = [
+    status.started_at,
+    status.running_since,
+    ...Object.values(status.steps ?? {}).map((step) => step.started_at),
+  ];
+  let earliest = 0;
+  for (const iso of candidates) {
+    if (!iso) continue;
+    const ms = Date.parse(iso);
+    if (Number.isFinite(ms) && (!earliest || ms < earliest)) earliest = ms;
+  }
+  return earliest;
+}
+
+function hasWorkflowSteps(entry: WorkflowEntry | undefined): boolean {
+  const status = entry?.snap?.status as { steps?: object } | null | undefined;
+  return !!(status && typeof status === "object" && Object.keys(status.steps ?? {}).length > 0);
+}
+
+function ConductorDiamondMark({ className = "", active = false }: { className?: string; active?: boolean }) {
+  return (
+    <motion.span
+      className={`inline-grid h-12 w-12 place-items-center ${className}`}
+      aria-hidden
+      animate={active ? { scale: [1, 1.08, 1], opacity: [0.82, 1, 0.82] } : { scale: 1, opacity: 1 }}
+      transition={active ? { duration: 1.45, repeat: Infinity, ease: "easeInOut" } : { duration: 0.18 }}
+    >
+      <span
+        className={`h-7 w-7 rotate-45 rounded-[6px] bg-mint ${
+          active ? "shadow-[0_0_34px_rgba(52,211,153,0.8)]" : "shadow-[0_0_24px_rgba(52,211,153,0.55)]"
+        }`}
+      />
+    </motion.span>
+  );
+}
+
 
 /** The honest cold-start first frame: an explicit "starting…" state, shown until the
  *  first phase feed (compile / integration / run) is live. Never empty, never stale. */
@@ -795,12 +952,34 @@ function StartingState() {
   return (
     <div className="grid h-full place-items-center px-5">
       <div className="flex flex-col items-center gap-3 text-center">
-        <img src="./conductor.svg" alt="" className="h-12 w-12 opacity-80" />
-        <h1 className="text-xl font-semibold text-chalk">Starting workflow…</h1>
-        <p className="max-w-sm text-sm leading-relaxed text-mist">
+        <motion.div
+          initial={{ opacity: 0, y: 8, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <ConductorDiamondMark active />
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1], delay: 0.08 }}
+        >
+          <h1 className="text-xl font-semibold text-chalk">Starting workflow…</h1>
+        </motion.div>
+        <motion.p
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1], delay: 0.14 }}
+          className="max-w-sm text-sm leading-relaxed text-mist"
+        >
           Preparing the board. Cards appear the moment the first phase is ready to render.
-        </p>
-        <div className="mt-1 flex items-center gap-1.5">
+        </motion.p>
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1], delay: 0.22 }}
+          className="mt-1 flex items-center gap-1.5"
+        >
           {[0, 1, 2].map((i) => (
             <motion.span
               key={i}
@@ -809,7 +988,98 @@ function StartingState() {
               transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut", delay: i * 0.18 }}
             />
           ))}
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationPreflightState({
+  workflow,
+  model,
+  status,
+}: {
+  workflow: string;
+  model: BoardModel;
+  status: string;
+}) {
+  const failed = status === "failed" || model.overallStatus === "failed";
+  const done = status === "done" || model.overallStatus === "done";
+  const activePhase = !failed && !done;
+  const title = failed ? "Integration needs attention" : done ? "Insights integrated" : "Integrating insights";
+  const subtitle = failed
+    ? "The run is waiting because the insight pass did not complete cleanly."
+    : done
+      ? "The updated cards are ready. The regular run will appear next."
+      : "Applying previous learnings before the regular run starts.";
+
+  return (
+    <div className="grid h-full place-items-center px-5">
+      <div className="w-full max-w-xl text-center">
+        <ConductorDiamondMark className="mx-auto" active={activePhase} />
+        <div className="mt-5 flex items-center justify-center gap-2">
+          <span className="font-mono text-sm font-medium text-chalk">{workflow}</span>
+          <span
+            className={`inline-flex h-5 items-center rounded-md border px-2 pt-px font-mono text-[11px] uppercase leading-none ${
+              failed
+                ? "border-rose/35 bg-rose/10 text-rose"
+                : done
+                  ? "border-mint/35 bg-mint/10 text-mint"
+                  : "border-cyan/35 bg-cyan/10 text-cyan"
+            }`}
+          >
+            Improving
+          </span>
         </div>
+        <motion.h1
+          className="mt-4 text-xl font-semibold text-chalk"
+          animate={activePhase ? { opacity: [0.72, 1, 0.72] } : { opacity: 1 }}
+          transition={activePhase ? { duration: 1.45, repeat: Infinity, ease: "easeInOut" } : { duration: 0.18 }}
+        >
+          {title}
+        </motion.h1>
+        <div className="mx-auto mt-2 h-5 max-w-md overflow-hidden text-sm leading-5 text-mist">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={subtitle}
+              initial={{ opacity: 0, y: 5, filter: "blur(2px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, y: -5, filter: "blur(2px)" }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="truncate whitespace-nowrap"
+              title={subtitle}
+            >
+              {subtitle}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+
+        <div className="mx-auto mt-6 max-w-md overflow-hidden rounded-lg border border-line bg-panel/50 text-left shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+          {model.steps.map((step) => {
+            const active = step.column === "running" || step.column === "checking";
+            const batchActive = activePhase && !failed;
+            const stepDone = step.column === "done";
+            const stepFailed = step.column === "failed";
+            return (
+              <div key={step.id} className="flex items-center gap-3 border-b border-line/70 px-4 py-3 last:border-b-0">
+                <motion.span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    stepFailed ? "bg-rose" : stepDone ? "bg-mint" : batchActive ? "bg-mint" : "bg-mist/40"
+                  }`}
+                  animate={batchActive ? { opacity: [0.28, 1, 0.28], scale: [0.9, 1.16, 0.9] } : { opacity: 1, scale: 1 }}
+                  transition={batchActive ? { duration: 1.45, repeat: Infinity, ease: "easeInOut" } : { duration: 0.18 }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm text-chalk">{step.title}</div>
+                  <div className="mt-0.5 font-mono text-[11px] uppercase tracking-[0.12em] text-mist">
+                    {stepFailed ? "Needs attention" : stepDone ? "Valid" : batchActive ? "Applying" : active ? "In progress" : "Waiting"}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
       </div>
     </div>
   );
@@ -819,7 +1089,7 @@ function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: st
   return (
     <div className="grid h-full place-items-center px-5">
       <div className="max-w-md text-center">
-        <img src="./conductor.svg" alt="" className="mx-auto h-12 w-12 opacity-80" />
+        <ConductorDiamondMark className="mx-auto" />
         {model.hasConductor ? (
           <>
             <div className="mt-5 flex items-center justify-center gap-2">
@@ -836,8 +1106,10 @@ function WaitingState({ model, statusPath }: { model: BoardModel; statusPath: st
           </>
         ) : (
           <>
-            <h1 className="mt-4 text-xl font-semibold text-chalk">No workflow found.</h1>
-            <p className="mt-2 text-sm leading-relaxed text-mist">Create `.conductor/workflow.json`, then run status-init.</p>
+            <h1 className="mt-4 text-xl font-semibold text-chalk">Loading board…</h1>
+            <p className="mt-2 text-sm leading-relaxed text-mist">
+              Looking for the current workflow and its latest run state.
+            </p>
           </>
         )}
       </div>

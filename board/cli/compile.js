@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { composeAndCheckSkill, compact, flag } from "./decompose.js";
-import { ensureBoard, getHealth } from "./ensure-board.js";
+import { canonicalUrl, ensureBoard, getHealth, openBrowser } from "./ensure-board.js";
 import {
   ensureKnowledge,
   migrationMetaPathForRoot,
@@ -11,6 +12,8 @@ import {
 } from "./learning.js";
 import { orderAndCheckCards } from "./order.js";
 import { validateConductor } from "./validate.js";
+import { selectAdapter, prewarmLine } from "./worker-adapters.js";
+import { registerWorkerGroup, unregisterWorkerGroup } from "./worker-ledger.js";
 
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
@@ -133,6 +136,97 @@ function pidAlive(pid) {
   }
 }
 
+function killGroup(pgid) {
+  const n = Number(pgid);
+  if (!Number.isInteger(n) || n <= 1) return;
+  try { process.kill(-n, "SIGKILL"); } catch { /* group may be gone */ }
+  try { process.kill(n, "SIGKILL"); } catch { /* process may be gone */ }
+}
+
+function compilePrewarmPrompt({ workflow, phase, title, detail }) {
+  return [
+    "Conductor setup prewarm probe.",
+    "Do not inspect files, write files, run tools, update status, or do setup/card work.",
+    `Workflow: ${workflow || "(unknown)"}`,
+    `Likely next setup phase: ${phase}`,
+    `Likely next title: ${title}`,
+    detail ? `Context: ${detail}` : "",
+    "Reply exactly: READY",
+  ].filter(Boolean).join("\n");
+}
+
+function firstCardPrewarmPrompt({ workflow, title }) {
+  return [
+    "Conductor first-card prewarm probe.",
+    "Do not inspect files, write files, run tools, update status, or do card work.",
+    "The real worker will receive the authoritative card brief later, after setup finishes.",
+    `Workflow: ${workflow || "(unknown)"}`,
+    `Likely first card title: ${title || "(untitled)"}`,
+    "Reply exactly: READY",
+  ].join("\n");
+}
+
+function createCompilePrewarmer({ root, enabled = true, label = "compile" } = {}) {
+  const adapter = enabled ? selectAdapter() : null;
+  const groups = new Map();
+
+  function launch(key, prompt) {
+    if (!enabled || !adapter?.prewarm || groups.has(key)) return false;
+    const spec = adapter.prewarm(prompt, { extraDir: root });
+    if (!spec?.cmd) return false;
+    const child = spawn(spec.cmd, spec.argv || [], {
+      cwd: process.cwd(),
+      env: { ...process.env, CONDUCTOR_HEADLESS: "1", CONDUCTOR_PREWARM: "1" },
+      detached: true,
+      stdio: ["pipe", "ignore", "ignore"],
+    });
+    const info = { pgid: child.pid, key, exited: false };
+    groups.set(key, info);
+    registerWorkerGroup(root, {
+      pgid: child.pid,
+      kind: `compile-prewarm:${key}`,
+      index: null,
+      run_id: label,
+    });
+    if (spec.input != null) {
+      child.stdin.write(spec.input);
+      child.stdin.end();
+    } else {
+      child.stdin.end();
+    }
+    child.on("close", () => {
+      info.exited = true;
+      unregisterWorkerGroup(root, child.pid);
+      groups.delete(key);
+    });
+    child.on("error", () => {
+      info.exited = true;
+      unregisterWorkerGroup(root, child.pid);
+      groups.delete(key);
+    });
+    return true;
+  }
+
+  function cancel(key) {
+    const info = groups.get(key);
+    if (!info) return;
+    if (info.pgid && !info.exited) killGroup(info.pgid);
+    unregisterWorkerGroup(root, info.pgid);
+    groups.delete(key);
+  }
+
+  function cancelAll() {
+    for (const key of [...groups.keys()]) cancel(key);
+  }
+
+  return {
+    line: adapter?.prewarm ? prewarmLine(adapter) : "prewarm unavailable for selected worker",
+    launch,
+    cancel,
+    cancelAll,
+  };
+}
+
 function acquireCompileLock(outDir) {
   fs.mkdirSync(outDir, { recursive: true });
   const lockPath = path.join(outDir, "compile.lock.json");
@@ -161,7 +255,7 @@ function acquireCompileLock(outDir) {
   };
 }
 
-async function initCompileBoard(outDir, name, port) {
+async function initCompileBoard(outDir, name, port, { open = false } = {}) {
   // The compile workflow/status files still live in the skill-scoped outDir so
   // progress notes have somewhere to write — but we do NOT start a board keyed
   // to that subdir. PHASE A: identity = port. We attach to the canonical board
@@ -176,7 +270,13 @@ async function initCompileBoard(outDir, name, port) {
   // surfaces the tab; the board swaps "starting…" → compile cards once this feed is live).
   // The feed's canonical key is the namespaced compile variant (the 3.3.5 binding); during
   // compile the dir name is the base, so it reads "<dir> (compile)".
-  const served = await waitCompileServed(port, `${path.basename(outDir)} (compile)`);
+  const key = `${path.basename(outDir)} (compile)`;
+  const served = await waitCompileServed(port, key);
+  if (open) {
+    const url = new URL(canonicalUrl(port));
+    url.searchParams.set("starting", "1");
+    openBrowser(url.toString());
+  }
   return { workflowPath, statusPath, served };
 }
 
@@ -498,6 +598,7 @@ export async function compileSkill(skillPath, {
   model = DEFAULT_MODEL,
   progress,
   compileStatusPath,
+  prewarm = true,
 } = {}) {
   const resolvedSkill = path.resolve(process.cwd(), skillPath);
   const skill = fs.readFileSync(resolvedSkill, "utf8");
@@ -518,6 +619,12 @@ export async function compileSkill(skillPath, {
     package_version: pkg,
     compiled_at: new Date().toISOString(),
   };
+  const prewarmer = createCompilePrewarmer({
+    root: outDir,
+    enabled: prewarm,
+    label: `compile-${cacheKey}`,
+  });
+  if (prewarm) console.log(dim(`  setup prewarm: ${prewarmer.line}`));
 
   if (!force && !noCache && cacheIsAccepted(cacheDir, metaBase)) {
     copyAccepted(cacheDir, outDir);
@@ -540,13 +647,27 @@ export async function compileSkill(skillPath, {
     };
   }
 
-  const cardsDetail = await composeAndCheckSkill(skill, {
-    maxAttempts,
-    model,
-    progress,
-    debugDir: path.join(outDir, "debug", "cards"),
-  });
+  prewarmer.launch("map-dependencies", compilePrewarmPrompt({
+    workflow: workflowName(resolvedSkill, name),
+    phase: "map-dependencies",
+    title: "Map Dependencies",
+    detail: "Dependency mapping starts after card creation passes.",
+  }));
+
+  let cardsDetail;
+  try {
+    cardsDetail = await composeAndCheckSkill(skill, {
+      maxAttempts,
+      model,
+      progress,
+      debugDir: path.join(outDir, "debug", "cards"),
+    });
+  } catch (e) {
+    prewarmer.cancelAll();
+    throw e;
+  }
   if (!cardsDetail.report.ok) {
+    prewarmer.cancelAll();
     if (compileStatusPath) {
       updateCompileStatus(compileStatusPath, 0, "failed", {
         note: `Creating cards failed after ${cardsDetail.report.attempts?.length || maxAttempts} attempts.`,
@@ -570,19 +691,37 @@ export async function compileSkill(skillPath, {
     );
     attachCompileArtifact(compileStatusPath, 0, rel);
   }
+  prewarmer.cancel("map-dependencies");
+  prewarmer.launch("validate-workflow", compilePrewarmPrompt({
+    workflow: workflowName(resolvedSkill, name),
+    phase: "validate-workflow",
+    title: "Validate Workflow",
+    detail: "Validation starts after dependencies pass.",
+  }));
+  prewarmer.launch("first-work-card", firstCardPrewarmPrompt({
+    workflow: workflowName(resolvedSkill, name),
+    title: cardsDetail.cards?.[0]?.title,
+  }));
 
   const wfName = workflowName(resolvedSkill, name);
   const wfDescription = compact(description) || `Workflow compiled from ${path.basename(resolvedSkill)}`;
-  const orderDetail = await orderAndCheckCards(cardsDetail.cards, {
-    name: wfName,
-    description: wfDescription,
-    maxAttempts: orderAttempts,
-    runMaxAttempts,
-    model,
-    progress,
-    debugDir: path.join(outDir, "debug", "dependencies"),
-  });
+  let orderDetail;
+  try {
+    orderDetail = await orderAndCheckCards(cardsDetail.cards, {
+      name: wfName,
+      description: wfDescription,
+      maxAttempts: orderAttempts,
+      runMaxAttempts,
+      model,
+      progress,
+      debugDir: path.join(outDir, "debug", "dependencies"),
+    });
+  } catch (e) {
+    prewarmer.cancelAll();
+    throw e;
+  }
   if (!orderDetail.report.ok) {
+    prewarmer.cancelAll();
     if (compileStatusPath) {
       updateCompileStatus(compileStatusPath, 1, "failed", {
         note: `Creating dependencies failed after ${orderDetail.report.attempts?.length || orderAttempts} attempts.`,
@@ -615,6 +754,7 @@ export async function compileSkill(skillPath, {
     attachCompileArtifact(compileStatusPath, 0, dependencyRel);
     attachCompileArtifact(compileStatusPath, 0, planRel);
   }
+  prewarmer.cancel("validate-workflow");
   const validation = validateConductor(orderDetail.workflow);
   if (compileStatusPath) {
     updateCompileStatus(compileStatusPath, 2, "validate-start", {
@@ -623,6 +763,7 @@ export async function compileSkill(skillPath, {
     });
   }
   if (validation.length) {
+    prewarmer.cancelAll();
     if (compileStatusPath) {
       const rel = writeCompileArtifact(
         compileStatusPath,
@@ -687,6 +828,7 @@ export async function compileSkill(skillPath, {
     });
   }
 
+  prewarmer.cancel("first-work-card");
   if (!noCache) cacheAccepted(cacheDir, outDir);
 
   return {
@@ -702,7 +844,7 @@ export async function compileSkill(skillPath, {
 export async function runCompile(args) {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "usage: conductor-board compile --skill SKILL.md [--force] [--no-cache]\n\n" +
+      "usage: conductor-board compile --skill SKILL.md [--force] [--no-cache] [--headless|--no-open] [--no-prewarm]\n\n" +
         "  Prepares .conductor/cards.json and .conductor/workflow.json. On first\n" +
         "  run, compiles cards, orders dependencies, validates, and stores\n" +
         "  the accepted skeleton. Later runs reuse the accepted skeleton when the\n" +
@@ -728,6 +870,7 @@ export async function runCompile(args) {
     : scopedConductorDir(skillPath, flag(args, ["--name", "-n"]));
   const cacheRoot = path.resolve(process.cwd(), flag(args, ["--cache-dir"]) || process.env.CONDUCTOR_CACHE_DIR || defaultCacheDir());
   const compilePort = Number(flag(args, ["--compile-port", "--port"], 3042)) || 3042;
+  const openBoard = !args.includes("--headless") && !args.includes("--no-open") && process.env.CONDUCTOR_HEADLESS !== "1";
   let compileBoard = null;
   let releaseLock = null;
 
@@ -741,7 +884,7 @@ export async function runCompile(args) {
   try {
     if (!args.includes("--no-compile-board")) {
       try {
-        compileBoard = await initCompileBoard(outDir, "Migrating skill to conductor", compilePort);
+        compileBoard = await initCompileBoard(outDir, "Migrating skill to conductor", compilePort, { open: openBoard });
         console.log(dim(`  compile board: ${path.relative(process.cwd(), compileBoard.statusPath)}${compileBoard.served ? " (served)" : ""}`));
       } catch (e) {
         console.error(red(`✗ could not initialize compile board: ${e.message}`));
@@ -764,6 +907,7 @@ export async function runCompile(args) {
       model: String(flag(args, ["--model"], DEFAULT_MODEL)),
       progress: compileBoard ? makeCompileProgress(compileBoard.statusPath) : undefined,
       compileStatusPath: compileBoard?.statusPath,
+      prewarm: !args.includes("--no-prewarm") && process.env.CONDUCTOR_PREWARM !== "0",
     });
 
     console.log("");

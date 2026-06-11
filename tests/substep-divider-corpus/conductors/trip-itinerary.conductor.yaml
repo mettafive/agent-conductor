@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: trip-itinerary
+description: >
+  trip itinerary — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-cities
+    instruction: |
+      Scope the cities to process. Frontload every city as a pending iteration.
+    output: cities
+    gate:
+      - check: "npx conductor-board check scope-cities"
+      - "Every city captured before any work begins"
+
+  - id: trip-itinerary-loop
+    type: loop
+    over: cities
+    as: city
+    requires: [scope-cities]
+    steps:
+      - id: research-city
+        instruction: |
+          research city: research, attractions.
+        gate:
+          - check: "npx conductor-board check research-city"
+          - name: "research city is correct"
+            check: "node verify-unit.mjs research-city --out out/research-city.json"
+      - id: build-day-plan
+        instruction: |
+          build day plan: day plan, itinerary.
+        gate:
+          - check: "npx conductor-board check build-day-plan"
+          - name: "build day plan is correct"
+            check: "node verify-unit.mjs build-day-plan --out out/build-day-plan.json"
+      - id: book-logistics
+        instruction: |
+          book logistics: book, transport hotel.
+        gate:
+          - check: "npx conductor-board check book-logistics"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: budget-day
+        instruction: |
+          budget day: budget, daily spend.
+        gate:
+          - check: "npx conductor-board check budget-day"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: finalize
+        instruction: |
+          finalize: finalize, confirm itinerary.
+        gate:
+          - check: "npx conductor-board check finalize"
+          - name: "finalize is correct"
+            check: "node verify-unit.mjs finalize --out out/finalize.json"

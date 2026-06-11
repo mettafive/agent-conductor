@@ -202,20 +202,6 @@ function buildCriteria(step: ConductorStep, detail: RawStepStatus["gate_detail"]
   }];
 }
 
-/** Build a step list from status alone, when no conductor file is present. */
-function stepsFromStatusOnly(statusSteps: Record<string, RawStepStatus>): ConductorStep[] {
-  return Object.keys(statusSteps).map((id, index) => ({
-    id,
-    title: id,
-    index,
-    instruction: "",
-    firstLine: "",
-    isCondition: false,
-    requires: [],
-    isLoop: statusSteps[id]?.type === "loop",
-  }));
-}
-
 /** Is this a Phase 0 self-improvement step id? (_improve::… or legacy _validate) */
 function isImproveId(id: string): boolean {
   return id.startsWith("_improve::") || id === "_validate" || id === "_improve";
@@ -315,10 +301,12 @@ function buildModelImpl(snap: Snapshot): BoardModel {
   const parsed = parseConductor(snap.workflowJson);
   const fileKnowledge = parseKnowledge(readKnowledgeItems(snap.knowledgeJson));
   const hasConductor = !!parsed && parsed.steps.length > 0;
+  const hasWorkflowStatus = Object.keys(statusSteps).some((id) => !isImproveId(id));
+  const missingWorkflow = !hasConductor && hasWorkflowStatus;
 
   const structure: ConductorStep[] = hasConductor
     ? parsed!.steps
-    : stepsFromStatusOnly(statusSteps).filter((s) => !isImproveId(s.id));
+    : [];
 
   // Phase 0 is parked for v3: keep the code path, but leave it off unless a
   // conductor/status file explicitly opts in.
@@ -485,7 +473,9 @@ function buildModelImpl(snap: Snapshot): BoardModel {
     unitsTotal,
     hasConductor,
     demo: (status as { _demo?: boolean })._demo === true,
-    error: status._error as string | undefined,
+    error: missingWorkflow
+      ? "Waiting for workflow.json before rendering cards."
+      : status._error as string | undefined,
   };
 }
 

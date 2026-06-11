@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: patch-rollout
+description: >
+  patch rollout — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-cohorts
+    instruction: |
+      Scope the cohorts to process. Frontload every cohort as a pending iteration.
+    output: cohorts
+    gate:
+      - check: "npx conductor-board check scope-cohorts"
+      - "Every cohort captured before any work begins"
+
+  - id: patch-rollout-loop
+    type: loop
+    over: cohorts
+    as: cohort
+    requires: [scope-cohorts]
+    steps:
+      - id: select-cohort
+        instruction: |
+          select cohort: select cohort, canary group.
+        gate:
+          - check: "npx conductor-board check select-cohort"
+          - name: "select cohort is correct"
+            check: "node verify-unit.mjs select-cohort --out out/select-cohort.json"
+      - id: deploy-patch
+        instruction: |
+          deploy patch: deploy patch, rollout.
+        gate:
+          - check: "npx conductor-board check deploy-patch"
+          - name: "deploy patch is correct"
+            check: "node verify-unit.mjs deploy-patch --out out/deploy-patch.json"
+      - id: monitor-errors
+        instruction: |
+          monitor errors: monitor errors, error rate.
+        gate:
+          - check: "npx conductor-board check monitor-errors"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: promote-or-halt
+        instruction: |
+          promote or halt: promote, halt rollback.
+        gate:
+          - check: "npx conductor-board check promote-or-halt"
+          - name: "promote or halt is correct"
+            check: "node verify-unit.mjs promote-or-halt --out out/promote-or-halt.json"

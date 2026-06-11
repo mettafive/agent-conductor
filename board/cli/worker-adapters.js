@@ -66,6 +66,12 @@ export const adapters = [
       input: brief,
       stream: false,
     }),
+    prewarm: (prompt) => ({
+      cmd: "/bin/sh",
+      argv: ["-c", String(process.env.CONDUCTOR_WORKER_CMD)],
+      input: prompt,
+      stream: false,
+    }),
   },
   {
     id: "claude",
@@ -88,6 +94,16 @@ export const adapters = [
       if (timing) argv.push("--output-format", "stream-json", "--verbose");
       if (extraDir) argv.push("--add-dir", extraDir);
       return { cmd: "claude", argv, input: null, stream: !!timing };
+    },
+    prewarm: (prompt, { extraDir } = {}) => {
+      const argv = [
+        "-p", prompt,
+        "--permission-mode", "dontAsk",
+        "--allowedTools", WORKER_ALLOWED_TOOLS.join(" "),
+        "--disallowedTools", WORKER_DISALLOWED_TOOLS.join(" "),
+      ];
+      if (extraDir) argv.push("--add-dir", extraDir);
+      return { cmd: "claude", argv, input: null, stream: false };
     },
   },
   {
@@ -112,6 +128,17 @@ export const adapters = [
       ];
       if (extraDir) argv.push("--add-dir", extraDir);
       return { cmd: "codex", argv, input: brief, stream: false };
+    },
+    prewarm: (prompt, { extraDir } = {}) => {
+      const argv = [
+        "exec", "-",
+        "--skip-git-repo-check",
+        "--sandbox", "workspace-write",
+        "-c", "approval_policy=\"never\"",
+        "--color", "never",
+      ];
+      if (extraDir) argv.push("--add-dir", extraDir);
+      return { cmd: "codex", argv, input: prompt, stream: false };
     },
   },
 ];
@@ -154,4 +181,8 @@ export function workerLine(adapter, cap) {
   const source = capIsOverridden() ? ", CONDUCTOR_WORKER_CAP" : "";
   const note = adapter.note ? ` — ${adapter.note}` : "";
   return `worker: ${adapter.label} (cap ${cap}${source})${note}`;
+}
+
+export function prewarmLine(adapter) {
+  return adapter?.prewarm ? `prewarm: ${adapter.label}` : "prewarm unavailable for selected worker";
 }

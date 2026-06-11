@@ -1,0 +1,53 @@
+conductor: 2.0.0
+name: kombucha-batch
+description: >
+  kombucha batch — converted from a skill that names 5 distinct work-units.
+
+steps:
+  - id: scope-batches
+    instruction: |
+      Scope the batches to process. Frontload every batch as a pending iteration.
+    output: batches
+    gate:
+      - check: "npx conductor-board check scope-batches"
+      - "Every batch captured before any work begins"
+
+  - id: kombucha-batch-loop
+    type: loop
+    over: batches
+    as: batch
+    requires: [scope-batches]
+    steps:
+      - id: brew-tea
+        instruction: |
+          brew tea: brew tea, sweet tea base.
+        gate:
+          - check: "npx conductor-board check brew-tea"
+          - name: "brew tea is correct"
+            check: "node verify-unit.mjs brew-tea --out out/brew-tea.json"
+      - id: first-ferment
+        instruction: |
+          first ferment: first ferment, scoby.
+        gate:
+          - check: "npx conductor-board check first-ferment"
+          - name: "first ferment is correct"
+            check: "node verify-unit.mjs first-ferment --out out/first-ferment.json"
+      - id: ph-monitor
+        instruction: |
+          ph monitor: ph, acidity check.
+        gate:
+          - check: "npx conductor-board check ph-monitor"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: flavor-second
+        instruction: |
+          flavor second: flavor, second ferment.
+        gate:
+          - check: "npx conductor-board check flavor-second"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: bottle
+        instruction: |
+          bottle: bottle, carbonate.
+        gate:
+          - check: "npx conductor-board check bottle"
+          - name: "bottle is correct"
+            check: "node verify-unit.mjs bottle --out out/bottle.json"

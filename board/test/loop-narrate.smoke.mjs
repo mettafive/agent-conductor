@@ -8,6 +8,7 @@
  *   LN4 integrationProgressNote routes the summary onto the instruction phase-end.
  *   LN5 emitting the phase-end appends EXACTLY ONE beat (not N) to the card.
  *   LN6 no extra model call — the notes ride the composer's existing output.
+ *   LN7 insight prompts prefer speed/efficiency and agent-usable placement.
  *
  * Run:  node test/loop-narrate.smoke.mjs    (from board/)
  */
@@ -116,6 +117,17 @@ test("LN6 no extra model call — notes ride the composer's existing output", ()
   // buildAppliedSummary is pure — it must not call the model:
   const body = src.slice(src.indexOf("function buildAppliedSummary"), src.indexOf("function integrationProgressNote"));
   assert(!/callModel/.test(body), "buildAppliedSummary must not call the model");
+});
+
+test("LN7 insight prompts prefer speed/efficiency and agent-usable placement", () => {
+  const learning = fs.readFileSync(path.join(BOARD, "cli", "learning.js"), "utf8");
+  const integration = fs.readFileSync(path.join(BOARD, "cli", "integration.js"), "utf8");
+  assert(/Favor speed and efficiency improvements/.test(learning), "learning prompt should frame insights as speed/efficiency optimizations");
+  assert(/instruction-ready optimization/.test(learning), "learning prompt should ask for details ready to fold into instructions");
+  assert(/reusable shortcut\/source\/decision rule/.test(learning), "learning prompt should capture concrete shortcuts/sources/rules");
+  assert(/place that source, path, command, schema, or decision rule near the start/.test(integration), "integration composer should place solutions before the worker searches");
+  assert(/Do not bury the optimization after output requirements/.test(integration), "efficiency details must not be buried late in the instruction");
+  assert(/A buried or vague optimization is not\s+integrated/s.test(integration), "checker should reject vague or buried efficiency integrations");
 });
 
 // ── runner ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: churn-outreach
+description: >
+  churn outreach — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-accounts
+    instruction: |
+      Scope the accounts to process. Frontload every account as a pending iteration.
+    output: accounts
+    gate:
+      - check: "npx conductor-board check scope-accounts"
+      - "Every account captured before any work begins"
+
+  - id: churn-outreach-loop
+    type: loop
+    over: accounts
+    as: account
+    requires: [scope-accounts]
+    steps:
+      - id: score-risk
+        instruction: |
+          score risk: score risk, churn score.
+        gate:
+          - check: "npx conductor-board check score-risk"
+          - name: "score risk is correct"
+            check: "node verify-unit.mjs score-risk --out out/score-risk.json"
+      - id: draft-outreach
+        instruction: |
+          draft outreach: draft outreach, win-back email.
+        gate:
+          - check: "npx conductor-board check draft-outreach"
+          - name: "draft outreach is correct"
+            check: "node verify-unit.mjs draft-outreach --out out/draft-outreach.json"
+      - id: offer-pick
+        instruction: |
+          offer pick: offer, incentive.
+        gate:
+          - check: "npx conductor-board check offer-pick"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: queue-send
+        instruction: |
+          queue send: queue, schedule send.
+        gate:
+          - check: "npx conductor-board check queue-send"
+          - name: "queue send is correct"
+            check: "node verify-unit.mjs queue-send --out out/queue-send.json"

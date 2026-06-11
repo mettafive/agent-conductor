@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: campanology-tower
+description: >
+  campanology tower — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-bells
+    instruction: |
+      Scope the bells to process. Frontload every bell as a pending iteration.
+    output: bells
+    gate:
+      - check: "npx conductor-board check scope-bells"
+      - "Every bell captured before any work begins"
+
+  - id: campanology-tower-loop
+    type: loop
+    over: bells
+    as: bell
+    requires: [scope-bells]
+    steps:
+      - id: inspect-bell
+        instruction: |
+          inspect bell: inspect, headstock.
+        gate:
+          - check: "npx conductor-board check inspect-bell"
+          - name: "inspect bell is correct"
+            check: "node verify-unit.mjs inspect-bell --out out/inspect-bell.json"
+      - id: tune-bell
+        instruction: |
+          tune bell: tune, shave harmonic.
+        gate:
+          - check: "npx conductor-board check tune-bell"
+          - name: "tune bell is correct"
+            check: "node verify-unit.mjs tune-bell --out out/tune-bell.json"
+      - id: clapper-set
+        instruction: |
+          clapper set: clapper, flight adjust.
+        gate:
+          - check: "npx conductor-board check clapper-set"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: rehang
+        instruction: |
+          rehang: rehang, install.
+        gate:
+          - check: "npx conductor-board check rehang"
+          - name: "rehang is correct"
+            check: "node verify-unit.mjs rehang --out out/rehang.json"

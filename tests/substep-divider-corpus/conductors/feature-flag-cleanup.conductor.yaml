@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: feature-flag-cleanup
+description: >
+  feature flag cleanup — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-flags
+    instruction: |
+      Scope the flags to process. Frontload every flag as a pending iteration.
+    output: flags
+    gate:
+      - check: "npx conductor-board check scope-flags"
+      - "Every flag captured before any work begins"
+
+  - id: feature-flag-cleanup-loop
+    type: loop
+    over: flags
+    as: flag
+    requires: [scope-flags]
+    steps:
+      - id: find-usages
+        instruction: |
+          find usages: find usages, grep flag.
+        gate:
+          - check: "npx conductor-board check find-usages"
+          - name: "find usages is correct"
+            check: "node verify-unit.mjs find-usages --out out/find-usages.json"
+      - id: remove-flag
+        instruction: |
+          remove flag: remove flag, delete branch.
+        gate:
+          - check: "npx conductor-board check remove-flag"
+          - name: "remove flag is correct"
+            check: "node verify-unit.mjs remove-flag --out out/remove-flag.json"
+      - id: update-config
+        instruction: |
+          update config: update config, remove definition.
+        gate:
+          - check: "npx conductor-board check update-config"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: test-build
+        instruction: |
+          test build: test, build check.
+        gate:
+          - check: "npx conductor-board check test-build"
+          - name: "test build is correct"
+            check: "node verify-unit.mjs test-build --out out/test-build.json"

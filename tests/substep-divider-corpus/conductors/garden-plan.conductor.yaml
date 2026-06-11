@@ -1,0 +1,47 @@
+conductor: 2.0.0
+name: garden-plan
+description: >
+  garden plan — converted from a skill that names 4 distinct work-units.
+
+steps:
+  - id: scope-beds
+    instruction: |
+      Scope the beds to process. Frontload every bed as a pending iteration.
+    output: beds
+    gate:
+      - check: "npx conductor-board check scope-beds"
+      - "Every bed captured before any work begins"
+
+  - id: garden-plan-loop
+    type: loop
+    over: beds
+    as: bed
+    requires: [scope-beds]
+    steps:
+      - id: assess-soil
+        instruction: |
+          assess soil: assess soil, ph test.
+        gate:
+          - check: "npx conductor-board check assess-soil"
+          - name: "assess soil is correct"
+            check: "node verify-unit.mjs assess-soil --out out/assess-soil.json"
+      - id: select-plants
+        instruction: |
+          select plants: select plants, companion.
+        gate:
+          - check: "npx conductor-board check select-plants"
+          - name: "select plants is correct"
+            check: "node verify-unit.mjs select-plants --out out/select-plants.json"
+      - id: spacing-layout
+        instruction: |
+          spacing layout: spacing, layout.
+        gate:
+          - check: "npx conductor-board check spacing-layout"
+          # divider step: no substantive gate — exists purely so the board shows this phase
+      - id: schedule-planting
+        instruction: |
+          schedule planting: schedule planting, calendar.
+        gate:
+          - check: "npx conductor-board check schedule-planting"
+          - name: "schedule planting is correct"
+            check: "node verify-unit.mjs schedule-planting --out out/schedule-planting.json"

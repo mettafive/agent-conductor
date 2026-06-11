@@ -1,0 +1,40 @@
+conductor: 2.0.0
+name: sql-optimization
+description: >
+  Rewrite each slow query to be faster with an identical result set.
+
+steps:
+  - id: profile-queries
+    instruction: |
+      Profile each slow query; snapshot its result-set + baseline cost into the grounding bundle.
+    output: queries
+    gate:
+      - check: "npx conductor-board check profile-queries"
+      - name: "Result-set + cost baseline captured"
+        check: "node verify.mjs result-equal --out fixtures/sql-optimization/sql-optimization.out.json --ground fixtures/sql-optimization/sql-optimization.ground.json"
+
+  - id: sql-optimization-loop
+    type: loop
+    over: queries
+    as: query
+    requires: [profile-queries]
+    steps:
+      - id: rewrite-query
+        instruction: |
+          Rewrite <query>.
+        gate:
+          - check: "npx conductor-board check rewrite-query"
+          - name: "Rewritten query returns the identical result set"
+            check: "node verify.mjs result-equal --out fixtures/sql-optimization/<item>.out.json --ground fixtures/sql-optimization/<item>.ground.json"
+          - name: "Rewritten query is actually cheaper"
+            check: "node verify.mjs cheaper-plan --out fixtures/sql-optimization/<item>.out.json --ground fixtures/sql-optimization/<item>.ground.json"
+          - "The faster query is still readable, not an unmaintainable hint-soup."
+
+  - id: sql-optimization-finish
+    instruction: |
+      Confirm every query faster + result-equal.
+    requires: [sql-optimization-loop]
+    gate:
+      - check: "npx conductor-board check sql-optimization-finish"
+      - name: "All queries handled"
+        check: "node verify.mjs coverage-complete --out fixtures/sql-optimization/sql-optimization.out.json --ground fixtures/sql-optimization/sql-optimization.ground.json"

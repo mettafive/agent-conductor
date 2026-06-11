@@ -1,10 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import boardPkg from "../board/package.json" with { type: "json" };
 
-// The version badge in the masthead. Keep in sync with board/package.json on release
-// (the cross-workspace JSON import doesn't inline cleanly in vite's config bundler).
-const APP_VERSION = "3.3.6";
+// The version badge in the masthead follows the published conductor-board CLI.
+const APP_VERSION = boardPkg.version;
 
 // GitHub Pages serves the project site under /agent-conductor/.
 export default defineConfig({

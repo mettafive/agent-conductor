@@ -7,6 +7,7 @@ import { renderNote } from "../lib/heartbeat";
 import { displayName, phaseLabel, isLifecycle } from "../lib/identity";
 import { Led } from "./Led";
 import { NoteThread } from "./HeartbeatTimeline";
+import { Icon } from "./Icon";
 
 // The ONE view identity, available to every card without prop-threading. Scopes the
 // per-card layoutId so Framer never treats "card 0 in run A" and "card 0 in run B" as the
@@ -58,6 +59,62 @@ const MOVE = {
   layout: { duration: 0.42, ease: [0.45, 0, 0.55, 1] },
   default: { duration: 0.18, ease: "easeOut" },
 } as const;
+
+function useLayoutMotionEnabled() {
+  const reduceMotion = useReducedMotion();
+  const [enabled, setEnabled] = useState(true);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onVisibility = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (document.visibilityState === "hidden") {
+        setEnabled(false);
+        return;
+      }
+      // Hidden tabs can accumulate several status changes. On return, render the
+      // current board state immediately instead of replaying stale card moves.
+      setEnabled(false);
+      timer = setTimeout(() => setEnabled(true), 700);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  return enabled && !reduceMotion;
+}
+
+function useBoardEntrance(key: string) {
+  const reduceMotion = useReducedMotion();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    setReady(false);
+    if (reduceMotion) {
+      setReady(true);
+      return;
+    }
+    let frame = 0;
+    frame = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(frame);
+  }, [key, reduceMotion]);
+
+  return reduceMotion ? true : ready;
+}
+
+function entranceStyle(ready: boolean, delay = 0) {
+  return {
+    initial: { opacity: 0, y: 8 },
+    animate: ready ? { opacity: 1, y: 0 } : { opacity: 0, y: 8 },
+    transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1], delay },
+  } as const;
+}
 
 function requirementTitles(step: BoardStep, steps: BoardStep[]): string[] {
   return step.requires
@@ -590,9 +647,22 @@ function CompletionHeader({
   // Pause/resume — optimistic: the click registers AT ONCE (the button flips to
   // Pausing…/Resuming…), cleared when the broadcast confirms the real status.
   const [pending, setPending] = useState<null | "pause" | "resume">(null);
+  const pauseInFlightRef = useRef(false);
+  const pauseAction = shownStatus === "paused" ? "resume" : "pause";
+  const pausePending =
+    (pending === "pause" && shownStatus !== "paused") ||
+    (pending === "resume" && shownStatus !== "running");
+  const pauseVisual = pausePending ? `pending-${pending}` : shownStatus === "paused" ? "resume" : "pause";
+  const pauseLabel = shownStatus === "paused" || pending === "resume" ? "Resume" : "Pause";
   useEffect(() => {
-    if (pending === "pause" && shownStatus === "paused") setPending(null);
-    if (pending === "resume" && shownStatus === "running") setPending(null);
+    if (pending === "pause" && shownStatus === "paused") {
+      pauseInFlightRef.current = false;
+      setPending(null);
+    }
+    if (pending === "resume" && shownStatus === "running") {
+      pauseInFlightRef.current = false;
+      setPending(null);
+    }
   }, [pending, shownStatus]);
 
   // Pause visibility reads the ONE shared signal — hasActiveDispatch(entry), computed by
@@ -601,14 +671,14 @@ function CompletionHeader({
 
   return (
     <div className="shrink-0 border-b border-line bg-ink/95">
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-3 px-5 py-7">
+      <div className="mx-auto flex min-h-[116px] max-w-[1400px] flex-wrap items-center gap-3 px-5 py-7">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
             <Led state={model.overallStatus} />
             {/* base name = the canonical identity (matches the navigator); the phase
                 badge carries status/lifecycle — never the inner "Migrating…" title. */}
             <h2 className="truncate text-[20px] font-semibold text-chalk">{baseName}</h2>
-            <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.12em] ${phaseClass}`}>
+            <span className={`inline-flex h-5 shrink-0 items-center rounded-full border px-2 pt-px font-mono text-[11px] uppercase leading-none tracking-[0.12em] ${phaseClass}`}>
               {phase}
             </span>
           </div>
@@ -648,34 +718,59 @@ function CompletionHeader({
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex min-h-9 min-w-[148px] shrink-0 items-center justify-end gap-3">
           {/* Pause / Resume — shown only when there's ACTIVE DISPATCH to drain (hidden for
               compile/integration and for a stale "running" with no live dispatcher). Posts
               the CANONICAL key, registers the click optimistically, and never navigates. */}
           {activeDispatch && (
-            <button
+            <motion.button
               type="button"
-              disabled={!!pending}
-              onClick={() => {
-                const action = shownStatus === "paused" ? "resume" : "pause";
-                setPending(action); // optimistic — the click shows at once
-                fetch(`/api/workflow/${encodeURIComponent(key)}/${action}`, { method: "POST" }).catch(() => setPending(null));
-              }}
+	              disabled={!!pending}
+	              onClick={() => {
+	                if (pauseInFlightRef.current) return;
+	                pauseInFlightRef.current = true;
+	                setPending(pauseAction); // optimistic — the click shows at once
+	                fetch(`/api/workflow/${encodeURIComponent(key)}/${pauseAction}`, { method: "POST" })
+	                  .then((res) => res.json().catch(() => ({})))
+	                  .then((body) => {
+	                    if (!body?.status || body.status === "final-drain") {
+	                      pauseInFlightRef.current = false;
+	                      setPending(null);
+	                    }
+	                  })
+	                  .catch(() => {
+	                    pauseInFlightRef.current = false;
+	                    setPending(null);
+	                  });
+	              }}
+              whileTap={{ scale: 0.985 }}
               title={
                 shownStatus === "paused"
                   ? "Resume — dispatch the next card"
                   : "Pause — let in-flight cards finish, then hold (no new cards start)"
               }
-              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-2 bg-panel/60 px-3 py-1.5 font-mono text-[13px] text-mist-2 transition-[colors,transform] hover:bg-panel hover:text-chalk active:scale-[0.97] disabled:opacity-70"
+              className="relative flex h-9 w-[92px] shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-2 bg-panel/60 px-2 font-mono text-[13px] text-mist-2 transition-colors hover:bg-panel hover:text-chalk disabled:opacity-75"
             >
-              {pending === "pause" && shownStatus !== "paused"
-                ? "⏸ Pausing…"
-                : pending === "resume" && shownStatus !== "running"
-                  ? "▶ Resuming…"
-                  : shownStatus === "paused"
-                    ? "▶ Resume"
-                    : "⏸ Pause"}
-            </button>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={pauseVisual}
+                  initial={{ opacity: 0, y: 5, filter: "blur(2px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  exit={{ opacity: 0, y: -5, filter: "blur(2px)" }}
+                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  className="absolute inset-0 flex items-center justify-center gap-2"
+                >
+                  <span className="grid h-4 w-4 place-items-center">
+                    {pausePending ? (
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
+                    ) : (
+                      <Icon name={shownStatus === "paused" ? "play" : "pause"} size={15} />
+                    )}
+                  </span>
+                  <span className="min-w-[42px] text-center leading-none">{pauseLabel}</span>
+                </motion.span>
+              </AnimatePresence>
+            </motion.button>
           )}
           {/* Summary/Board toggle — only when settled (no summary during a live run). */}
           {settled && (
@@ -1117,7 +1212,7 @@ function IntegrationSummaryPanel({
   const reordered = summary.reordered ?? 0;
 
   return (
-    <div className="mt-4 rounded-md border border-line bg-panel/70 p-4">
+    <div className="mt-4 min-h-[118px] rounded-md border border-line bg-panel/70 p-4">
       <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mint">Integration complete</div>
       <div className="mt-2 font-mono text-[11px] leading-relaxed text-mist">
         <div>{summary.processed} knowledge item{summary.processed === 1 ? "" : "s"} processed</div>
@@ -1202,11 +1297,11 @@ function IntegrationCompletePanel({
   // shaping cards — it is no longer a gate that needs a "Start Run" click.
   return (
     <div className="border-b border-line bg-panel/40 px-5 py-4">
-      <div className="mx-auto max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
+      <div className="mx-auto min-h-[150px] max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
         {summary ? (
           <IntegrationSummaryPanel summary={summary} />
         ) : (
-          <div className="font-mono text-[11px] text-mist">Integration complete. Loading summary…</div>
+          <div className="grid min-h-[118px] place-items-center font-mono text-[11px] text-mist">Integration complete. Loading summary…</div>
         )}
       </div>
     </div>
@@ -1218,11 +1313,13 @@ function CompileCompletePanel({
   steps,
   onOpenArtifact,
   canonicalKey,
+  prewarmAgents = true,
 }: {
   model: BoardModel;
   steps: BoardStep[];
   onOpenArtifact: (step: BoardStep) => void;
   canonicalKey?: string;
+  prewarmAgents?: boolean;
 }) {
   const [summary, setSummary] = useState<CompileSummary | null>(null);
   const [starting, setStarting] = useState(false);
@@ -1257,7 +1354,7 @@ function CompileCompletePanel({
       const res = await fetch(`/api/workflow/${encodeURIComponent(postKey)}/start-run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ prewarm: prewarmAgents }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `start failed: ${res.status}`);
@@ -1276,7 +1373,7 @@ function CompileCompletePanel({
 
   return (
     <div className="border-b border-line bg-panel/40 px-5 py-4">
-      <div className="mx-auto max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
+      <div className="mx-auto min-h-[150px] max-w-[1180px] rounded-md border border-line bg-ink/50 p-4">
         <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-0 flex-1">
             <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mint">Migration complete</div>
@@ -1326,12 +1423,16 @@ function CompileCompletePanel({
  *  (not the compile / integration lifecycle workflows). */
 export function RunCompleteBanner({
   model,
+  elapsed,
   insightCount = 0,
   onOpenInsights,
   onRelaunch,
   canonicalKey,
+  knowledgeOverride,
+  prewarmAgents = true,
 }: {
   model: BoardModel;
+  elapsed?: string | null;
   /** Fresh-insight count for this run (App-computed); shown as an inline badge. */
   insightCount?: number;
   /** Opens the insights modal. */
@@ -1341,8 +1442,15 @@ export function RunCompleteBanner({
   onRelaunch?: () => void;
   /** The canonical discovery key — every POST resolves by it, never the inner title. */
   canonicalKey?: string;
+  /** Current workflow knowledge. Used when the visible model is an archived snapshot
+   *  that predates knowledgeJson archiving; the button still needs to reflect what
+   *  start-run will do now. */
+  knowledgeOverride?: BoardModel["knowledge"];
+  /** Browser preference: prewarm likely-next agents before card handout. */
+  prewarmAgents?: boolean;
 }) {
   const [starting, setStarting] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // This component stays mounted across runs (only the inner banner shows/hides),
@@ -1350,7 +1458,10 @@ export function RunCompleteBanner({
   // re-enable the button — otherwise it stays disabled (faint/"Starting...") after
   // the next completion until a full page refresh.
   useEffect(() => {
-    if (model.overallStatus === "running") setStarting(false);
+    if (model.overallStatus === "running") {
+      setStarting(false);
+      setLeaving(false);
+    }
   }, [model.overallStatus]);
 
   const settled = model.overallStatus === "done" || model.overallStatus === "failed";
@@ -1358,7 +1469,7 @@ export function RunCompleteBanner({
   const show =
     settled && steps.length > 0 && !isCompileLifecycle(model, steps) && !isIntegrationLifecycle(model, steps);
 
-  const knowledge = model.knowledge || [];
+  const knowledge = knowledgeOverride ?? model.knowledge ?? [];
   const agentOpen = knowledge.filter(
     (k) => (k.source || "agent") !== "human" && (k.status === "open" || k.status === "emerging"),
   );
@@ -1366,7 +1477,6 @@ export function RunCompleteBanner({
   const openKnowledge = knowledge.filter((k) => k.status === "open");
   const passed = steps.filter((s) => s.column === "done").length;
   const failedCount = steps.filter((s) => s.column === "failed").length;
-  const totalTime = clockSince(model.startedAt, Date.now(), model.endedAt);
   const buttonLabel = openKnowledge.length > 0 ? "Improve & Run" : "Run Again";
 
   // One click → the server launches the whole run (compile reuse → integrate-if-
@@ -1375,13 +1485,14 @@ export function RunCompleteBanner({
   async function startRun() {
     if (starting) return;
     setStarting(true);
+    setLeaving(true);
     setError(null);
     onRelaunch?.(); // kick off the board sweep → setup beat the instant the click lands
     try {
       const res = await fetch(`/api/workflow/${encodeURIComponent(canonicalKey ?? model.workflow)}/start-run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ prewarm: prewarmAgents }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `start failed: ${res.status}`);
@@ -1390,27 +1501,33 @@ export function RunCompleteBanner({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStarting(false);
+      setLeaving(false);
     }
   }
 
   return (
     <AnimatePresence>
-      {show && (
+      {show && !leaving && (
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 16 }}
-          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-          className="shrink-0 border-t border-line bg-panel/80 backdrop-blur"
+          initial={{ opacity: 0, y: 16, height: 0 }}
+          animate={{ opacity: 1, y: 0, height: "auto" }}
+          exit={{ opacity: 0, y: 10, height: 0, filter: "blur(2px)" }}
+          transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+          className="shrink-0 overflow-hidden border-t border-line bg-panel/80 backdrop-blur"
         >
-          {(
+          <motion.div
+            initial={{ y: 6 }}
+            animate={{ y: 0 }}
+            exit={{ y: 6 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          >
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-2.5">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-mint">
                   {failedCount > 0 ? "Run finished" : "Run complete"}
                 </div>
                 <div className="mt-0.5 truncate text-[16.5px] font-medium text-chalk">
-                  {model.workflow} finished{totalTime ? ` in ${totalTime}` : ""}
+                  {model.workflow} finished{elapsed ? ` in ${elapsed}` : ""}
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[10.5px] text-mist">
                   <span>
@@ -1427,19 +1544,24 @@ export function RunCompleteBanner({
                 {error && <div className="mt-1 text-[10.5px] text-rose">{error}</div>}
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                {onOpenInsights && (
-                  <button
-                    type="button"
-                    onClick={onOpenInsights}
-                    className="flex shrink-0 items-center gap-2 rounded-md border border-amber/40 bg-amber/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-amber transition-colors hover:bg-amber/25"
-                    title={insightCount > 0 ? `${insightCount} fresh insight${insightCount === 1 ? "" : "s"} this run` : "Open insights"}
-                  >
-                    <span>View insights from run</span>
-                    {insightCount > 0 && (
+                <AnimatePresence initial={false}>
+                  {onOpenInsights && insightCount > 0 && (
+                    <motion.button
+                      key="run-insights"
+                      type="button"
+                      onClick={onOpenInsights}
+                      initial={{ opacity: 0, x: 10, scale: 0.98, filter: "blur(2px)" }}
+                      animate={{ opacity: 1, x: 0, scale: 1, filter: "blur(0px)" }}
+                      exit={{ opacity: 0, x: 8, scale: 0.98, filter: "blur(2px)" }}
+                      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                      className="flex shrink-0 items-center gap-2 rounded-md border border-amber/40 bg-amber/15 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] text-amber transition-colors hover:bg-amber/25"
+                      title={`${insightCount} fresh insight${insightCount === 1 ? "" : "s"} this run`}
+                    >
+                      <span>View insights from run</span>
                       <span className="rounded-sm bg-amber/20 px-1 text-[10px] tabular-nums">{insightCount}</span>
-                    )}
-                  </button>
-                )}
+                    </motion.button>
+                  )}
+                </AnimatePresence>
                 <button
                   type="button"
                   disabled={starting}
@@ -1450,7 +1572,7 @@ export function RunCompleteBanner({
                 </button>
               </div>
             </div>
-          )}
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -1807,6 +1929,9 @@ function PendingColumnCards({
   maxAttempts,
   openCards,
   onToggle,
+  layoutMotion = true,
+  entranceReady = true,
+  entranceBaseDelay = 0,
 }: {
   steps: BoardStep[];
   allSteps: BoardStep[];
@@ -1815,6 +1940,9 @@ function PendingColumnCards({
   maxAttempts: number;
   openCards: Set<string>;
   onToggle: (id: string) => void;
+  layoutMotion?: boolean;
+  entranceReady?: boolean;
+  entranceBaseDelay?: number;
 }) {
   const bands = useMemo(() => pendingBands(steps, allSteps), [steps, allSteps]);
 
@@ -1827,7 +1955,7 @@ function PendingColumnCards({
               the column stays a clean title list (ready cards still lead, and keep
               their mint edge). */}
           <AnimatePresence mode="popLayout" initial={false}>
-            {band.steps.map((step) => (
+            {band.steps.map((step, i) => (
               <WorkflowCard
                 key={step.id}
                 step={step}
@@ -1838,6 +1966,9 @@ function PendingColumnCards({
                 variant="pending"
                 open={openCards.has(step.id)}
                 onToggle={() => onToggle(step.id)}
+                layoutMotion={layoutMotion}
+                entranceReady={entranceReady}
+                entranceDelay={entranceBaseDelay + i * 0.035}
               />
             ))}
           </AnimatePresence>
@@ -1921,6 +2052,9 @@ function WorkflowCard({
   variant = "default",
   open = false,
   onToggle,
+  layoutMotion = true,
+  entranceReady = true,
+  entranceDelay = 0,
 }: {
   step: BoardStep;
   allSteps: BoardStep[];
@@ -1932,6 +2066,9 @@ function WorkflowCard({
   // moving columns — moving rows used to remount the card and reset it to closed.
   open?: boolean;
   onToggle?: () => void;
+  layoutMotion?: boolean;
+  entranceReady?: boolean;
+  entranceDelay?: number;
 }) {
   // shim so the existing `setOpen((v) => !v)` call sites keep working; the actual
   // toggle is owned by the board (the arg is ignored — it just flips this card).
@@ -1940,7 +2077,7 @@ function WorkflowCard({
   // arrive after a relaunch — the one moment of impact. Reduced motion → plain fade.
   const reduceMotion = useReducedMotion();
   const viewKey = useContext(ViewKeyContext); // scope the card's layoutId to this view
-  const bam = step.phase === "shaping" && !reduceMotion;
+  const bam = step.phase === "shaping" && !reduceMotion && layoutMotion;
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [insightModalOpen, setInsightModalOpen] = useState(false);
   const [conditionModalOpen, setConditionModalOpen] = useState(false);
@@ -2003,12 +2140,18 @@ function WorkflowCard({
   return (
     <>
       <motion.div
-        layout
-        layoutId={`${viewKey}:workflow-card-${step.id}`}
-        initial={bam ? { opacity: 0, scale: 0.96 } : { opacity: 0 }}
-        animate={bam ? { opacity: 1, scale: 1 } : { opacity: 1 }}
+        layout={layoutMotion ? "position" : false}
+        layoutId={layoutMotion ? `${viewKey}:workflow-card-${step.id}` : undefined}
+        initial={bam ? { opacity: 0, scale: 0.96, y: 8 } : { opacity: 0, y: 8 }}
+        animate={entranceReady ? (bam ? { opacity: 1, scale: 1, y: 0 } : { opacity: 1, y: 0 }) : (bam ? { opacity: 0, scale: 0.96, y: 8 } : { opacity: 0, y: 8 })}
         exit={{ opacity: 0 }}
-        transition={bam ? { ...MOVE, scale: { type: "spring", stiffness: 520, damping: 18 } } : MOVE}
+        transition={
+          layoutMotion
+            ? (bam
+                ? { ...MOVE, default: { ...MOVE.default, delay: entranceDelay }, scale: { type: "spring", stiffness: 520, damping: 18, delay: entranceDelay } }
+                : { ...MOVE, default: { ...MOVE.default, delay: entranceDelay } })
+            : { duration: 0 }
+        }
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -2017,7 +2160,7 @@ function WorkflowCard({
             setOpen((v) => !v);
           }
         }}
-        className={`mb-2 rounded-lg border bg-panel-2/40 px-3.5 py-3 transition-colors duration-200 hover:border-line-2 hover:bg-panel-2/70 ${
+        className={`mb-2 min-h-[50px] overflow-hidden rounded-lg border bg-panel-2/40 px-3.5 py-3 transition-colors duration-200 hover:border-line-2 hover:bg-panel-2/70 ${
           isReady
             ? "border-line border-l-2 border-l-mint/70 ring-1 ring-inset ring-mint/15"
             : "border-line"
@@ -2178,7 +2321,7 @@ function WorkflowCard({
                   stopPropagation keeps clicks/keys inside from toggling the card. */}
               {!pendingVariant && (
                 <div
-                  className="mt-2.5 border-t border-line pt-2.5"
+                  className="mt-2 border-t border-line pt-2"
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
@@ -2315,6 +2458,7 @@ export function WorkflowKanban({
   canonicalKey,
   activeDispatch = false,
   viewKey = "",
+  prewarmAgents = true,
 }: {
   model: BoardModel;
   notes?: DeveloperNote[];
@@ -2328,8 +2472,13 @@ export function WorkflowKanban({
   /** The ONE view identity. Scopes per-card layout/open state so a card never slides — or
    *  opens — across DIFFERENT runs (run-local step.id is never treated as global). */
   viewKey?: string;
+  /** Browser preference used by compile-complete start-run. */
+  prewarmAgents?: boolean;
 }) {
+  const layoutMotion = useLayoutMotionEnabled();
   const [settledView, setSettledView] = useState<"summary" | "board">("board");
+  const entranceKey = `${viewKey}:${model.runId ?? "no-run"}:${settledView}`;
+  const entranceReady = useBoardEntrance(entranceKey);
   const [settledSnapshot, setSettledSnapshot] = useState<SettledSnapshot | null>(null);
   // Render work AND shaping cards on the board (shaping = the integration cards
   // that lead the run); only the auto-injected Phase-0 "improve" cards are kept
@@ -2418,16 +2567,18 @@ export function WorkflowKanban({
             the centered header/title never shifts horizontally when one view
             scrolls and the other doesn't (that was the "title leaps" jump). */}
         <div className="board-scroll h-full overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
-          <CompletionHeader
-            model={displayModel}
-            steps={displaySteps}
-            view={settledView}
-            onView={setSettledView}
-            settled
-            elapsed={elapsed}
-            canonicalKey={canonicalKey}
-            activeDispatch={activeDispatch}
-          />
+          <motion.div {...entranceStyle(entranceReady, 0)}>
+            <CompletionHeader
+              model={displayModel}
+              steps={displaySteps}
+              view={settledView}
+              onView={setSettledView}
+              settled
+              elapsed={elapsed}
+              canonicalKey={canonicalKey}
+              activeDispatch={activeDispatch}
+            />
+          </motion.div>
           {/* Execution run-complete banner moved to a sticky bar above the heartbeat
               terminal (App → RunCompleteBanner), so it stays visible in both views. */}
           {/* Eased crossfade on the Summary ↔ Board swap. mode="wait" lets the
@@ -2448,7 +2599,7 @@ export function WorkflowKanban({
               {settledView === "summary" ? (
                 <>
                   {compileLifecycle && (
-                    <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} canonicalKey={canonicalKey} />
+                    <CompileCompletePanel model={displayModel} steps={displaySteps} onOpenArtifact={setCompileArtifactStep} canonicalKey={canonicalKey} prewarmAgents={prewarmAgents} />
                   )}
                   {integrationLifecycle && <IntegrationCompletePanel model={displayModel} canonicalKey={canonicalKey} />}
                   <CompletionTimeline model={displayModel} steps={displaySteps} maxAttempts={maxAttempts} />
@@ -2460,13 +2611,13 @@ export function WorkflowKanban({
                       const inCol = displaySteps.filter((s) => s.column === col);
                       return (
                         <section key={col} className="min-w-0">
-                          <div className="mb-2 flex items-center gap-2 border-b border-line px-2 py-2">
+                          <motion.div {...entranceStyle(entranceReady, 0.1)} className="mb-2 flex items-center gap-2 border-b border-line px-2 py-2">
                             <Led state={col} />
                             <h2 className="text-[14px] font-medium text-chalk">{LABEL[col]}</h2>
                             <span className="ml-auto rounded-full bg-panel-2/60 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-mist">
                               {inCol.length}
                             </span>
-                          </div>
+                          </motion.div>
                           {col === "pending" ? (
                             <PendingColumnCards
                               steps={inCol}
@@ -2476,11 +2627,14 @@ export function WorkflowKanban({
                               maxAttempts={maxAttempts}
                               openCards={openCards}
                               onToggle={toggleCard}
+                              layoutMotion={layoutMotion}
+                              entranceReady={entranceReady}
+                              entranceBaseDelay={0.16}
                             />
                           ) : (
                             <div>
                               <AnimatePresence mode="popLayout" initial={false}>
-                                {inCol.map((step) => (
+                                {inCol.map((step, i) => (
                                   <WorkflowCard
                                     key={step.id}
                                     step={step}
@@ -2490,6 +2644,9 @@ export function WorkflowKanban({
                                     maxAttempts={maxAttempts}
                                     open={openCards.has(step.id)}
                                     onToggle={() => toggleCard(step.id)}
+                                    layoutMotion={layoutMotion}
+                                    entranceReady={entranceReady}
+                                    entranceDelay={0.16 + i * 0.035}
                                   />
                                 ))}
                               </AnimatePresence>
@@ -2521,31 +2678,33 @@ export function WorkflowKanban({
   return (
     <ViewKeyContext.Provider value={viewKey}>
     <LayoutGroup>
-      <div className="h-full overflow-y-auto">
+      <div className="h-full overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
         {/* The shared run-header — live state. Same component as the settled view;
             the Summary/Board toggle is gated off since no summary exists mid-run. */}
-        <CompletionHeader
-          model={displayModel}
-          steps={displaySteps}
-          view={settledView}
-          onView={setSettledView}
-          settled={false}
-          elapsed={elapsed}
-          canonicalKey={canonicalKey}
-          activeDispatch={activeDispatch}
-        />
+        <motion.div {...entranceStyle(entranceReady, 0)}>
+          <CompletionHeader
+            model={displayModel}
+            steps={displaySteps}
+            view={settledView}
+            onView={setSettledView}
+            settled={false}
+            elapsed={elapsed}
+            canonicalKey={canonicalKey}
+            activeDispatch={activeDispatch}
+          />
+        </motion.div>
         <div className={`mx-auto grid max-w-[1400px] grid-cols-1 gap-x-4 gap-y-4 px-5 py-6 sm:grid-cols-2 ${cols.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
           {cols.map((col) => {
             const inCol = steps.filter((s) => s.column === col);
             return (
               <section key={col} className="min-w-0">
-                <div className="mb-2 flex items-center gap-2 border-b border-line px-2 py-2">
+                <motion.div {...entranceStyle(entranceReady, 0.1)} className="mb-2 flex items-center gap-2 border-b border-line px-2 py-2">
                   <Led state={col} />
                   <h2 className="text-[14px] font-medium text-chalk">{LABEL[col]}</h2>
                   <span className="ml-auto rounded-full bg-panel-2/60 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-mist">
                     {inCol.length}
                   </span>
-                </div>
+                </motion.div>
                 {col === "pending" ? (
                   <PendingColumnCards
                     steps={inCol}
@@ -2555,11 +2714,14 @@ export function WorkflowKanban({
                     maxAttempts={maxAttempts}
                     openCards={openCards}
                     onToggle={toggleCard}
+                    layoutMotion={layoutMotion}
+                    entranceReady={entranceReady}
+                    entranceBaseDelay={0.16}
                   />
                 ) : (
                   <div>
                     <AnimatePresence mode="popLayout" initial={false}>
-                      {inCol.map((step) => (
+                      {inCol.map((step, i) => (
                         <WorkflowCard
                           key={step.id}
                           step={step}
@@ -2569,6 +2731,9 @@ export function WorkflowKanban({
                           maxAttempts={maxAttempts}
                           open={openCards.has(step.id)}
                           onToggle={() => toggleCard(step.id)}
+                          layoutMotion={layoutMotion}
+                          entranceReady={entranceReady}
+                          entranceDelay={0.16 + i * 0.035}
                         />
                       ))}
                     </AnimatePresence>
